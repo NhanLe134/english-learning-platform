@@ -1,0 +1,63 @@
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+}
+
+.site-header,
+.site-footer {
+  padding: 1.25rem clamp(1.25rem, 6vw, 5rem);
+}
+
+.site-header {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.brand {
+  color: #164e63;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.app-shell > main {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  padding: 4rem 1.5rem;
+}
+
+.welcome {
+  max-width: 48rem;
+  text-align: center;
+}
+
+.welcome h1 {
+  margin: 0.75rem 0 1rem;
+  color: #0f172a;
+  font-size: clamp(2.5rem, 7vw, 4.75rem);
+  line-height: 1.05;
+}
+
+.welcome p:last-child {
+  color: #475569;
+  font-size: 1.125rem;
+  line-height: 1.7;
+}
+
+.welcome .eyebrow {
+  color: #0e7490;
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.site-footer {
+  color: #64748b;
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.role-layout {
+  width: 100%;
+}
