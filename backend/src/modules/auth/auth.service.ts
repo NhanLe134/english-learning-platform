@@ -79,8 +79,8 @@ function isValidEmail(email: string): boolean {
 }
 
 function validatePassword(password: string): void {
-  if (password.length < 12 || Buffer.byteLength(password, 'utf8') > 72) {
-    throw new AuthError('Password must be at least 12 characters and no more than 72 UTF-8 bytes', 400)
+  if (password.length < 8 || Buffer.byteLength(password, 'utf8') > 72) {
+    throw new AuthError('Password must be at least 8 characters and no more than 72 UTF-8 bytes', 400)
   }
 }
 

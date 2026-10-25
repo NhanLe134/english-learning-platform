@@ -40,7 +40,7 @@ Creates a PostgreSQL profile with a normalized email and server-assigned
 }
 ```
 
-Passwords must be at least 12 characters, at most 72 UTF-8 bytes, and match
+Passwords must be at least 8 characters, at most 72 UTF-8 bytes, and match
 their confirmation. Returns `201` with a 30-minute `accessToken`, safe user
 fields (`id`, `email`, `role`), and a seven-day HttpOnly refresh cookie.
 Returns `400` for invalid input, `409` for a duplicate email, `403` for an
@@ -95,7 +95,7 @@ Request JSON:
 ```
 
 Requires a valid, unused reset token and a matching password confirmation
-(minimum 12 characters and maximum 72 UTF-8 bytes). Returns `204` after
+(minimum 8 characters and maximum 72 UTF-8 bytes). Returns `204` after
 updating the PostgreSQL password hash and revoking all application sessions.
 Invalid, expired, or previously used tokens and invalid input return `400`.
 
@@ -125,3 +125,21 @@ for frontend/API origins and secure cookies.
 
 The pre-existing user-management endpoints still use the Supabase API client;
 the authentication routes above use only PostgreSQL via `DATABASE_URL`.
+
+## Frontend authentication
+
+The React authentication pages call the routes documented above. Configure
+`VITE_API_URL` or `VITE_API_BASE_URL` in `frontend/.env` to the backend API
+base URL, including `/api` (for example, `http://localhost:5000/api`). Browser
+requests include credentials so the HttpOnly refresh cookie can be stored and
+rotated. Keep the frontend origin consistent with `FRONTEND_URL` in the
+backend configuration; for the local Vite default, use
+`http://localhost:5173`, not `127.0.0.1`.
+
+Access tokens remain in React memory and are refreshed on page load from the
+HttpOnly cookie. When a protected user-management request receives `401`, the
+frontend rotates the refresh cookie and retries that request once. If the
+refresh session is invalid or expired, the admin session is cleared and the
+user is redirected to login. The forgot-password page displays a generic
+response; a development reset link appears only when the backend explicitly
+returns one with `AUTH_EXPOSE_RESET_LINK=true` in development.

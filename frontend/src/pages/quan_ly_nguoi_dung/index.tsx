@@ -8,10 +8,12 @@ import { UserPagination } from './components/UserPagination'
 import { CreateUserModal } from './components/CreateUserModal'
 import { ConfirmActionModal, type ConfirmActionType } from './components/ConfirmActionModal'
 import { userApi } from './services/userApi'
+import { useAuth } from '../auth/auth-context'
 import type { CreateUserInput, PaginationInfo, UserFilterState, UserProfile } from './types'
 import './quan_ly_nguoi_dung.css'
 
 export const QuanLyNguoiDungPage: React.FC = () => {
+  const { accessToken, refreshSession } = useAuth()
   // State for filters & pagination
   const [filters, setFilters] = useState<UserFilterState>({
     search: '',
@@ -32,7 +34,7 @@ export const QuanLyNguoiDungPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false)
   const [exporting, setExporting] = useState<boolean>(false)
 
-  // State for Supabase connection status / error banner
+  // State for user-management API failures
   const [supabaseError, setSupabaseError] = useState<string | null>(null)
   const [isSeeding, setIsSeeding] = useState<boolean>(false)
 
@@ -66,7 +68,11 @@ export const QuanLyNguoiDungPage: React.FC = () => {
   const loadUsers = useCallback(async () => {
     try {
       setLoading(true)
-      const res = await userApi.getUsers(filters)
+      const res = await userApi.getUsers(
+        filters,
+        accessToken,
+        async () => (await refreshSession()).accessToken
+      )
       setUsers(res.data)
       setPagination(res.pagination)
       setSupabaseError(null)
@@ -77,7 +83,7 @@ export const QuanLyNguoiDungPage: React.FC = () => {
     } finally {
       setLoading(false)
     }
-  }, [filters])
+  }, [accessToken, filters, refreshSession])
 
   // Debounced fetch on filter or page change
   useEffect(() => {
@@ -123,13 +129,27 @@ export const QuanLyNguoiDungPage: React.FC = () => {
       setConfirmModal((prev) => ({ ...prev, loading: true }))
 
       if (type === 'lock') {
-        await userApi.updateStatus(user.id, 'locked')
+        await userApi.updateStatus(
+          user.id,
+          'locked',
+          accessToken,
+          async () => (await refreshSession()).accessToken
+        )
         showToast('success', `Đã khóa tài khoản của ${user.full_name} (${user.email})`)
       } else if (type === 'unlock') {
-        await userApi.updateStatus(user.id, 'active')
+        await userApi.updateStatus(
+          user.id,
+          'active',
+          accessToken,
+          async () => (await refreshSession()).accessToken
+        )
         showToast('success', `Đã mở khóa tài khoản của ${user.full_name} (${user.email})`)
       } else if (type === 'delete') {
-        await userApi.deleteUser(user.id)
+        await userApi.deleteUser(
+          user.id,
+          accessToken,
+          async () => (await refreshSession()).accessToken
+        )
         showToast('success', `Đã xóa vĩnh viễn người dùng ${user.full_name} khỏi Supabase`)
       }
 
@@ -145,7 +165,11 @@ export const QuanLyNguoiDungPage: React.FC = () => {
   // Handle create user submit
   const handleCreateUser = async (data: CreateUserInput) => {
     try {
-      const created = await userApi.createUser(data)
+      const created = await userApi.createUser(
+        data,
+        accessToken,
+        async () => (await refreshSession()).accessToken
+      )
       showToast(
         'success',
         `Đã lưu người dùng vào Supabase: ${created.full_name} (${created.role === 'ADMIN' ? 'Quản trị viên' : 'Giáo viên'})`
@@ -162,7 +186,10 @@ export const QuanLyNguoiDungPage: React.FC = () => {
   const handleSeedData = async () => {
     try {
       setIsSeeding(true)
-      const res = await userApi.seedSupabase()
+      const res = await userApi.seedSupabase(
+        accessToken,
+        async () => (await refreshSession()).accessToken
+      )
       showToast('success', res.message || 'Đã seed dữ liệu mẫu vào Supabase thành công!')
       await loadUsers()
     } catch (err: unknown) {
@@ -177,7 +204,11 @@ export const QuanLyNguoiDungPage: React.FC = () => {
   const handleExportCsv = async () => {
     try {
       setExporting(true)
-      await userApi.exportCsv(filters)
+      await userApi.exportCsv(
+        filters,
+        accessToken,
+        async () => (await refreshSession()).accessToken
+      )
       showToast('success', 'Đã tải xuống file CSV danh sách người dùng từ Supabase thành công!')
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Không thể xuất file CSV'
@@ -220,16 +251,13 @@ export const QuanLyNguoiDungPage: React.FC = () => {
 
         {/* Page Content */}
         <main className="user-management-content">
-          {/* Supabase Status / Error Alert Banner */}
+          {/* User-management API error banner */}
           {supabaseError && (
             <div className="supabase-status-banner">
               <div className="supabase-banner-left">
                 <AlertTriangle size={20} className="warning-note-icon" />
                 <div>
-                  <strong>Chưa kết nối được Supabase:</strong> {supabaseError}
-                  <div style={{ fontSize: '12px', marginTop: '2px', color: '#78350F' }}>
-                    💡 Hãy điền <code>SUPABASE_URL</code> và <code>SUPABASE_SERVICE_ROLE_KEY</code> vào file <code>backend/.env</code> rồi khởi động lại server.
-                  </div>
+                  <strong>Không tải được danh sách người dùng:</strong> {supabaseError}
                 </div>
               </div>
               <div className="supabase-banner-actions">

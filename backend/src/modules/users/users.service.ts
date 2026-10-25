@@ -31,8 +31,8 @@ export class UsersService {
     }
 
     const password = dto.password
-    if (!password || password.length < 12 || Buffer.byteLength(password, 'utf8') > 72) {
-      throw new Error('Mật khẩu phải có ít nhất 12 ký tự và tối đa 72 byte')
+    if (!password || password.length < 8 || Buffer.byteLength(password, 'utf8') > 72) {
+      throw new Error('Mật khẩu phải có ít nhất 8 ký tự và tối đa 72 byte')
     }
 
     const normalizedEmail = dto.email.trim().toLowerCase()

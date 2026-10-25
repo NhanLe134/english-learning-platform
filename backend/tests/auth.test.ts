@@ -45,7 +45,7 @@ class FakeUsers {
     if ([...this.users.values()].some((user) => user.email === email)) {
       throw new Error('Email is already registered')
     }
-    assert.equal(password.length >= 12, true)
+    assert.equal(password.length >= 8, true)
     const user = { ...sampleUser, id: randomUUID(), email }
     this.createdRole = user.role
     this.users.set(user.id, user)
@@ -239,6 +239,7 @@ describe('authentication service', () => {
       () => service.register('new@example.test', 'short', 'short'),
       400
     )
+    await service.register('eight-chars@example.test', '12345678', '12345678')
     await expectAuthError(
       () => service.register(sampleUser.email, 'A-long-password-123', 'A-long-password-123'),
       409
@@ -453,6 +454,20 @@ describe('authentication service', () => {
       400
     )
     assert.equal(users.updatedPassword, undefined)
+  })
+
+  it('accepts an eight-character password when resetting a password', async () => {
+    const { store, users } = setup(async () => undefined)
+    let emailHtml = ''
+    const resetService = new AuthService(users, store, async (email) => {
+      emailHtml = email.html
+    })
+    await resetService.forgotPassword(sampleUser.email)
+    const tokenMatch = /[?&]token=([A-Za-z0-9_-]+)/.exec(emailHtml)
+    if (!tokenMatch?.[1]) throw new Error('Expected the reset email to contain a token')
+
+    await resetService.resetPassword(tokenMatch[1], '12345678', '12345678')
+    assert.equal(users.updatedPassword, '12345678')
   })
 
   it('uses an indistinguishable forgot-password result and handles Resend errors safely', async () => {
