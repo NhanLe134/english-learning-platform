@@ -1,7 +1,18 @@
-import crypto from 'node:crypto'
-import { createSupabaseClient } from '../../config/supabase.js'
+import { createSupabaseClient, createSupabasePublicClient } from '../../config/supabase.js'
 import { env } from '../../config/env.js'
+import { logRegistrationFailure } from '../auth/registration-diagnostics.js'
 import type { PaginatedResult, UserProfile, UserQueryParams, UserRole, UserStatus } from './users.types.js'
+
+const USER_COLUMNS =
+  'id,email,full_name,nickname,phone_number,role,avatar_url,status,is_verified,created_at,updated_at'
+
+function isoDate(value: unknown): string {
+  const dateValue = typeof value === 'string' || typeof value === 'number' || value instanceof Date
+    ? value
+    : Number.NaN
+  const date = new Date(dateValue)
+  return Number.isFinite(date.getTime()) ? date.toISOString() : new Date().toISOString()
+}
 
 export class UsersRepository {
   /**
@@ -14,11 +25,10 @@ export class UsersRepository {
   /**
    * Helper to map Supabase database row to UserProfile
    */
-  private mapRowToProfile(row: Record<string, any>): UserProfile {
+  private mapRowToProfile(row: Record<string, unknown>): UserProfile {
     return {
       id: String(row.id),
       email: String(row.email || ''),
-      password_hash: String(row.password_hash || ''),
       full_name: String(row.full_name || ''),
       nickname: row.nickname ? String(row.nickname) : null,
       phone_number: row.phone_number ? String(row.phone_number) : (row.phone ? String(row.phone) : null),
@@ -26,8 +36,8 @@ export class UsersRepository {
       avatar_url: row.avatar_url ? String(row.avatar_url) : null,
       status: (String(row.status || 'active').toLowerCase()) as UserStatus,
       is_verified: Boolean(row.is_verified || (String(row.role || '').toUpperCase() === 'TEACHER')),
-      created_at: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
-      updated_at: row.updated_at ? new Date(row.updated_at).toISOString() : new Date().toISOString(),
+      created_at: isoDate(row.created_at),
+      updated_at: isoDate(row.updated_at),
     }
   }
 
@@ -46,7 +56,7 @@ export class UsersRepository {
     }
 
     const client = createSupabaseClient()
-    let query = client.from('profiles').select('*', { count: 'exact' })
+    let query = client.from('profiles').select(USER_COLUMNS, { count: 'exact' })
 
     if (params.search && params.search.trim()) {
       const s = params.search.trim()
@@ -96,8 +106,8 @@ export class UsersRepository {
     const client = createSupabaseClient()
     const { data, error } = await client
       .from('profiles')
-      .select('*')
-      .ilike('email', email.trim().toLowerCase())
+      .select(USER_COLUMNS)
+      .eq('email', email.trim().toLowerCase())
       .maybeSingle()
 
     if (error) {
@@ -118,7 +128,7 @@ export class UsersRepository {
     const client = createSupabaseClient()
     const { data, error } = await client
       .from('profiles')
-      .select('*')
+      .select(USER_COLUMNS)
       .eq('id', id)
       .maybeSingle()
 
@@ -129,19 +139,52 @@ export class UsersRepository {
     return data ? this.mapRowToProfile(data) : null
   }
 
-  /**
-   * Create new user in Supabase profiles
-   */
-  async create(user: Omit<UserProfile, 'id' | 'created_at' | 'updated_at'> & { id?: string }): Promise<UserProfile> {
+  async createAuthAccount(
+    user: Omit<UserProfile, 'id' | 'created_at' | 'updated_at'>,
+    password: string
+  ): Promise<UserProfile> {
     if (!this.hasSupabaseConfig()) {
-      throw new Error('Chưa cấu hình Supabase trong backend/.env')
+      throw new Error(
+        'Supabase is not configured: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set'
+      )
     }
 
     const client = createSupabaseClient()
-    const newRecord = {
-      id: user.id || crypto.randomUUID(),
-      email: user.email.toLowerCase().trim(),
-      password_hash: user.password_hash,
+    const email = user.email.trim().toLowerCase()
+    const sensitiveValues = [email, password]
+    let userId: string
+
+    try {
+      const { data, error } = await client.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { full_name: user.full_name.trim() },
+      })
+      if (error) throw error
+      if (!data.user) throw new Error('Supabase Auth did not return a user')
+      userId = data.user.id
+    } catch (error) {
+      const providerMessage =
+        error && typeof error === 'object' && 'message' in error
+          ? error.message
+          : undefined
+      if (
+        (error &&
+          typeof error === 'object' &&
+          'code' in error &&
+          (error.code === 'email_exists' || error.code === 'user_already_exists')) ||
+        (typeof providerMessage === 'string' && /already (registered|exists)/i.test(providerMessage))
+      ) {
+        throw new Error('Email is already registered', { cause: error })
+      }
+      logRegistrationFailure('supabase_auth_create_user', error, sensitiveValues)
+      throw new Error('Unable to create authentication account', { cause: error })
+    }
+
+    const profile = {
+      id: userId,
+      email,
       full_name: user.full_name.trim(),
       nickname: user.nickname?.trim() || null,
       phone_number: user.phone_number?.trim() || null,
@@ -151,17 +194,105 @@ export class UsersRepository {
       is_verified: user.is_verified || false,
     }
 
-    const { data, error } = await client
-      .from('profiles')
-      .insert(newRecord)
-      .select()
-      .single()
-
-    if (error) {
-      throw new Error(`Lỗi thêm người dùng vào bảng "profiles" Supabase: ${error.message}`)
+    let row: Record<string, unknown>
+    try {
+      const result = await client
+        .from('profiles')
+        .upsert(profile, { onConflict: 'id' })
+        .select(USER_COLUMNS)
+        .single()
+      if (result.error) throw result.error
+      if (!result.data) throw new Error('Supabase profile upsert returned no row')
+      row = result.data
+    } catch (error) {
+      logRegistrationFailure('profile_upsert', error, sensitiveValues)
+      await this.cleanupRegistrationAccount(client, userId, sensitiveValues)
+      throw new Error('Unable to create user profile', { cause: error })
     }
 
-    return this.mapRowToProfile(data)
+    try {
+      const { error } = await client.from('user_roles').upsert(
+        { user_id: userId, role: user.role.toLowerCase() },
+        { onConflict: 'user_id,role' }
+      )
+      if (error) throw error
+    } catch (error) {
+      logRegistrationFailure('role_upsert', error, sensitiveValues)
+      await this.cleanupRegistrationAccount(client, userId, sensitiveValues, true)
+      throw new Error('Unable to assign user role', { cause: error })
+    }
+
+    return this.mapRowToProfile(row)
+  }
+
+  async authenticatePassword(email: string, password: string): Promise<UserProfile | null> {
+    if (!env.supabaseAnonKey) {
+      throw new Error('SUPABASE_ANON_KEY is required')
+    }
+
+    const { data, error } = await createSupabasePublicClient().auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    })
+    if (error) {
+      const code = 'code' in error ? error.code : undefined
+      if (code === 'invalid_credentials' || code === 'email_not_confirmed') return null
+      throw new Error('Unable to authenticate with Supabase Auth', { cause: error })
+    }
+    if (!data.user) return null
+
+    return this.findById(data.user.id)
+  }
+
+  async updatePassword(userId: string, password: string): Promise<void> {
+    if (!this.hasSupabaseConfig()) {
+      throw new Error('Supabase is not configured for password updates')
+    }
+
+    const { error } = await createSupabaseClient().auth.admin.updateUserById(userId, {
+      password,
+    })
+    if (error) {
+      throw new Error('Unable to update the Supabase Auth password', { cause: error })
+    }
+  }
+
+  async deleteRegistrationAccount(userId: string): Promise<void> {
+    if (!this.hasSupabaseConfig()) {
+      throw new Error('Supabase is not configured for registration cleanup')
+    }
+
+    await this.cleanupRegistrationAccount(createSupabaseClient(), userId, [], true)
+  }
+
+  private async cleanupRegistrationAccount(
+    client: ReturnType<typeof createSupabaseClient>,
+    userId: string,
+    sensitiveValues: readonly string[],
+    removeRole = false
+  ): Promise<void> {
+    if (removeRole) {
+      try {
+        const { error } = await client.from('user_roles').delete().eq('user_id', userId)
+        if (error) throw error
+      } catch (error) {
+        logRegistrationFailure('registration_cleanup', error, sensitiveValues)
+      }
+    }
+
+    try {
+      const { error } = await client.from('profiles').delete().eq('id', userId)
+      if (error) throw error
+    } catch (error) {
+      logRegistrationFailure('registration_cleanup', error, sensitiveValues)
+    }
+
+    try {
+      const { error } = await client.auth.admin.deleteUser(userId)
+      if (error) throw error
+    } catch (error) {
+      logRegistrationFailure('registration_cleanup', error, sensitiveValues)
+    }
   }
 
   /**
@@ -237,7 +368,6 @@ export class UsersRepository {
         phone_number: '0987.412.389',
         role: 'STUDENT',
         avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-        password_hash: '$2b$12$e8K9rT3vM0zWqY7uX1oP5aXp',
         status: 'active',
         is_verified: false,
       },
@@ -249,7 +379,6 @@ export class UsersRepository {
         phone_number: '0912.899.701',
         role: 'TEACHER',
         avatar_url: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
-        password_hash: '$2b$12$Z1x9uV4tP2qW8kY0nE7r4pWs',
         status: 'active',
         is_verified: true,
       },
@@ -261,7 +390,6 @@ export class UsersRepository {
         phone_number: '0978.552.198',
         role: 'ADMIN',
         avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-        password_hash: '$2b$12$K8m1sD9rT4yW2uP6oQ8e9bQz',
         status: 'active',
         is_verified: false,
       },
@@ -273,7 +401,6 @@ export class UsersRepository {
         phone_number: '0903.654.218',
         role: 'STUDENT',
         avatar_url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
-        password_hash: '$2b$12$V3n0pL7kR9mQ2sT4wY1x0dRt',
         status: 'locked',
         is_verified: false,
       },
@@ -285,7 +412,6 @@ export class UsersRepository {
         phone_number: '0934.112.987',
         role: 'STUDENT',
         avatar_url: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
-        password_hash: '$2b$12$N7x8uK5vM3yQ1sT9wP4e8yLm',
         status: 'active',
         is_verified: false,
       },

@@ -1,7 +1,11 @@
 import { Router } from 'express'
+import { authorize } from '../../middlewares/authorize.js'
+import { authenticate } from '../auth/auth.middleware.js'
 import { usersController } from './users.controller.js'
 
 export const usersRouter = Router()
+
+usersRouter.use(authenticate, authorize('ADMIN'))
 
 // User list and search
 usersRouter.get('/', (req, res, next) => usersController.getUsers(req, res, next))
@@ -20,4 +24,3 @@ usersRouter.patch('/:id/status', (req, res, next) => usersController.updateStatu
 
 // Delete user
 usersRouter.delete('/:id', (req, res, next) => usersController.deleteUser(req, res, next))
-
