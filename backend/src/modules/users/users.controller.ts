@@ -12,7 +12,9 @@ export class UsersController {
       const queryParams: UserQueryParams = {
         search: req.query.search ? String(req.query.search) : undefined,
         role: req.query.role ? (String(req.query.role).toUpperCase() as 'ALL' | UserRole) : 'ALL',
-        status: req.query.status ? (String(req.query.status).toLowerCase() as 'ALL' | UserStatus) : 'ALL',
+        status: req.query.status && String(req.query.status).toLowerCase() !== 'all'
+          ? String(req.query.status).toLowerCase() as UserStatus
+          : 'ALL',
         page: req.query.page ? parseInt(String(req.query.page), 10) : 1,
         limit: req.query.limit ? parseInt(String(req.query.limit), 10) : 10,
       }
@@ -150,7 +152,9 @@ export class UsersController {
       const queryParams: UserQueryParams = {
         search: req.query.search ? String(req.query.search) : undefined,
         role: req.query.role ? (String(req.query.role).toUpperCase() as 'ALL' | UserRole) : 'ALL',
-        status: req.query.status ? (String(req.query.status).toLowerCase() as 'ALL' | UserStatus) : 'ALL',
+        status: req.query.status && String(req.query.status).toLowerCase() !== 'all'
+          ? String(req.query.status).toLowerCase() as UserStatus
+          : 'ALL',
       }
 
       const csvData = await usersService.exportCsv(queryParams)
@@ -186,4 +190,3 @@ export class UsersController {
 }
 
 export const usersController = new UsersController()
-

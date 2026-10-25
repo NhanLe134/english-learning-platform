@@ -1,4 +1,3 @@
-import bcrypt from 'bcryptjs'
 import { usersRepository } from './users.repository.js'
 import type { CreateUserDto, PaginatedResult, UserProfile, UserQueryParams } from './users.types.js'
 import { env } from '../../config/env.js'
@@ -11,9 +10,7 @@ export class UsersService {
     return usersRepository.findUsers(params)
   }
 
-  /**
-   * Create a new Teacher or Admin user with bcrypt password hashing
-   */
+  /** Create a Teacher or Admin account through the configured auth provider. */
   async createUser(dto: CreateUserDto): Promise<UserProfile> {
     // 1. Validation
     if (!dto.full_name || !dto.full_name.trim()) {
@@ -33,42 +30,35 @@ export class UsersService {
       throw new Error('Vai trò cấp quyền phải là TEACHER hoặc ADMIN')
     }
 
-    const rawPassword = dto.password?.trim() || 'EngMaster@2025#Temp'
-    if (rawPassword.length < 6) {
-      throw new Error('Mật khẩu phải có ít nhất 6 ký tự')
+    const password = dto.password
+    if (!password || password.length < 8 || Buffer.byteLength(password, 'utf8') > 72) {
+      throw new Error('Mật khẩu phải có ít nhất 8 ký tự và tối đa 72 byte')
     }
 
-    // 2. Check email duplication
-    const existing = await usersRepository.findByEmail(dto.email.trim())
-    if (existing) {
-      throw new Error(`Email "${dto.email.trim()}" đã được đăng ký trên hệ thống`)
+    const normalizedEmail = dto.email.trim().toLowerCase()
+    if (await usersRepository.findByEmail(normalizedEmail)) {
+      throw new Error('Email đã được đăng ký trên hệ thống')
     }
 
-    // 3. Hash password using bcrypt (12 rounds)
-    const saltRounds = 12
-    const password_hash = await bcrypt.hash(rawPassword, saltRounds)
-
-    // 4. Default avatar generator (styled UI avatar with user initials)
+    // Default avatar generator (styled UI avatar with user initials)
     const defaultAvatar =
       dto.avatar_url?.trim() ||
       `https://ui-avatars.com/api/?name=${encodeURIComponent(
         dto.full_name.trim()
       )}&background=F60005&color=fff&size=200&bold=true`
 
-    // 5. Create profile in database
-    const createdProfile = await usersRepository.create({
+    const createdProfile = await usersRepository.createAuthAccount({
       full_name: dto.full_name.trim(),
       nickname: dto.nickname?.trim() ? (dto.nickname.startsWith('@') ? dto.nickname.trim() : `@${dto.nickname.trim()}`) : null,
-      email: dto.email.trim().toLowerCase(),
+      email: normalizedEmail,
       phone_number: dto.phone_number?.trim() || null,
       role: dto.role,
-      password_hash,
       avatar_url: defaultAvatar,
       status: 'active',
       is_verified: dto.role === 'TEACHER', // Auto verify teachers as in Figma
-    })
+    }, password)
 
-    // 6. Optional: Send welcome email via Resend if credentials are set
+    // Optional: Send a welcome email without including the account password.
     if (env.resendApiKey && env.emailFrom) {
       try {
         const { Resend } = await import('resend')
@@ -86,9 +76,8 @@ export class UsersService {
               }</strong>.</p>
               <div style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 16px; border-radius: 8px; margin: 16px 0;">
                 <p style="margin: 4px 0;"><strong>Tài khoản:</strong> ${createdProfile.email}</p>
-                <p style="margin: 4px 0;"><strong>Mật khẩu khởi tạo:</strong> <code>${rawPassword}</code></p>
               </div>
-              <p style="color: #dc2626;"><em>Lưu ý: Vui lòng đổi mật khẩu ở lần đăng nhập đầu tiên để bảo mật tài khoản.</em></p>
+              <p>Vui lòng đăng nhập bằng mật khẩu đã được cấp.</p>
             </div>
           `,
         })
@@ -128,7 +117,7 @@ export class UsersService {
   async exportCsv(params: UserQueryParams): Promise<string> {
     const { items } = await usersRepository.findUsers({ ...params, limit: 10000, page: 1 })
     
-    const headers = ['ID', 'Họ và tên', 'Nickname', 'Email', 'Số điện thoại', 'Vai trò', 'Trạng thái', 'Hash Mật khẩu', 'Ngày tạo']
+    const headers = ['ID', 'Họ và tên', 'Nickname', 'Email', 'Số điện thoại', 'Vai trò', 'Trạng thái', 'Ngày tạo']
     
     const rows = items.map((u) => [
       `"${u.id}"`,
@@ -138,7 +127,6 @@ export class UsersService {
       `"${u.phone_number ?? ''}"`,
       `"${u.role}"`,
       `"${u.status}"`,
-      `"${u.password_hash}"`,
       `"${new Date(u.created_at).toLocaleString('vi-VN')}"`,
     ])
 
@@ -152,7 +140,39 @@ export class UsersService {
   async seedUsers(): Promise<{ inserted: number; message: string }> {
     return usersRepository.seedInitialData()
   }
+
+  async createStudentAccount(email: string, password: string): Promise<UserProfile> {
+    return usersRepository.createAuthAccount({
+      email,
+      full_name: email.split('@')[0] || 'Learner',
+      nickname: null,
+      phone_number: null,
+      role: 'STUDENT',
+      avatar_url: null,
+      status: 'active',
+      is_verified: false,
+    }, password)
+  }
+
+  async rollbackStudentAccount(userId: string): Promise<void> {
+    await usersRepository.deleteRegistrationAccount(userId)
+  }
+
+  async authenticatePassword(email: string, password: string): Promise<UserProfile | null> {
+    return usersRepository.authenticatePassword(email, password)
+  }
+
+  async updatePassword(userId: string, password: string): Promise<void> {
+    await usersRepository.updatePassword(userId, password)
+  }
+
+  async findById(userId: string): Promise<UserProfile | null> {
+    return usersRepository.findById(userId)
+  }
+
+  async findByEmail(email: string): Promise<UserProfile | null> {
+    return usersRepository.findByEmail(email)
+  }
 }
 
 export const usersService = new UsersService()
-

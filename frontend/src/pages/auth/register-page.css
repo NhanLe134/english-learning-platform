@@ -1,0 +1,150 @@
+.register-card {
+  width: 100%;
+  min-width: 0;
+  padding: 25px 26px 22px;
+  border: 1px solid #eeeceb;
+  border-radius: 15px;
+  background: #fff;
+  box-shadow: 0 10px 30px #2f1c180c;
+  text-align: center;
+}
+
+.register-card .card-brand {
+  margin-bottom: 12px;
+}
+
+.register-card h2 {
+  margin: 0 0 5px;
+  color: #1a1c1d;
+  font-size: 19px;
+  font-weight: 750;
+  letter-spacing: -0.5px;
+  line-height: 1.35;
+}
+
+.register-card .card-description {
+  max-width: 330px;
+  margin-bottom: 16px;
+}
+
+.register-form {
+  text-align: left;
+}
+
+.register-form > label:not(.terms-option) {
+  display: block;
+  margin: 0 0 5px;
+  color: #5e4945;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.register-form > label:not(.terms-option):not(:first-child) {
+  margin-top: 16px;
+}
+
+.register-form > label:not(.terms-option) > span {
+  color: var(--accent-red);
+}
+
+.register-form .input-wrap {
+  height: 35px;
+}
+
+.register-form .input-wrap input::placeholder {
+  color: #5e4945;
+  opacity: 0.6;
+}
+
+.terms-option {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 18px 0 16px;
+  color: #5e4945;
+  cursor: pointer;
+}
+
+.terms-option > input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.terms-option .custom-checkbox {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  margin-top: 1px;
+}
+
+.terms-option > input:checked + .custom-checkbox {
+  border-color: var(--accent-red);
+  background: var(--accent-red);
+  color: #fff;
+}
+
+.terms-option > input:focus-visible + .custom-checkbox {
+  outline: 2px solid #e0000466;
+  outline-offset: 2px;
+}
+
+.terms-copy {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.terms-copy a {
+  color: var(--accent-red);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.register-form .submit-button {
+  height: 38px;
+}
+
+.register-card .signup-prompt {
+  margin-top: 20px;
+}
+
+@media (min-width: 1500px) {
+  .register-card {
+    padding: 30px 36px 27px;
+  }
+
+  .register-card h2 {
+    font-size: 23px;
+  }
+
+  .register-card .card-description {
+    font-size: 18px;
+  }
+
+  .register-form > label:not(.terms-option) {
+    font-size: 13px;
+  }
+
+  .register-form .input-wrap {
+    height: 42px;
+  }
+
+  .terms-copy,
+  .register-card .signup-prompt,
+  .register-card .signup-prompt a {
+    font-size: 13px;
+  }
+
+  .register-form .submit-button {
+    height: 42px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 760px) {
+  .register-card {
+    padding: 27px clamp(22px, 7vw, 40px);
+  }
+}

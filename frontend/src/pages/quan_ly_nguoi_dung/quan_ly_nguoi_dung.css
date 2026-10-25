@@ -187,7 +187,7 @@
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 16px;
 }
 
 .header-notification-btn {
@@ -220,12 +220,43 @@
   border: 1.5px solid #FFFFFF;
 }
 
-.header-admin-profile {
+.header-profile-menu {
+  position: relative;
+  padding-left: 14px;
+  border-left: 1px solid var(--color-border);
+}
+
+.admin-profile-trigger {
   display: flex;
+  max-width: 300px;
   align-items: center;
   gap: 10px;
-  padding-left: 12px;
-  border-left: 1px solid var(--color-border);
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.admin-profile-trigger:focus-visible,
+.profile-menu-logout:focus-visible {
+  outline: 2px solid #BC0002;
+  outline-offset: 3px;
+}
+
+.admin-profile-trigger:hover .admin-name {
+  color: var(--color-primary);
+}
+
+.profile-menu-chevron {
+  flex: 0 0 auto;
+  color: #94A3B8;
+  transition: transform 0.15s ease;
+}
+
+.admin-profile-trigger[aria-expanded="true"] .profile-menu-chevron {
+  transform: rotate(180deg);
 }
 
 .admin-avatar {
@@ -235,21 +266,110 @@
   object-fit: cover;
 }
 
+.admin-avatar-initial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #FEE2E2;
+  color: #BC0002;
+  font-weight: 700;
+}
+
 .admin-info {
   display: flex;
+  min-width: 0;
   flex-direction: column;
 }
 
 .admin-name {
+  overflow: hidden;
+  max-width: 190px;
   font-size: 13px;
   font-weight: 600;
   color: #0F172A;
   line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .admin-role {
+  width: fit-content;
+  margin-top: 3px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #F1F5F9;
+  color: #64748B;
   font-size: 11px;
-  color: #94A3B8;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.profile-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 12px);
+  right: 0;
+  width: min(280px, calc(100vw - 24px));
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: #FFFFFF;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
+}
+
+.profile-menu-details {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 16px;
+}
+
+.profile-menu-name {
+  color: var(--color-text-main);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.profile-menu-email {
+  overflow-wrap: anywhere;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.profile-menu-role {
+  align-self: flex-start;
+  margin-top: 3px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #FFF1F2;
+  color: var(--color-primary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.profile-menu-logout {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 16px;
+  border: 0;
+  border-top: 1px solid var(--color-border-light);
+  background: #FFFFFF;
+  color: #B91C1C;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.profile-menu-logout:hover {
+  background: #FEF2F2;
+}
+
+.profile-menu-logout:disabled {
+  cursor: wait;
+  opacity: 0.7;
 }
 
 /* --------------------------------------------------------------------------
@@ -1475,6 +1595,15 @@
   .user-management-content {
     padding: 20px;
   }
+  .engmaster-top-header {
+    padding-inline: 20px;
+  }
+  .header-actions {
+    gap: 12px;
+  }
+  .admin-name {
+    max-width: 150px;
+  }
 }
 
 @media (max-width: 768px) {
@@ -1503,5 +1632,65 @@
   .form-grid-2,
   .role-selection-grid {
     grid-template-columns: 1fr;
+  }
+  .engmaster-top-header {
+    min-height: 64px;
+    height: auto;
+    gap: 12px;
+    padding: 10px 16px;
+  }
+  .header-breadcrumb {
+    min-width: 0;
+    gap: 5px;
+    font-size: 12px;
+  }
+  .breadcrumb-current {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .header-actions {
+    flex: 0 0 auto;
+    gap: 10px;
+  }
+  .header-profile-menu {
+    padding-left: 10px;
+  }
+  .admin-profile-trigger {
+    gap: 7px;
+  }
+  .admin-avatar {
+    width: 34px;
+    height: 34px;
+  }
+  .admin-name {
+    max-width: 125px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 520px) {
+  .engmaster-top-header {
+    padding-inline: 12px;
+  }
+  .breadcrumb-parent,
+  .breadcrumb-arrow {
+    display: none;
+  }
+  .header-notification-btn {
+    padding: 4px;
+  }
+  .admin-profile-trigger .admin-info {
+    display: none;
+  }
+  .admin-profile-trigger {
+    gap: 5px;
+  }
+  .admin-avatar {
+    width: 36px;
+    height: 36px;
+  }
+  .profile-menu {
+    right: -4px;
   }
 }

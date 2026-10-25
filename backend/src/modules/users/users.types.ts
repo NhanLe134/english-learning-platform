@@ -4,7 +4,6 @@ export type UserStatus = 'active' | 'locked' | 'pending'
 export interface UserProfile {
   id: string
   email: string
-  password_hash: string
   full_name: string
   nickname?: string | null
   phone_number?: string | null
@@ -22,7 +21,7 @@ export interface CreateUserDto {
   email: string
   phone_number?: string
   role: 'TEACHER' | 'ADMIN'
-  password?: string
+  password: string
   avatar_url?: string
 }
 
