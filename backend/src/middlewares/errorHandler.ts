@@ -22,6 +22,16 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _request, resp
   }
 
   const errorName = error instanceof Error ? error.name : 'UnknownError'
-  console.error('[API] Request failed', errorName)
+  const errorMessage = error instanceof Error ? error.message : String(error)
+  const causeMessage = error instanceof Error && error.cause instanceof Error
+    ? error.cause.message
+    : undefined
+  console.error('[API] Request failed', {
+    method: _request.method,
+    path: _request.originalUrl,
+    name: errorName,
+    message: errorMessage,
+    ...(causeMessage ? { cause: causeMessage } : {}),
+  })
   response.status(500).json({ message: 'Internal server error' })
 }

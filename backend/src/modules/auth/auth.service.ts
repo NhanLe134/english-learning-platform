@@ -3,26 +3,60 @@ import { env } from '../../config/env.js'
 import { createResendClient } from '../../config/resend.js'
 import type { UserProfile } from '../users/users.types.js'
 import { AuthError } from './auth.errors.js'
-import { authRepository } from './auth.repository.js'
+import { usersService } from '../users/users.service.js'
+import {
+  authRepository,
+  type RegistrationOtpIssueResult,
+  type RegistrationOtpVerifyResult,
+} from './auth.repository.js'
 import type { AuthSession } from './auth.repository.js'
+import { CourseRequestError, courseService } from '../courses/course.service.js'
+import {
+  generateRegistrationOtp,
+  hashRegistrationOtp,
+  REGISTRATION_OTP_EXPIRY_MS,
+  REGISTRATION_OTP_MAX_ATTEMPTS,
+  REGISTRATION_OTP_RESEND_COOLDOWN_MS,
+  renderRegistrationVerificationEmail,
+} from './registration-otp.js'
+import {
+  generateTemporaryPassword,
+  renderTemporaryPasswordEmail,
+} from './temporary-password.js'
 import {
   createAccessToken,
   createRefreshToken,
-  createResetToken,
   hashToken,
   REFRESH_TOKEN_LIFETIME_MS,
-  RESET_TOKEN_LIFETIME_MS,
   verifyAccessToken,
   verifyRefreshToken,
 } from './auth.tokens.js'
+import type { GoogleAuthInput } from './google.types.js'
+import { verifyGoogleAuthInput } from './google.verifier.js'
 
 interface UserService {
-  createStudentAccount(email: string, password: string): Promise<UserProfile>
+  createStudentAccount(
+    email: string,
+    password: string,
+    fullName: string,
+    dateOfBirth: string,
+    phoneNumber: string,
+    selectedCourseIds: string[]
+  ): Promise<UserProfile>
+  createGoogleAccount(email: string, fullName: string, avatarUrl: string | null): Promise<UserProfile>
   rollbackStudentAccount(userId: string): Promise<void>
   authenticatePassword(email: string, password: string): Promise<UserProfile | null>
-  updatePassword(id: string, password: string): Promise<void>
+  updatePasswordAndVerifyEmail(id: string, password: string): Promise<void>
   findById(id: string): Promise<UserProfile | null>
   findByEmail(email: string): Promise<UserProfile | null>
+}
+
+interface AdminAuthProvider {
+  authenticatePassword(email: string, password: string): Promise<UserProfile | null>
+  findByEmail(email: string): Promise<UserProfile | null>
+  findById(id: string): Promise<UserProfile | null>
+  updatePassword(id: string, email: string, password: string): Promise<void>
+  verifyEmail(id: string): Promise<void>
 }
 
 interface AuthStore {
@@ -30,36 +64,81 @@ interface AuthStore {
   findSessionById(id: string): Promise<AuthSession | null>
   rotateSession(id: string, previousHash: string, nextHash: string, expiresAt: string): Promise<boolean>
   revokeSession(id: string): Promise<void>
-  issuePasswordResetToken(userId: string, tokenHash: string, expiresAt: string): Promise<void>
-  consumePasswordResetToken(tokenHash: string): Promise<string | null>
   revokeUserSessions(userId: string): Promise<void>
+  issueRegistrationOtp(
+    email: string,
+    otp: string,
+    expiresAt: string,
+    sentAt: string,
+    cooldownMs: number
+  ): Promise<RegistrationOtpIssueResult>
+  invalidateRegistrationOtp(userId: string, otpHash: string): Promise<void>
+  verifyRegistrationOtp(
+    email: string,
+    otp: string,
+    now: string,
+    maxAttempts: number
+  ): Promise<RegistrationOtpVerifyResult>
 }
 
-interface ResetEmail {
+interface AuthEmail {
   from: string
   to: string
   subject: string
   html: string
+  text?: string
 }
 
-type ResetEmailSender = (email: ResetEmail) => Promise<void>
+interface CourseSelectionService {
+  validateSelectedCourseIds(ids: unknown): Promise<{ courseIds: string[]; missingIds: string[] }>
+}
+
+type AuthEmailSender = (email: AuthEmail) => Promise<void>
+
+export interface RegistrationInput {
+  fullName: string
+  dateOfBirth: string
+  email: string
+  phoneNumber: string
+  password: string
+  confirmPassword: string
+  selectedCourseIds?: string[]
+}
+
+export interface RegistrationResult {
+  verificationRequired: true
+  email: string
+  selectedCourseIds: string[]
+}
+
+export interface RegistrationOtpRequestResult {
+  status: 'sent' | 'ignored' | 'cooldown'
+  retryAfterSeconds?: number
+  developmentOtp?: string
+  developmentEmailFallback?: boolean
+}
 
 export const GENERIC_FORGOT_MESSAGE =
-  'If an account exists for that address, a reset link will be sent.'
+  'If an account exists for that address, a temporary password will be sent.'
 
 export interface ForgotPasswordResult {
   message: string
-  resetUrl?: string
 }
 
 export interface TokenPair {
   accessToken: string
   refreshToken: string
-  user: Pick<UserProfile, 'id' | 'email' | 'role'>
+  user: Pick<UserProfile, 'id' | 'email' | 'full_name' | 'phone_number' | 'role'>
 }
 
 function publicUser(user: UserProfile): TokenPair['user'] {
-  return { id: user.id, email: user.email, role: user.role }
+  return {
+    id: user.id,
+    email: user.email,
+    full_name: user.full_name,
+    phone_number: user.phone_number ?? null,
+    role: user.role,
+  }
 }
 
 function genericCredentialsError(): AuthError {
@@ -70,10 +149,6 @@ function invalidTokenError(): AuthError {
   return new AuthError('Invalid or expired authentication token', 401)
 }
 
-function canExposeDevelopmentResetLink(): boolean {
-  return env.nodeEnv === 'development' && env.authExposeResetLink
-}
-
 function isValidEmail(email: string): boolean {
   return email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 }
@@ -82,6 +157,23 @@ function validatePassword(password: string): void {
   if (password.length < 8 || Buffer.byteLength(password, 'utf8') > 72) {
     throw new AuthError('Password must be at least 8 characters and no more than 72 UTF-8 bytes', 400)
   }
+}
+
+function validateDateOfBirth(value: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new AuthError('Date of birth must use the YYYY-MM-DD format.', 400)
+  }
+
+  const parsedDate = new Date(`${value}T00:00:00.000Z`)
+  if (
+    Number.isNaN(parsedDate.getTime()) ||
+    parsedDate.toISOString().slice(0, 10) !== value ||
+    parsedDate.getTime() > Date.now()
+  ) {
+    throw new AuthError('Date of birth must be a valid date in the past.', 400)
+  }
+
+  return value
 }
 
 function hasMissingAuthSchema(error: unknown, seen = new Set<unknown>()): boolean {
@@ -96,42 +188,31 @@ function hasMissingAuthSchema(error: unknown, seen = new Set<unknown>()): boolea
   return false
 }
 
-function missingAuthSchemaError(cause: unknown): AuthError {
+function missingAuthSchemaError(cause: unknown, includeOtpMigration = false): AuthError {
+  const otpMigration = includeOtpMigration
+    ? ' and supabase/migrations/20261031031000_add_registration_email_otps.sql'
+    : ''
   return new AuthError(
-    'Authentication database tables are missing. Apply supabase/migrations/20261025003000_database_url_auth.sql, then restart the backend.',
+    `Authentication database schema is incomplete. Apply supabase/migrations/20261025003000_database_url_auth.sql and supabase/migrations/20261031024400_add_private_registration_details.sql${otpMigration}, then restart the backend.`,
     503,
     cause
   )
-}
-
-function makeResetUrl(token: string): string {
-  let frontendUrl: URL
-  try {
-    frontendUrl = new URL(env.frontendUrl)
-  } catch {
-    throw new Error('FRONTEND_URL must be a valid URL')
-  }
-
-  if (
-    !['https:', 'http:'].includes(frontendUrl.protocol) ||
-    frontendUrl.username ||
-    frontendUrl.password ||
-    (env.nodeEnv === 'production' && frontendUrl.protocol !== 'https:')
-  ) {
-    throw new Error('FRONTEND_URL must be a secure web origin')
-  }
-
-  return new URL(`/reset-password?token=${encodeURIComponent(token)}`, frontendUrl).toString()
 }
 
 export class AuthService {
   constructor(
     private readonly users: UserService = authRepository,
     private readonly store: AuthStore = authRepository,
-    private readonly sendResetEmail: ResetEmailSender = async (email) => {
+    private readonly sendTemporaryPasswordEmail: AuthEmailSender = async (email) => {
       const { error } = await createResendClient().emails.send(email)
-      if (error) throw new Error('Resend rejected the password reset email')
-    }
+      if (error) throw new Error('Resend rejected the temporary password email')
+    },
+    private readonly courses: CourseSelectionService = courseService,
+    private readonly sendVerificationEmail: AuthEmailSender = async (email) => {
+      const { error } = await createResendClient().emails.send(email)
+      if (error) throw new Error('Resend rejected the verification email')
+    },
+    private readonly adminAuth: AdminAuthProvider = usersService
   ) {}
 
   private assertSigningSecretConfigured(): void {
@@ -143,22 +224,61 @@ export class AuthService {
     }
   }
 
-  async register(email: string, password: string, confirmPassword: string): Promise<TokenPair> {
-    this.assertSigningSecretConfigured()
-    const normalizedEmail = email.trim().toLowerCase()
+  async register(input: RegistrationInput): Promise<RegistrationResult> {
+    const fullName = input.fullName.trim()
+    if (!fullName || fullName.length > 120) {
+      throw new AuthError('Full name is required and must be at most 120 characters.', 400)
+    }
+    const dateOfBirth = validateDateOfBirth(input.dateOfBirth)
+    const normalizedEmail = input.email.trim().toLowerCase()
     if (!isValidEmail(normalizedEmail)) throw new AuthError('Invalid email address', 400)
-    if (password !== confirmPassword) throw new AuthError('Passwords do not match', 400)
-    validatePassword(password)
+    const phoneNumber = input.phoneNumber.trim()
+    const phoneDigits = phoneNumber.replace(/\D/g, '').length
+    if (
+      phoneNumber.length > 32 ||
+      !/^\+?[\d\s().-]+$/.test(phoneNumber) ||
+      phoneDigits < 7 ||
+      phoneDigits > 15
+    ) {
+      throw new AuthError('Please enter a valid phone number.', 400)
+    }
+    if (input.password !== input.confirmPassword) {
+      throw new AuthError('Passwords do not match', 400)
+    }
+    validatePassword(input.password)
 
-    let createdUser: UserProfile | undefined
+    let selectedCourseIds: string[]
     try {
-      const user = await this.users.createStudentAccount(normalizedEmail, password)
-      createdUser = user
-      return await this.createSession(user)
-    } catch (error) {
-      if (createdUser) {
-        await this.users.rollbackStudentAccount(createdUser.id)
+      const validatedCourses = await this.courses.validateSelectedCourseIds(
+        input.selectedCourseIds ?? []
+      )
+      if (validatedCourses.missingIds.length > 0) {
+        throw new AuthError('One or more selected courses are unavailable.', 400)
       }
+      selectedCourseIds = validatedCourses.courseIds
+    } catch (error) {
+      if (error instanceof AuthError) throw error
+      if (error instanceof CourseRequestError) {
+        throw new AuthError(error.message, error.statusCode, error)
+      }
+      throw new AuthError('Unable to validate selected courses. Please try again later.', 503, error)
+    }
+
+    try {
+      const user = await this.users.createStudentAccount(
+        normalizedEmail,
+        input.password,
+        fullName,
+        dateOfBirth,
+        phoneNumber,
+        selectedCourseIds
+      )
+      return {
+        verificationRequired: true,
+        email: user.email,
+        selectedCourseIds,
+      }
+    } catch (error) {
       if (error instanceof Error && error.message.toLowerCase().includes('already registered')) {
         throw new AuthError('An account with this email already exists', 409)
       }
@@ -166,7 +286,7 @@ export class AuthService {
         throw new AuthError('Invalid email address', 400)
       }
       if (error instanceof AuthError) throw error
-      if (hasMissingAuthSchema(error)) throw missingAuthSchemaError(error)
+      if (hasMissingAuthSchema(error)) throw missingAuthSchemaError(error, true)
 
       const missingDatabaseConfig =
         error instanceof Error &&
@@ -181,6 +301,120 @@ export class AuthService {
     }
   }
 
+  async requestRegistrationOtp(email: string): Promise<RegistrationOtpRequestResult> {
+    this.assertSigningSecretConfigured()
+    const normalizedEmail = email.trim().toLowerCase()
+    if (!isValidEmail(normalizedEmail)) throw new AuthError('Invalid email address', 400)
+    if (!env.emailFrom || !env.resendApiKey) {
+      throw new AuthError(
+        'Email verification is unavailable. Configure RESEND_API_KEY and EMAIL_FROM.',
+        503
+      )
+    }
+
+    const otp = generateRegistrationOtp()
+    const now = new Date()
+    let issue: RegistrationOtpIssueResult
+    try {
+      issue = await this.store.issueRegistrationOtp(
+        normalizedEmail,
+        otp,
+        new Date(now.getTime() + REGISTRATION_OTP_EXPIRY_MS).toISOString(),
+        now.toISOString(),
+        REGISTRATION_OTP_RESEND_COOLDOWN_MS
+      )
+    } catch (error) {
+      if (hasMissingAuthSchema(error)) throw missingAuthSchemaError(error, true)
+      throw new AuthError('Unable to prepare email verification. Please try again later.', 503, error)
+    }
+
+    if (issue.status === 'not_registered') return { status: 'ignored' }
+    if (issue.status === 'cooldown') {
+      return { status: 'cooldown', retryAfterSeconds: issue.retryAfterSeconds }
+    }
+
+    const userOtpHash = hashRegistrationOtp(issue.userId, otp)
+    try {
+      await this.sendVerificationEmail({
+        from: env.emailFrom,
+        to: issue.email,
+        subject: 'Mã xác minh đăng ký EngMaster',
+        html: renderRegistrationVerificationEmail(issue.fullName, otp),
+      })
+    } catch (deliveryError) {
+      if (env.nodeEnv === 'development' && env.authExposeRegistrationOtp) {
+        console.warn('[Auth] Verification email unavailable; using development OTP fallback')
+        return {
+          status: 'sent',
+          developmentOtp: otp,
+          developmentEmailFallback: true,
+        }
+      }
+
+      try {
+        await this.store.invalidateRegistrationOtp(issue.userId, userOtpHash)
+      } catch {
+        console.error('[Auth] Undelivered verification code cleanup failed')
+      }
+      console.error('[Auth] Verification email delivery failed', {
+        name: deliveryError instanceof Error ? deliveryError.name : 'UnknownError',
+      })
+      throw new AuthError(
+        'Hệ thống chưa gửi được email xác minh. Vui lòng bấm gửi lại mã hoặc liên hệ hỗ trợ.',
+        503,
+        deliveryError
+      )
+    }
+
+    return {
+      status: 'sent',
+      ...(env.nodeEnv === 'development' && env.authExposeRegistrationOtp
+        ? { developmentOtp: otp }
+        : {}),
+    }
+  }
+
+  async verifyRegistrationOtp(email: string, otp: string): Promise<TokenPair> {
+    this.assertSigningSecretConfigured()
+    const normalizedEmail = email.trim().toLowerCase()
+    if (!isValidEmail(normalizedEmail)) throw new AuthError('Invalid email address', 400)
+    if (!/^\d{6}$/.test(otp)) {
+      throw new AuthError('Mã xác minh phải gồm đúng 6 chữ số.', 400)
+    }
+
+    let result: RegistrationOtpVerifyResult
+    try {
+      result = await this.store.verifyRegistrationOtp(
+        normalizedEmail,
+        otp,
+        new Date().toISOString(),
+        REGISTRATION_OTP_MAX_ATTEMPTS
+      )
+    } catch (error) {
+      if (hasMissingAuthSchema(error)) throw missingAuthSchemaError(error)
+      throw new AuthError('Unable to verify the code. Please try again later.', 503, error)
+    }
+
+    switch (result.status) {
+      case 'not_registered':
+      case 'already_verified':
+      case 'invalid':
+      case 'expired':
+      case 'attempts_exhausted':
+        throw new AuthError('Mã xác minh không hợp lệ hoặc đã hết hạn.', 400)
+      case 'verified':
+        try {
+          return await this.createSession(result.user)
+        } catch (error) {
+          throw new AuthError(
+            'Tài khoản đã xác minh nhưng chưa thể tạo phiên đăng nhập. Vui lòng đăng nhập.',
+            503,
+            error
+          )
+        }
+    }
+  }
+
   async login(email: string, password: string): Promise<TokenPair> {
     this.assertSigningSecretConfigured()
     if (
@@ -190,6 +424,76 @@ export class AuthService {
     ) {
       throw genericCredentialsError()
     }
+    let storedUser: UserProfile | null = null
+    let databaseLookupError: unknown
+    try {
+      storedUser = await this.users.findByEmail(email.trim().toLowerCase())
+    } catch (error) {
+      databaseLookupError = error
+    }
+
+    let adminProfile: UserProfile | null = null
+    let adminLookupError: unknown
+    if (!storedUser || storedUser.role === 'ADMIN' || databaseLookupError) {
+      try {
+        adminProfile = await this.adminAuth.findByEmail(email.trim().toLowerCase())
+      } catch (error) {
+        adminLookupError = error
+      }
+    }
+
+    if ((!adminProfile || adminProfile.role !== 'ADMIN') && databaseLookupError) {
+      throw new AuthError(
+        'Unable to look up this account. Verify PostgreSQL and Supabase connectivity.',
+        503,
+        new AggregateError(
+          [databaseLookupError, ...(adminLookupError ? [adminLookupError] : [])],
+          'Authentication account lookup failed'
+        )
+      )
+    }
+    if (storedUser?.role === 'ADMIN' && adminLookupError) {
+      throw new AuthError('Admin authentication provider is unavailable.', 503, adminLookupError)
+    }
+
+    if (!adminProfile || adminProfile.role !== 'ADMIN') {
+      return this.loginWithDatabasePassword(email, password)
+    }
+
+    let user: UserProfile | null
+    try {
+      user = await this.adminAuth.authenticatePassword(email.trim().toLowerCase(), password)
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        /SUPABASE_PUBLISHABLE_KEY/.test(error.message)
+      ) {
+        throw new AuthError(
+          'Admin login is not configured. Set SUPABASE_PUBLISHABLE_KEY (or SUPABASE_ANON_KEY) in backend/.env and restart the backend.',
+          503,
+          error
+        )
+      }
+      throw new AuthError('Admin authentication provider is unavailable.', 503, error)
+    }
+    if (!user || user.status !== 'active') throw genericCredentialsError()
+    try {
+      await this.adminAuth.verifyEmail(user.id)
+    } catch (error) {
+      throw new AuthError('Unable to update Admin email verification status.', 503, error)
+    }
+    try {
+      return await this.createSession(user)
+    } catch (error) {
+      throw new AuthError(
+        'Authentication session storage is unavailable. Verify PostgreSQL access and apply the auth database migration.',
+        503,
+        error
+      )
+    }
+  }
+
+  private async loginWithDatabasePassword(email: string, password: string): Promise<TokenPair> {
     let user: UserProfile | null
     try {
       user = await this.users.authenticatePassword(email.trim().toLowerCase(), password)
@@ -201,7 +505,9 @@ export class AuthService {
         error
       )
     }
-    if (!user || user.status !== 'active') throw genericCredentialsError()
+    if (!user || user.status !== 'active' || user.is_verified !== true) {
+      throw genericCredentialsError()
+    }
     try {
       return await this.createSession(user)
     } catch (error) {
@@ -210,6 +516,88 @@ export class AuthService {
         503,
         error
       )
+    }
+  }
+
+  async loginWithGoogle(input: GoogleAuthInput): Promise<TokenPair> {
+    this.assertSigningSecretConfigured()
+    const userInfo = await verifyGoogleAuthInput(input, env.googleClientId)
+    if (!userInfo.emailVerified) {
+      throw new AuthError('Địa chỉ email Google chưa được xác minh.', 400)
+    }
+
+    let user: UserProfile | null
+    try {
+      user = await this.users.findByEmail(userInfo.email)
+    } catch (error) {
+      if (hasMissingAuthSchema(error)) throw missingAuthSchemaError(error)
+      throw new AuthError('Không thể kiểm tra tài khoản Google trong cơ sở dữ liệu.', 503, error)
+    }
+
+    if (!user) {
+      try {
+        const admin = await this.adminAuth.findByEmail(userInfo.email)
+        if (admin?.role === 'ADMIN') user = admin
+      } catch (error) {
+        throw new AuthError('Không thể kiểm tra tài khoản Google trong cơ sở dữ liệu.', 503, error)
+      }
+    }
+
+    if (!user) {
+      try {
+        user = await this.users.createGoogleAccount(
+          userInfo.email,
+          userInfo.name,
+          userInfo.avatarUrl
+        )
+      } catch (error) {
+        if (error instanceof Error && error.message.toLowerCase().includes('already registered')) {
+          try {
+            user = await this.users.findByEmail(userInfo.email)
+          } catch (lookupError) {
+            throw new AuthError(
+              'Không thể kiểm tra tài khoản Google trong cơ sở dữ liệu.',
+              503,
+              lookupError
+            )
+          }
+          if (!user) {
+            throw new AuthError('Không thể tạo tài khoản Google trong cơ sở dữ liệu.', 503, error)
+          }
+        } else {
+          if (hasMissingAuthSchema(error)) throw missingAuthSchemaError(error)
+          throw new AuthError('Không thể tạo tài khoản Google trong cơ sở dữ liệu.', 503, error)
+        }
+      }
+    }
+    if (user.status !== 'active') {
+      throw new AuthError('Tài khoản này đã bị khóa hoặc ngừng hoạt động.', 403)
+    }
+
+    try {
+      return await this.createSession(user)
+    } catch (error) {
+      throw new AuthError(
+        'Authentication session storage is unavailable. Verify PostgreSQL access and apply the auth database migration.',
+        503,
+        error
+      )
+    }
+  }
+
+  async getGoogleIdentity(input: GoogleAuthInput): Promise<{
+    email: string
+    fullName: string
+    avatarUrl: string | null
+  }> {
+    const userInfo = await verifyGoogleAuthInput(input, env.googleClientId)
+    if (!userInfo.emailVerified) {
+      throw new AuthError('Địa chỉ email Google chưa được xác minh.', 400)
+    }
+    return {
+      email: userInfo.email,
+      fullName: userInfo.name,
+      avatarUrl: userInfo.avatarUrl,
     }
   }
 
@@ -232,8 +620,8 @@ export class AuthService {
       throw invalidTokenError()
     }
 
-    const user = await this.users.findById(session.user_id)
-    if (!user || user.status !== 'active') {
+    const user = await this.findSessionUser(session.user_id)
+    if (!user || user.status !== 'active' || user.is_verified !== true) {
       await this.store.revokeSession(session.id)
       throw invalidTokenError()
     }
@@ -305,52 +693,127 @@ export class AuthService {
       throw invalidTokenError()
     }
 
-    const user = await this.users.findById(claims.sub)
-    if (!user || user.status !== 'active') throw invalidTokenError()
+    const user = await this.findSessionUser(claims.sub)
+    if (!user || user.status !== 'active' || user.is_verified !== true) {
+      await this.store.revokeSession(session.id)
+      throw invalidTokenError()
+    }
     return user
   }
 
   async forgotPassword(email: string): Promise<ForgotPasswordResult> {
-    this.assertSigningSecretConfigured()
     const normalizedEmail = email.trim().toLowerCase()
     if (!isValidEmail(normalizedEmail)) return { message: GENERIC_FORGOT_MESSAGE }
-    const user = await this.users.findByEmail(normalizedEmail)
+    if (!env.emailFrom || !env.resendApiKey) {
+      throw new AuthError('Password recovery email is unavailable. Please try again later.', 503)
+    }
+    let storedUser: UserProfile | null = null
+    let databaseLookupError: unknown
+    try {
+      storedUser = await this.users.findByEmail(normalizedEmail)
+    } catch (error) {
+      databaseLookupError = error
+    }
+
+    let user = storedUser
+    let recoveryWithAdminProvider = false
+    let adminLookupError: unknown
+    if (!storedUser || storedUser.role === 'ADMIN' || databaseLookupError) {
+      let adminProfile: UserProfile | null = null
+      try {
+        adminProfile = await this.adminAuth.findByEmail(normalizedEmail)
+      } catch (error) {
+        adminLookupError = error
+      }
+      if (adminProfile?.role === 'ADMIN') {
+        user = adminProfile
+        recoveryWithAdminProvider = true
+      }
+    }
+    if ((!user || user.role !== 'ADMIN') && databaseLookupError) {
+      throw new AuthError(
+        'Unable to look up this account. Verify PostgreSQL and Supabase connectivity.',
+        503,
+        new AggregateError(
+          [databaseLookupError, ...(adminLookupError ? [adminLookupError] : [])],
+          'Password recovery account lookup failed'
+        )
+      )
+    }
+    if (storedUser?.role === 'ADMIN' && adminLookupError) {
+      throw new AuthError('Admin authentication provider is unavailable.', 503, adminLookupError)
+    }
     if (!user || user.status !== 'active') return { message: GENERIC_FORGOT_MESSAGE }
 
-    const token = createResetToken()
-    const expiresAt = new Date(Date.now() + RESET_TOKEN_LIFETIME_MS).toISOString()
-    await this.store.issuePasswordResetToken(user.id, hashToken(token), expiresAt)
-
-    let resetUrl: string | undefined
+    const temporaryPassword = generateTemporaryPassword()
     try {
-      resetUrl = makeResetUrl(token)
-      if (!env.emailFrom) throw new Error('EMAIL_FROM is not configured')
-      await this.sendResetEmail({
+      await this.sendTemporaryPasswordEmail({
         from: env.emailFrom,
         to: user.email,
-        subject: 'Reset your English Learning Platform password',
-        html: `<p>A password reset was requested for your English Learning Platform account.</p><p><a href="${resetUrl}">Reset password</a></p><p>This link expires in 10 minutes. If you did not request it, you can ignore this email.</p>`,
+        ...renderTemporaryPasswordEmail(
+          temporaryPassword,
+          new URL('/login', env.frontendUrl).toString()
+        ),
       })
     } catch (error) {
-      console.error('[Auth] Password-reset email delivery failed', error instanceof Error ? error.name : 'UnknownError')
+      console.error(
+        '[Auth] Temporary password email delivery failed',
+        error instanceof Error ? error.name : 'UnknownError'
+      )
+      throw new AuthError(
+        'The temporary password could not be emailed. Please try the request again later.',
+        503,
+        error
+      )
     }
-    return {
-      message: GENERIC_FORGOT_MESSAGE,
-      ...(canExposeDevelopmentResetLink() && resetUrl ? { resetUrl } : {}),
+    if (recoveryWithAdminProvider) {
+      try {
+        await this.adminAuth.updatePassword(user.id, user.email, temporaryPassword)
+      } catch (error) {
+        throw new AuthError(
+          'The recovery email was sent, but Supabase could not update the Admin password and confirm its email. Check the Supabase service-role configuration.',
+          503,
+          error
+        )
+      }
+      try {
+        await this.adminAuth.verifyEmail(user.id)
+      } catch (error) {
+        throw new AuthError(
+          'The Admin password was updated and emailed, but the application profile could not be marked verified. Use the emailed password after the profile is fixed.',
+          503,
+          error
+        )
+      }
+    } else {
+      try {
+        await this.users.updatePasswordAndVerifyEmail(user.id, temporaryPassword)
+      } catch (error) {
+        throw new AuthError(
+          'The recovery email was sent, but the account password could not be updated. Please contact support.',
+          503,
+          error
+        )
+      }
     }
+    try {
+      await this.store.revokeUserSessions(user.id)
+    } catch (error) {
+      throw new AuthError(
+        'The recovery email was sent and the password was updated, but existing sessions could not be revoked. You can sign in with the emailed password; check PostgreSQL connectivity.',
+        503,
+        error
+      )
+    }
+    return { message: GENERIC_FORGOT_MESSAGE }
   }
 
-  async resetPassword(token: string, newPassword: string, confirmPassword: string): Promise<void> {
-    this.assertSigningSecretConfigured()
-    if (!token || token.length > 256) {
-      throw new AuthError('Invalid or expired reset token', 400)
-    }
-    if (newPassword !== confirmPassword) throw new AuthError('Passwords do not match', 400)
-    validatePassword(newPassword)
-    const userId = await this.store.consumePasswordResetToken(hashToken(token))
-    if (!userId) throw new AuthError('Invalid or expired reset token', 400)
-    await this.users.updatePassword(userId, newPassword)
-    await this.store.revokeUserSessions(userId)
+  private async findSessionUser(userId: string): Promise<UserProfile | null> {
+    const databaseUser = await this.users.findById(userId)
+    if (databaseUser && databaseUser.role !== 'ADMIN') return databaseUser
+    const adminUser = await this.adminAuth.findById(userId)
+    if (adminUser?.role === 'ADMIN') return adminUser
+    return databaseUser
   }
 
   private async createSession(user: UserProfile): Promise<TokenPair> {

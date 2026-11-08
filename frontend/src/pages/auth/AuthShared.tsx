@@ -3,12 +3,14 @@ import {
   AudioLines,
   Check,
   Flame,
+  GraduationCap,
   Layers3,
   Play,
   UserRound,
   Zap,
 } from 'lucide-react'
 import { useAuth } from './auth-context'
+import './auth-shared.css'
 
 export function BrandMark({ small = false }: { small?: boolean }) {
   return (
@@ -18,7 +20,29 @@ export function BrandMark({ small = false }: { small?: boolean }) {
   )
 }
 
-export function SiteHeader() {
+export interface SiteNavigationItem {
+  label: string
+  href: string
+}
+
+interface SiteHeaderProps {
+  brandName?: string
+  navigationItems?: SiteNavigationItem[]
+}
+
+const defaultNavigationItems: SiteNavigationItem[] = [
+  { label: 'Trang chủ', href: '/' },
+  { label: 'Về chúng tôi', href: '/#ve-chung-toi' },
+  { label: 'Các khóa học', href: '/courses' },
+  { label: 'Ebook', href: '/#ebook' },
+  { label: 'Workshop', href: '/#workshop' },
+  { label: 'Liên hệ', href: '/#lien-he' },
+]
+
+export function SiteHeader({
+  brandName = 'Your English Voice',
+  navigationItems = defaultNavigationItems,
+}: SiteHeaderProps) {
   const { user, logout, reportError } = useAuth()
   const [loggingOut, setLoggingOut] = useState(false)
 
@@ -42,17 +66,15 @@ export function SiteHeader() {
   return (
     <header className="site-header">
       <div className="header-inner">
-        <a className="brand" href="/" aria-label="EngMaster - Trang chủ">
+        <a className="brand" href="/" aria-label={`${brandName} - Trang chủ`}>
           <BrandMark />
-          <span>EngMaster</span>
+          <span>{brandName}</span>
         </a>
 
         <nav className="header-nav" aria-label="Điều hướng chính">
-          <a href="/">Trang chủ</a>
-          <a href="#ve-chung-toi">Về chúng tôi</a>
-          <a href="#khoa-hoc">Khóa học</a>
-          <a href="#ebook">Ebook</a>
-          <a href="#lien-he">Liên hệ</a>
+          {navigationItems.map((item) => (
+            <a href={item.href} key={item.label}>{item.label}</a>
+          ))}
         </nav>
 
         <button
@@ -67,6 +89,90 @@ export function SiteHeader() {
         </button>
       </div>
     </header>
+  )
+}
+
+export function GoogleAuthButton({
+  onClick,
+  disabled = false,
+  loading = false,
+}: {
+  onClick?: () => void
+  disabled?: boolean
+  loading?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      className="google-login-button"
+      onClick={onClick}
+      disabled={disabled || loading}
+    >
+      <img className="google-login-image" src="/google-g-logo.png" alt="" aria-hidden="true" />
+      {loading ? 'Đang kết nối Google…' : 'Tiếp tục với Gmail'}
+    </button>
+  )
+}
+
+export function LoginVisual() {
+  return (
+    <section className="login-visual" aria-label="Your English Voice">
+      <div className="visual-brand">
+        <span className="visual-brand-icon"><GraduationCap size={21} strokeWidth={2.2} /></span>
+        <span>
+          <strong>Your English Voice</strong>
+        </span>
+      </div>
+
+      <div className="visual-content">
+        <div className="visual-program-tag">
+          <Check size={12} strokeWidth={3} />
+          Lộ trình CEFR &amp; IELTS chuẩn hóa
+        </div>
+        <p className="visual-quote">
+          “Nâng tầm phản xạ giao tiếp &amp; tư duy học thuật toàn diện.”
+        </p>
+        <div className="visual-social-proof">
+          <div className="student-avatars" aria-hidden="true">
+            <span>VK</span><span>UI</span><span>US</span>
+          </div>
+          <span>Hơn <strong>12.500+</strong> học viên tích cực trên toàn quốc</span>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+export function SiteFooter({ brandName = 'Your English Voice' }: { brandName?: string }) {
+  return (
+    <footer className="auth-site-footer">
+      <div className="auth-footer-inner">
+        <div className="auth-footer-brand">
+          <a className="brand" href="/" aria-label={`${brandName} - Trang chủ`}>
+            <BrandMark small />
+            <span>{brandName}</span>
+          </a>
+          <p>Đưa tiếng nói của bạn vươn xa.</p>
+        </div>
+        <div>
+          <h2>Thông tin liên hệ</h2>
+          <a href="#lien-he">Liên hệ với chúng tôi</a>
+          <a href="#ho-tro">Hỗ trợ học viên</a>
+        </div>
+        <div>
+          <h2>Chương trình</h2>
+          <a href="#phat-am">Phát âm tiếng Anh</a>
+          <a href="#tu-vung">Từ vựng tiếng Anh</a>
+          <a href="#ngu-phap">Ngữ pháp tiếng Anh</a>
+        </div>
+        <div>
+          <h2>Hỗ trợ &amp; Pháp lý</h2>
+          <a href="#ve-chung-toi">Về chúng tôi</a>
+          <a href="#chinh-sach-bao-mat">Chính sách bảo mật</a>
+          <a href="#dieu-khoan">Điều khoản sử dụng</a>
+        </div>
+      </div>
+    </footer>
   )
 }
 

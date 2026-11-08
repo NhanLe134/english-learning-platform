@@ -60,7 +60,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 key={item.id}
                 type="button"
                 className={`sidebar-nav-item ${isActive ? 'active' : ''}`}
-                onClick={() => onTabChange && onTabChange(item.id)}
+                aria-current={isActive ? 'page' : undefined}
+                onClick={() => onTabChange?.(item.id)}
               >
                 <div className="nav-item-left">
                   <Icon size={18} className="nav-item-icon" />

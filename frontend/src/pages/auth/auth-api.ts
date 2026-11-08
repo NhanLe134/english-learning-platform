@@ -4,9 +4,15 @@ const API_BASE_URL = (
   'http://localhost:5000/api'
 ).replace(/\/+$/, '')
 
+export function startGoogleOAuth(): void {
+  window.location.assign(`${API_BASE_URL}/auth/google`)
+}
+
 export interface AuthUser {
   id: string
   email: string
+  fullName: string
+  phoneNumber: string | null
   role: 'STUDENT' | 'TEACHER' | 'ADMIN'
 }
 
@@ -15,9 +21,19 @@ export interface AuthSession {
   user: AuthUser
 }
 
+export interface GoogleIdentity {
+  email: string
+  fullName: string
+  avatarUrl: string | null
+}
+
 export interface ForgotPasswordResponse {
   message: string
-  resetUrl?: string
+}
+
+export interface RegistrationResult {
+  verificationRequired: true
+  email: string
 }
 
 export class AuthApiError extends Error {
@@ -32,7 +48,7 @@ export class AuthApiError extends Error {
 
 async function request<T>(
   path: string,
-  body?: Record<string, string>,
+  body?: Record<string, unknown>,
   accessToken?: string
 ): Promise<T> {
   const headers = new Headers({ Accept: 'application/json' })
@@ -95,6 +111,8 @@ function tokenSession(result: unknown): AuthSession {
   if (
     !('id' in user) || typeof user.id !== 'string' ||
     !('email' in user) || typeof user.email !== 'string' ||
+    ('full_name' in user && typeof user.full_name !== 'string') ||
+    ('phone_number' in user && user.phone_number !== null && typeof user.phone_number !== 'string') ||
     !('role' in user) ||
     (user.role !== 'STUDENT' && user.role !== 'TEACHER' && user.role !== 'ADMIN')
   ) {
@@ -103,19 +121,124 @@ function tokenSession(result: unknown): AuthSession {
 
   return {
     accessToken: data.accessToken,
-    user: { id: user.id, email: user.email, role: user.role },
+    user: {
+      id: user.id,
+      email: user.email,
+      fullName: 'full_name' in user && typeof user.full_name === 'string' ? user.full_name : '',
+      phoneNumber: 'phone_number' in user && typeof user.phone_number === 'string'
+        ? user.phone_number
+        : null,
+      role: user.role,
+    },
   }
 }
 
 export const authApi = {
-  async login(email: string, password: string): Promise<AuthSession> {
-    return tokenSession(await request<unknown>('/login', { email, password }))
+  async login(email: string, password: string, rememberMe: boolean): Promise<AuthSession> {
+    return tokenSession(await request<unknown>('/login', { email, password, rememberMe }))
   },
 
-  async register(email: string, password: string, confirmPassword: string): Promise<AuthSession> {
-    return tokenSession(
-      await request<unknown>('/register', { email, password, confirmPassword })
-    )
+  async loginWithGoogle(payload: {
+    credential?: string
+    idToken?: string
+    accessToken?: string
+    supabaseToken?: string
+    developmentDemoUser?: { email: string; name: string }
+  }): Promise<AuthSession> {
+    return tokenSession(await request<unknown>('/google', payload))
+  },
+
+  async googleIdentity(payload: {
+    credential?: string
+    idToken?: string
+    accessToken?: string
+    supabaseToken?: string
+    developmentDemoUser?: { email: string; name: string }
+  }): Promise<GoogleIdentity> {
+    const result = await request<unknown>('/google/identity', payload)
+    if (
+      !result || typeof result !== 'object' ||
+      !('data' in result) || !result.data || typeof result.data !== 'object' ||
+      !('email' in result.data) || typeof result.data.email !== 'string' ||
+      !('fullName' in result.data) || typeof result.data.fullName !== 'string' ||
+      !('avatarUrl' in result.data) ||
+      (result.data.avatarUrl !== null && typeof result.data.avatarUrl !== 'string')
+    ) {
+      throw new AuthApiError('Thông tin tài khoản Google trả về không hợp lệ.', 502)
+    }
+
+    return {
+      email: result.data.email,
+      fullName: result.data.fullName,
+      avatarUrl: result.data.avatarUrl,
+    }
+  },
+
+  async register(
+    fullName: string,
+    dateOfBirth: string,
+    email: string,
+    phoneNumber: string,
+    password: string,
+    confirmPassword: string,
+    selectedCourseIds?: string[]
+  ): Promise<RegistrationResult> {
+    const result = await request<unknown>('/register', {
+      fullName,
+      dateOfBirth,
+      email,
+      phoneNumber,
+      password,
+      confirmPassword,
+      ...(selectedCourseIds && selectedCourseIds.length > 0 ? { selectedCourseIds } : {}),
+    })
+    if (
+      !result || typeof result !== 'object' ||
+      !('data' in result) || !result.data || typeof result.data !== 'object' ||
+      !('verificationRequired' in result.data) || result.data.verificationRequired !== true ||
+      !('email' in result.data) || typeof result.data.email !== 'string'
+    ) {
+      throw new AuthApiError('Phản hồi đăng ký không đúng định dạng.', 502)
+    }
+    return { verificationRequired: true, email: result.data.email }
+  },
+
+  async requestRegistrationOtp(email: string): Promise<{
+    developmentOtp?: string
+    developmentEmailFallback?: boolean
+  }> {
+    const result = await request<unknown>('/register/verification/resend', { email })
+    if (
+      !result || typeof result !== 'object' ||
+      !('message' in result) || typeof result.message !== 'string'
+    ) {
+      throw new AuthApiError('Phản hồi xác minh email không đúng định dạng.', 502)
+    }
+    const developmentOtp = 'developmentOtp' in result ? result.developmentOtp : undefined
+    let developmentEmailFallback = false
+    if ('developmentEmailFallback' in result) {
+      if (typeof result.developmentEmailFallback !== 'boolean') {
+        throw new AuthApiError('Phản hồi gửi email xác minh không hợp lệ.', 502)
+      }
+      developmentEmailFallback = result.developmentEmailFallback
+    }
+    if (
+      developmentOtp !== undefined &&
+      (typeof developmentOtp !== 'string' || !/^\d{6}$/.test(developmentOtp))
+    ) {
+      throw new AuthApiError('Mã xác minh thử nghiệm không hợp lệ.', 502)
+    }
+    if (developmentEmailFallback && typeof developmentOtp !== 'string') {
+      throw new AuthApiError('Phản hồi gửi email xác minh không hợp lệ.', 502)
+    }
+    return {
+      ...(typeof developmentOtp === 'string' ? { developmentOtp } : {}),
+      ...(developmentEmailFallback ? { developmentEmailFallback: true } : {}),
+    }
+  },
+
+  async verifyRegistrationOtp(email: string, otp: string): Promise<AuthSession> {
+    return tokenSession(await request<unknown>('/register/verification/verify', { email, otp }))
   },
 
   async refresh(): Promise<AuthSession> {
@@ -134,20 +257,7 @@ export const authApi = {
     ) {
       throw new AuthApiError('Phản hồi khôi phục mật khẩu không đúng định dạng.', 502)
     }
-    return {
-      message: result.message,
-      ...('resetUrl' in result && typeof result.resetUrl === 'string'
-        ? { resetUrl: result.resetUrl }
-        : {}),
-    }
-  },
-
-  async resetPassword(
-    token: string,
-    newPassword: string,
-    confirmPassword: string
-  ): Promise<void> {
-    await request<void>('/reset-password', { token, newPassword, confirmPassword })
+    return { message: result.message }
   },
 }
 

@@ -12,11 +12,13 @@ export function createSupabaseClient() {
 }
 
 export function createSupabasePublicClient() {
-  if (!env.supabaseUrl || !env.supabaseAnonKey) {
-    throw new Error('SUPABASE_URL and SUPABASE_ANON_KEY are required')
+  if (!env.supabaseUrl || !env.supabasePublicKey) {
+    throw new Error(
+      'SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY (or SUPABASE_ANON_KEY) are required'
+    )
   }
 
-  return createClient(env.supabaseUrl, env.supabaseAnonKey, {
+  return createClient(env.supabaseUrl, env.supabasePublicKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
 }
