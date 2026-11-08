@@ -1,4 +1,4 @@
-import { Check, PlayCircle, Users } from 'lucide-react'
+import { Check, PlayCircle } from 'lucide-react'
 
 const HERO_CHECKLIST = [
   'Cam kết hiểu sâu và vận dụng được ngay',
@@ -25,13 +25,13 @@ export function HeroSection() {
           <div className="mt-7 flex flex-wrap gap-3">
             <a
               href="/courses"
-              className="rounded-xl bg-brand-600 px-6 py-3 text-sm font-bold text-white transition-colors hover:bg-brand-700"
+              className="rounded-xl bg-brand-600 px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-brand-700"
             >
               Nhận chương trình học ngay
             </a>
             <a
               href="#workshop"
-              className="rounded-xl bg-brand-50 px-6 py-3 text-sm font-bold text-brand-600 transition-colors hover:bg-brand-100"
+              className="rounded-xl bg-brand-50 px-6 py-3 text-sm font-medium text-brand-600 transition-colors hover:bg-brand-100"
             >
               Tham gia đào tạo trực tuyến
             </a>
@@ -52,13 +52,14 @@ export function HeroSection() {
           </div>
         </div>
 
-        {/* Ảnh lớp học — thay bằng ảnh thật trong src/assets khi có */}
+        {/* Ảnh lớp học */}
         <div className="relative">
-          <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-[#dbe4f0] via-[#e8eef7] to-[#f3e2e6] shadow-lg">
-            <div className="flex flex-col items-center gap-3 text-ink-500">
-              <Users className="size-16" strokeWidth={1.5} />
-              <span className="text-sm font-medium">Ảnh lớp học</span>
-            </div>
+          <div className="overflow-hidden rounded-2xl shadow-lg">
+            <img
+              src="/hero-classroom.png"
+              alt="Lớp học tiếng Anh tại Your English Voice"
+              className="aspect-[4/3] w-full object-cover"
+            />
           </div>
           <span className="absolute bottom-4 left-4 flex items-center gap-1.5 rounded-full bg-white/90 px-3.5 py-1.5 text-xs font-semibold text-ink-700 shadow-sm backdrop-blur">
             <PlayCircle className="size-4 text-brand-600" />

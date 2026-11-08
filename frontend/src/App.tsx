@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { QuanLyNguoiDungPage } from './pages/quan_ly_nguoi_dung'
 import { HomePage } from './pages/home/HomePage'
 import { AboutPage } from './pages/about/AboutPage'
+import { EbooksPage } from './pages/ebooks/EbooksPage'
 import { LoginPage } from './pages/auth/LoginPage'
 import { RegisterPage } from './pages/auth/RegisterPage'
 import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage'
@@ -84,6 +85,10 @@ function AppRoutes() {
     case '/khoa-hoc':
       page = <CourseListPage />
       break
+    case '/ebooks':
+    case '/sach-dien-tu':
+      page = <EbooksPage />
+      break
     case '/register':
       page = <RegisterPage />
       break
@@ -103,19 +108,13 @@ function AppRoutes() {
       page = <CheckoutSuccessPage />
       break
     case '/about':
-    case '/ve-chung-toi':
       page = <AboutPage />
       break
     case '/home':
       page = <HomePage />
       break
     case '/':
-      page =
-        window.location.hash.toLowerCase() === '#ve-chung-toi' ? (
-          <AboutPage />
-        ) : (
-          <HomePage />
-        )
+      page = <HomePage />
       break
     case '/login':
       page = <LoginPage />

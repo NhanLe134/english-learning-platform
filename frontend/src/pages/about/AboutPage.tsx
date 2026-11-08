@@ -58,6 +58,8 @@ interface Teacher {
   title: string
   initials: string
   gradient: string
+  /** Ảnh chân dung (đặt trong frontend/public) — không có thì hiển thị gradient + initials */
+  photo?: string
   credentials: string[]
   bio: string
   achievements: { icon: typeof Award; label: string }[]
@@ -70,6 +72,7 @@ const TEACHERS: Teacher[] = [
     title: 'Cựu Giám khảo IELTS British Council',
     initials: 'MD',
     gradient: 'linear-gradient(135deg, #1e3a5f 0%, #2563eb 55%, #60a5fa 100%)',
+    photo: '/david.png',
     credentials: ['12 năm làm giám khảo IELTS', 'Thạc sĩ TESOL — University of Leeds'],
     bio: 'Người thiết kế bộ công thức độc quyền xử lý 4 kỹ năng Nghe – Nói – Đọc – Viết của trung tâm. Mark trực tiếp chấm và sửa chi tiết từng bài Writing của học viên, giúp hàng nghìn người Việt chinh phục band 7.0+.',
     achievements: [
@@ -84,6 +87,7 @@ const TEACHERS: Teacher[] = [
     title: 'Chuyên gia Giao tiếp Doanh nghiệp',
     initials: 'SM',
     gradient: 'linear-gradient(135deg, #7c2d12 0%, #ea580c 55%, #fdba74 100%)',
+    photo: '/giaovien3.png',
     credentials: ['8.5 IELTS (Speaking 9.0)', '10 năm giảng dạy tại doanh nghiệp'],
     bio: 'Cô đào tạo đàm phán, viết email công sở và thuyết trình cho hơn 60 doanh nghiệp FDI. Phương pháp "Phản xạ 3 Giây" của cô giúp học viên xóa bỏ phản xạ dịch thầm tiếng Việt khi nói tiếng Anh.',
     achievements: [
@@ -98,6 +102,7 @@ const TEACHERS: Teacher[] = [
     title: 'Chuyên gia TOEIC — 990/990',
     initials: 'HN',
     gradient: 'linear-gradient(135deg, #064e3b 0%, #059669 55%, #6ee7b7 100%)',
+    photo: '/giaovien.jpg',
     credentials: ['990/990 TOEIC Listening & Reading', 'Đào tạo 5.000+ sinh viên'],
     bio: 'Thầy nắm trọn bản đồ bẫy đề TOEIC Listening Part 3 & 4 và tối ưu tốc độ làm bài Reading Part 7 bằng phương pháp Skimming & Scanning. Lộ trình "Cấp tốc 2 tháng" của thầy giúp học viên tăng trung bình 250 điểm.',
     achievements: [
@@ -112,6 +117,7 @@ const TEACHERS: Teacher[] = [
     title: 'Chuyên gia Ngữ âm học — American Accent',
     initials: 'NA',
     gradient: 'linear-gradient(135deg, #3b0764 0%, #7c3aed 55%, #c4b5fd 100%)',
+    photo: '/giaovien2.jpg',
     credentials: ['Thủ khoa Sư Phạm Tiếng Anh', '8.0 IELTS — California Univ trao đổi'],
     bio: 'Cô giúp học viên làm chủ trọng âm câu, kỹ thuật lướt âm, nuốt âm và nối âm tự nhiên như người bản xứ. Chương trình 44 âm IPA & Nối Âm do cô biên soạn là nền tảng phát âm chuẩn của toàn bộ lộ trình trung tâm.',
     achievements: [
@@ -195,11 +201,19 @@ function TeacherShowcase() {
             {/* Ảnh */}
             <div
               className="relative flex min-h-64 items-center justify-center md:w-2/5"
-              style={{ background: teacher.gradient }}
+              style={{ background: teacher.photo ? undefined : teacher.gradient }}
             >
-              <span className="flex size-32 items-center justify-center rounded-full bg-white/15 text-5xl font-black text-white backdrop-blur-sm">
-                {teacher.initials}
-              </span>
+              {teacher.photo ? (
+                <img
+                  src={teacher.photo}
+                  alt={teacher.name}
+                  className="absolute inset-0 size-full object-cover"
+                />
+              ) : (
+                <span className="flex size-32 items-center justify-center rounded-full bg-white/15 text-5xl font-black text-white backdrop-blur-sm">
+                  {teacher.initials}
+                </span>
+              )}
               <span className="absolute bottom-4 left-4 flex items-center gap-1.5 rounded-full bg-black/45 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-sm">
                 <Quote className="size-3.5" />
                 {teacher.title}
@@ -262,10 +276,7 @@ export function AboutPage() {
         {/* Hero */}
         <section className="bg-gradient-to-b from-brand-50 via-[#fdf5f6] to-white">
           <div className="mx-auto max-w-7xl px-4 pb-12 pt-14 text-center sm:px-6 lg:px-8 lg:pb-16 lg:pt-20">
-            <span className="rounded-full bg-brand-50 px-3 py-1 text-xs font-bold text-brand-600">
-              Về chúng tôi
-            </span>
-            <h1 className="mx-auto mt-5 max-w-3xl text-3xl font-black leading-tight tracking-tight text-ink-900 sm:text-4xl lg:text-5xl">
+            <h1 className="mx-auto max-w-3xl text-3xl font-black leading-tight tracking-tight text-ink-900 sm:text-4xl lg:text-5xl">
               Đưa Tiếng Nói Của Người Việt{' '}
               <span className="text-brand-600">Ra Thế Giới</span>
             </h1>
