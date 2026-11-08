@@ -21,7 +21,7 @@ export function OAuthCallbackPage() {
           const appSession = await refreshSession()
           if (!active) return
           window.location.replace(
-            appSession.user.role === 'ADMIN' ? '/admin/users' : '/courses'
+            appSession.user.role === 'ADMIN' ? '/admin/users' : `/checkout${window.location.search}`
           )
           return
         }
@@ -63,7 +63,7 @@ export function OAuthCallbackPage() {
         if (appSession.user.role === 'ADMIN') {
           window.location.replace('/admin/users')
         } else {
-          window.location.replace('/courses')
+          window.location.replace(`/checkout${window.location.search}`)
         }
       } catch (err) {
         if (!active) return

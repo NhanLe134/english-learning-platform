@@ -36,7 +36,7 @@ function AppRoutes() {
       if (isAdminRoute) {
         window.location.replace('/login')
       } else if (isAuthPage) {
-        window.location.replace('/courses')
+        window.location.replace(`/checkout${window.location.search}`)
       }
     } else {
       // Chưa đăng nhập mà truy cập route admin
@@ -67,7 +67,7 @@ function AppRoutes() {
     if (user && isAuthPage) {
       return (
         <main className="auth-route-status" role="status">
-          Đang chuyển đến trang học tập…
+          Đang chuyển đến trang thanh toán…
         </main>
       )
     }

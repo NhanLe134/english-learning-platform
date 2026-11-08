@@ -367,7 +367,7 @@ export function RegisterPage() {
                 </button>
               </form>
               <p className="signup-prompt">
-                Đã có tài khoản học viên? <a href="/login">Đăng nhập ngay</a>
+                Đã có tài khoản học viên? <a href={`/login${window.location.search}`}>Đăng nhập ngay</a>
               </p>
             </section>
           ) : (
