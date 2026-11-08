@@ -1,27 +1,27 @@
-@import url("https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&display=swap");
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&display=swap');
 @import "tailwindcss";
 
 @theme {
   --font-sans: "Be Vietnam Pro", Inter, "Segoe UI", ui-sans-serif, system-ui, sans-serif;
 
-  /* Brand red — màu chủ đạo của Your English Voice */
-  --color-brand-50: #fef1f2;
-  --color-brand-100: #fde0e3;
-  --color-brand-200: #fbb5bc;
-  --color-brand-500: #e02838;
-  --color-brand-600: #c8102e;
-  --color-brand-700: #a30d26;
-  --color-brand-800: #850d21;
-  --color-brand-900: #6b0a1b;
+  --color-brand-50: #FEF1F2;
+  --color-brand-100: #FDE0E3;
+  --color-brand-200: #FBB5BC;
+  --color-brand-500: #E02838;
+  --color-brand-600: #C8102E;
+  --color-brand-700: #A30D26;
+  --color-brand-800: #850D21;
+  --color-brand-900: #6B0A1B;
 
-  --color-ink-900: #17181c;
-  --color-ink-700: #3d4046;
-  --color-ink-500: #6b7076;
+  --color-ink-900: #17181C;
+  --color-ink-700: #3D4046;
+  --color-ink-500: #6B7076;
+  --color-ink-400: #9CA0A6;
 }
 
 :root {
   font-family: var(--font-sans);
-  color: #1a1c1d;
+  color: var(--color-ink-900);
   background: #ffffff;
   font-synthesis: none;
   text-rendering: optimizeLegibility;

@@ -18,27 +18,59 @@ import { useAuth } from './pages/auth/auth-context'
 function AppRoutes() {
   const { initializationError, isInitializing, user } = useAuth()
   const pathname = window.location.pathname
-  const isAdminRoute = ['/admin/users', '/admin/courses'].includes(pathname)
+  const isAdminRoute = pathname.startsWith('/admin')
+  const isAuthCallback = pathname === '/auth/callback'
+  const isAuthPage = ['/login', '/register', '/forgot-password'].includes(pathname)
 
   useEffect(() => {
-    if (isAdminRoute && !isInitializing && user?.role !== 'ADMIN') {
-      window.location.replace('/login')
-    } else if (
-      !isAdminRoute &&
-      window.location.pathname === '/login' &&
-      !isInitializing &&
-      user?.role === 'ADMIN'
-    ) {
-      window.location.replace('/admin/users')
-    }
-  }, [isAdminRoute, isInitializing, user])
+    if (isInitializing || isAuthCallback) return
 
-  if (isAdminRoute && (isInitializing || user?.role !== 'ADMIN')) {
-    return (
-      <main className="auth-route-status" role="status">
-        {isInitializing ? 'Đang xác minh phiên đăng nhập…' : 'Đang chuyển đến trang đăng nhập…'}
-      </main>
-    )
+    if (user?.role === 'ADMIN') {
+      // 1 trình duyệt 1 tài khoản: Đã đăng nhập Admin thì chỉ hiển thị trang Admin.
+      // Dù mở tab mới hay nhập bất kỳ link nào (/, /courses, /login, /register...), đều tự chuyển về trang quản trị
+      if (!isAdminRoute) {
+        window.location.replace('/admin/users')
+      }
+    } else if (user) {
+      // Học viên đã đăng nhập: không vào được admin và không mở lại trang login/register
+      if (isAdminRoute) {
+        window.location.replace('/login')
+      } else if (isAuthPage) {
+        window.location.replace('/courses')
+      }
+    } else {
+      // Chưa đăng nhập mà truy cập route admin
+      if (isAdminRoute) {
+        window.location.replace('/login')
+      }
+    }
+  }, [isAdminRoute, isAuthCallback, isAuthPage, isInitializing, user])
+
+  // Trạng thái đang xác minh quyền hoặc đang điều hướng
+  if (!isAuthCallback) {
+    if (user?.role === 'ADMIN' && !isAdminRoute) {
+      return (
+        <main className="auth-route-status" role="status">
+          Đang chuyển đến trang quản trị…
+        </main>
+      )
+    }
+
+    if (isAdminRoute && (isInitializing || user?.role !== 'ADMIN')) {
+      return (
+        <main className="auth-route-status" role="status">
+          {isInitializing ? 'Đang xác minh phiên đăng nhập…' : 'Đang chuyển đến trang đăng nhập…'}
+        </main>
+      )
+    }
+
+    if (user && isAuthPage) {
+      return (
+        <main className="auth-route-status" role="status">
+          Đang chuyển đến trang học tập…
+        </main>
+      )
+    }
   }
 
   let page
@@ -50,10 +82,6 @@ function AppRoutes() {
       page = <CourseManagementPage />
       break
     case '/courses':
-    case '/about':
-    case '/ve-chung-toi':
-      page = <AboutPage />
-      break
     case '/khoa-hoc':
       page = <CourseListPage />
       break
@@ -78,6 +106,17 @@ function AppRoutes() {
     case '/payment-success':
     case '/thanh-toan/thanh-cong':
       page = <CheckoutSuccessPage />
+      break
+    case '/about':
+    case '/ve-chung-toi':
+      page = <AboutPage />
+      break
+    case '/home':
+      page = <HomePage />
+      break
+    case '/about':
+    case '/ve-chung-toi':
+      page = <AboutPage />
       break
     case '/':
       page =

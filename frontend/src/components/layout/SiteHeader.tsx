@@ -3,8 +3,8 @@ import { Layers, Menu, User, X } from 'lucide-react'
 
 const NAV_LINKS = [
   { label: 'Trang chủ', href: '/' },
-  { label: 'Về chúng tôi', href: '/courses' },
-  { label: 'Các khóa học', href: '/khoa-hoc' },
+  { label: 'Về chúng tôi', href: '/about' },
+  { label: 'Các khóa học', href: '/courses' },
   { label: 'Ebook', href: '/ebooks' },
   { label: 'Workshop', href: '/workshops' },
   { label: 'Liên hệ', href: '/contact' },

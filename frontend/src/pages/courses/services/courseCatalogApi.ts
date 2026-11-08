@@ -1,4 +1,4 @@
-import type { CourseReference } from '../course-data'
+import { DEFAULT_COURSES, type CourseReference } from '../course-data'
 
 const API_BASE_URL = (
   import.meta.env.VITE_API_URL ||
@@ -42,6 +42,21 @@ function mapCourse(course: CourseCatalogRecord): CourseReference {
     lessons: topic.lessons.map((lesson) => lesson.title),
   }))
 
+  const defaultMeta = DEFAULT_COURSES.find(
+    (item) => item.slug === course.slug || item.id === course.id
+  )
+
+  const isPopular = defaultMeta?.isPopular ?? course.slug.includes('tu-vung')
+  const iconType = defaultMeta?.iconType ?? (
+    course.slug.includes('tu-vung') ? 'users' :
+    course.slug.includes('ngu-phap') ? 'briefcase' : 'award'
+  )
+  const highlights = defaultMeta?.highlights ?? [
+    `Thời lượng: ${course.total_lessons || 20} video`,
+    course.slug.includes('phat-am') ? 'Có bài tập thực hành sau mỗi video' : 'Bài tập thực hành sau mỗi video',
+    '1 buổi tư vấn 30 phút sau khi hoàn thành khoá học',
+  ]
+
   return {
     id: course.id,
     slug: course.slug,
@@ -60,7 +75,10 @@ function mapCourse(course: CourseCatalogRecord): CourseReference {
     level: course.level,
     targetAudience: course.target_audience,
     totalLessons: course.total_lessons,
-    modules,
+    modules: modules.length > 0 ? modules : (defaultMeta?.modules ?? []),
+    highlights,
+    isPopular,
+    iconType,
   }
 }
 
@@ -87,16 +105,35 @@ async function requestCourseData<T>(path: string): Promise<T> {
 
 export const courseCatalogApi = {
   async list(): Promise<CourseReference[]> {
-    const data = await requestCourseData<CourseCatalogRecord[]>('catalog')
-    if (!Array.isArray(data)) throw new Error('Danh sách khóa học không đúng định dạng.')
-    return data.map(mapCourse)
+    try {
+      const data = await requestCourseData<CourseCatalogRecord[]>('catalog')
+      if (Array.isArray(data) && data.length > 0) {
+        const orderMap: Record<string, number> = {
+          'phat-am-tieng-anh': 1,
+          'tu-vung-tieng-anh': 2,
+          'ngu-phap-tieng-anh': 3,
+        }
+        return data.map(mapCourse).sort((a, b) => (orderMap[a.slug] || 99) - (orderMap[b.slug] || 99))
+      }
+      return DEFAULT_COURSES
+    } catch {
+      return DEFAULT_COURSES
+    }
   },
 
   async get(identifier: string): Promise<CourseReference> {
-    const data = await requestCourseData<CourseCatalogRecord>(encodeURIComponent(identifier))
-    if (!data || typeof data !== 'object' || !data.id || !data.title) {
-      throw new Error('Thông tin khóa học không đúng định dạng.')
+    try {
+      const data = await requestCourseData<CourseCatalogRecord>(encodeURIComponent(identifier))
+      if (data && typeof data === 'object' && data.id && data.title) {
+        return mapCourse(data)
+      }
+    } catch {
+      // Fallback to default courses if backend fails or doesn't have it
     }
-    return mapCourse(data)
+    const fallback = DEFAULT_COURSES.find(
+      (item) => item.slug === identifier || item.id === identifier
+    )
+    if (fallback) return fallback
+    throw new Error('Thông tin khóa học không đúng định dạng.')
   },
 }

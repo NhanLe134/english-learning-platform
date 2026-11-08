@@ -12,7 +12,7 @@ const FOOTER_COLUMNS = [
   {
     title: 'Hỗ trợ & Pháp lý',
     links: [
-      { label: 'Về chúng tôi', href: '/courses' },
+      { label: 'Về chúng tôi', href: '/about' },
       { label: 'Chính sách bảo mật', href: '#' },
       { label: 'Điều khoản sử dụng', href: '#' },
     ],

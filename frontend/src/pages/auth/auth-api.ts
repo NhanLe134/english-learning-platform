@@ -64,10 +64,14 @@ async function request<T>(
       ...(body ? { body: JSON.stringify(body) } : {}),
     })
   } catch (error) {
+    const isNetworkFetchError =
+      error instanceof TypeError && error.message.toLowerCase().includes('failed to fetch')
     throw new AuthApiError(
-      error instanceof Error
-        ? `Không thể kết nối máy chủ xác thực: ${error.message}`
-        : 'Không thể kết nối máy chủ xác thực.',
+      isNetworkFetchError
+        ? 'Không thể kết nối máy chủ xác thực (port 5000). Vui lòng đảm bảo backend đang chạy (cd backend; npm run dev).'
+        : error instanceof Error
+          ? `Không thể kết nối máy chủ xác thực: ${error.message}`
+          : 'Không thể kết nối máy chủ xác thực.',
       0
     )
   }
