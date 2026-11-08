@@ -1,68 +1,20 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
-  ArrowDownWideNarrow,
   ArrowRight,
   Award,
   Briefcase,
   CheckCircle2,
-  ChevronDown,
-  CircleDollarSign,
   Clock3,
   GraduationCap,
-  Laptop,
   LoaderCircle,
   MessageSquareText,
-  RotateCcw,
   Search,
-  SlidersHorizontal,
-  Target,
   Users,
-  X,
 } from 'lucide-react'
 import { SiteFooter, SiteHeader } from '../auth/AuthShared'
 import { courseCatalogApi } from './services/courseCatalogApi'
 import { DEFAULT_COURSES, type CourseReference } from './course-data'
 import './course-list-page.css'
-
-function formatLevel(level: string): string {
-  const labels: Record<string, string> = {
-    beginner: 'Cơ bản',
-    intermediate: 'Trung cấp',
-    advanced: 'Nâng cao',
-  }
-  return labels[level.toLocaleLowerCase('vi')] ?? level
-}
-
-type QuickFilter = 'ielts' | 'certificate' | 'native' | 'discount'
-type CourseSort = 'popular' | 'newest' | 'price-asc' | 'price-desc' | 'title'
-
-const quickFilters: { id: QuickFilter; label: string }[] = [
-  { id: 'ielts', label: 'IELTS Intensive' },
-  { id: 'certificate', label: 'Khóa học có chứng chỉ' },
-  { id: 'native', label: 'Giáo viên bản xứ' },
-  { id: 'discount', label: 'Đang giảm giá' },
-]
-
-function courseMatchesQuickFilter(course: CourseReference, filter: QuickFilter): boolean {
-  const text = `${course.title} ${course.category} ${course.description} ${course.details}`.toLocaleLowerCase('vi')
-  switch (filter) {
-    case 'ielts':
-      return /ielts/i.test(text)
-    case 'certificate':
-      return /chứng chỉ|certificate|chứng nhận/i.test(text)
-    case 'native':
-      return /bản xứ|bản ngữ|native/i.test(`${text} ${course.instructor}`.toLocaleLowerCase('vi'))
-    case 'discount':
-      return course.originalPrice > course.price
-  }
-}
-
-function courseMatchesFormat(course: CourseReference, format: string): boolean {
-  if (format === 'all') return true
-  const text = `${course.title} ${course.description} ${course.details}`.toLocaleLowerCase('vi')
-  if (format === 'online') return /trực tuyến|online|học từ xa/i.test(text)
-  return /1\s*[-–]?\s*1|kèm riêng|one[- ]to[- ]one|cá nhân hóa/i.test(text)
-}
 
 function getCourseTheme(course: CourseReference): string {
   const subject = `${course.category} ${course.title}`.toLocaleLowerCase('vi')
@@ -96,7 +48,6 @@ function CourseCard({ course }: { course: CourseReference }) {
 
   return (
     <article className={`public-course-card${course.isPopular ? ' is-popular' : ''}`}>
-
       <a className="public-course-card-link" href={`/courses/${encodeURIComponent(course.slug)}`}>
         {course.thumbnailUrl ? (
           <div className={`public-course-card-image ${getCourseTheme(course)}`}>
@@ -134,13 +85,7 @@ export function CourseListPage() {
   const [courses, setCourses] = useState<CourseReference[]>(DEFAULT_COURSES)
   const [query, setQuery] = useState('')
   const [submittedQuery, setSubmittedQuery] = useState('')
-  const [level, setLevel] = useState('all')
-  const [goal, setGoal] = useState('all')
-  const [format, setFormat] = useState('all')
-  const [priceRange, setPriceRange] = useState('all')
-  const [activeQuickFilters, setActiveQuickFilters] = useState<QuickFilter[]>([])
   const [guaranteedOnly, setGuaranteedOnly] = useState(false)
-  const [sort, setSort] = useState<CourseSort>('popular')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -177,77 +122,20 @@ export function CourseListPage() {
     return () => { active = false }
   }, [])
 
-  const goals = useMemo(
-    () => [...new Set(courses.map((course) => course.targetAudience.trim()).filter(Boolean))].sort(),
-    [courses],
-  )
-  const levels = useMemo(
-    () => [...new Set(courses.map((course) => course.level.trim()).filter(Boolean))].sort(),
-    [courses],
-  )
-
   const visibleCourses = useMemo(() => {
     const normalizedQuery = submittedQuery.trim().toLocaleLowerCase('vi')
-    const filtered = courses.filter((course) => {
+    return courses.filter((course) => {
       const text = `${course.title} ${course.category} ${course.instructor} ${course.description} ${course.details} ${course.targetAudience}`.toLocaleLowerCase('vi')
       if (normalizedQuery && !text.includes(normalizedQuery)) return false
-      if (level !== 'all' && course.level !== level) return false
-      if (goal !== 'all' && course.targetAudience !== goal) return false
-      if (!courseMatchesFormat(course, format)) return false
-      if (priceRange === 'under-1m' && course.price >= 1_000_000) return false
-      if (priceRange === '1m-3m' && (course.price < 1_000_000 || course.price > 3_000_000)) return false
-      if (priceRange === 'over-3m' && course.price <= 3_000_000) return false
       if (guaranteedOnly && !/cam kết|guarantee/i.test(`${course.description} ${course.targetAudience}`)) return false
-      return activeQuickFilters.every((filter) => courseMatchesQuickFilter(course, filter))
+      return true
     })
-
-    switch (sort) {
-      case 'newest':
-        return filtered
-      case 'popular': {
-        const orderMap: Record<string, number> = {
-          'phat-am-tieng-anh': 1,
-          'tu-vung-tieng-anh': 2,
-          'ngu-phap-tieng-anh': 3,
-        }
-        return [...filtered].sort((first, second) => (orderMap[first.slug] || 99) - (orderMap[second.slug] || 99))
-      }
-      case 'price-asc':
-        return [...filtered].sort((first, second) => first.price - second.price)
-      case 'price-desc':
-        return [...filtered].sort((first, second) => second.price - first.price)
-      case 'title':
-        return [...filtered].sort((first, second) => first.title.localeCompare(second.title, 'vi'))
-    }
-  }, [activeQuickFilters, courses, format, goal, guaranteedOnly, level, priceRange, sort, submittedQuery])
+  }, [courses, guaranteedOnly, submittedQuery])
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSubmittedQuery(query)
   }
-
-  function toggleQuickFilter(filter: QuickFilter) {
-    setActiveQuickFilters((active) => active.includes(filter)
-      ? active.filter((item) => item !== filter)
-      : [...active, filter])
-  }
-
-  function resetFilters() {
-    setQuery('')
-    setSubmittedQuery('')
-    setLevel('all')
-    setGoal('all')
-    setFormat('all')
-    setPriceRange('all')
-    setActiveQuickFilters([])
-    setGuaranteedOnly(false)
-    setSort('popular')
-  }
-
-  const hasFilters = Boolean(
-    query || submittedQuery || level !== 'all' || goal !== 'all' || format !== 'all' ||
-    priceRange !== 'all' || activeQuickFilters.length || guaranteedOnly || sort !== 'popular'
-  )
 
   return (
     <div className="public-course-page">
@@ -279,7 +167,6 @@ export function CourseListPage() {
             <button className="public-course-search-button" type="submit">Tìm Kiếm <ArrowRight size={17} /></button>
           </form>
         </header>
-
 
         {error && (
           <div className="public-course-error" role="alert">
