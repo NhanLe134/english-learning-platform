@@ -70,8 +70,24 @@ function AppRoutes() {
     case '/thanh-toan/thanh-cong':
       page = <CheckoutSuccessPage />
       break
+    case '/about':
+    case '/ve-chung-toi':
+      page = <AboutPage />
+      break
+    case '/home':
+      page = <HomePage />
+      break
+    case '/about':
+    case '/ve-chung-toi':
+      page = <AboutPage />
+      break
     case '/':
-      page = <CourseListPage />
+      page =
+        window.location.hash.toLowerCase() === '#ve-chung-toi' ? (
+          <AboutPage />
+        ) : (
+          <HomePage />
+        )
       break
     case '/login':
       page = <LoginPage />

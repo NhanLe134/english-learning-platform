@@ -244,57 +244,6 @@ export function CourseManagementPage() {
             </section>
           </div>
 
-          <section className="course-filter-card" aria-label="Bộ lọc khóa học">
-            <label className="course-filter-field">
-              <span>Cấp độ học viên</span>
-              <select
-                value={filters.level}
-                onChange={(event) => updateFilters({ level: event.target.value as CourseFilters['level'], page: 1 })}
-              >
-                <option value="all">Tất cả cấp độ</option>
-                <option value="beginner">Cơ bản</option>
-                <option value="intermediate">Trung cấp</option>
-                <option value="advanced">Nâng cao</option>
-              </select>
-            </label>
-            <label className="course-filter-field">
-              <span>Danh mục</span>
-              <input
-                list="course-category-options"
-                value={filters.category}
-                onChange={(event) => updateFilters({ category: event.target.value, page: 1 })}
-                placeholder="Tất cả danh mục"
-              />
-              <datalist id="course-category-options">
-                {availableCategories.map((category) => <option key={category} value={category} />)}
-              </datalist>
-            </label>
-            <label className="course-filter-field">
-              <span>Trạng thái</span>
-              <select
-                value={filters.status}
-                onChange={(event) => updateFilters({ status: event.target.value as CourseFilters['status'], page: 1 })}
-              >
-                <option value="all">Tất cả trạng thái</option>
-                <option value="published">Đang hoạt động</option>
-                <option value="draft">Bản nháp</option>
-                <option value="archived">Đã lưu trữ</option>
-              </select>
-            </label>
-            <label className="course-filter-field">
-              <span>Sắp xếp</span>
-              <select
-                value={filters.sort}
-                onChange={(event) => updateFilters({ sort: event.target.value as CourseFilters['sort'], page: 1 })}
-              >
-                <option value="newest">Mới nhất</option>
-                <option value="price_asc">Giá thấp đến cao</option>
-                <option value="price_desc">Giá cao đến thấp</option>
-              </select>
-            </label>
-            <button type="button" className="course-reset-link" onClick={resetFilters}>Xóa tất cả</button>
-          </section>
-
           {pageError && (
             <div className="course-error-banner" role="alert">
               <span>{pageError}</span>

@@ -96,7 +96,7 @@ function CourseCard({ course }: { course: CourseReference }) {
 
   return (
     <article className={`public-course-card${course.isPopular ? ' is-popular' : ''}`}>
-      
+
       <a className="public-course-card-link" href={`/courses/${encodeURIComponent(course.slug)}`}>
         {course.thumbnailUrl ? (
           <div className={`public-course-card-image ${getCourseTheme(course)}`}>
@@ -280,7 +280,6 @@ export function CourseListPage() {
           </form>
         </header>
 
-        
 
         {error && (
           <div className="public-course-error" role="alert">

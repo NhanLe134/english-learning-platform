@@ -345,7 +345,7 @@ export function AboutPage() {
               và nhận lộ trình cá nhân hóa từ đội ngũ giảng viên của chúng tôi.
             </p>
             <a
-              href="/khoa-hoc"
+              href="/courses"
               className="mt-7 inline-flex items-center justify-center rounded-full bg-white px-7 py-3 text-sm font-bold text-brand-600 transition-colors hover:bg-brand-50"
             >
               Khám phá các khóa học
