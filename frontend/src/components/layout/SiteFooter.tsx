@@ -3,11 +3,19 @@ import { Layers } from 'lucide-react'
 const FOOTER_COLUMNS = [
   {
     title: 'Chương trình',
-    links: ['Phát âm tiếng Anh', 'Từ vựng tiếng Anh', 'Ngữ pháp tiếng Anh'],
+    links: [
+      { label: 'Phát âm tiếng Anh', href: '#' },
+      { label: 'Từ vựng tiếng Anh', href: '#' },
+      { label: 'Ngữ pháp tiếng Anh', href: '#' },
+    ],
   },
   {
     title: 'Hỗ trợ & Pháp lý',
-    links: ['Về chúng tôi', 'Chính sách bảo mật', 'Điều khoản sử dụng'],
+    links: [
+      { label: 'Về chúng tôi', href: '/courses' },
+      { label: 'Chính sách bảo mật', href: '#' },
+      { label: 'Điều khoản sử dụng', href: '#' },
+    ],
   },
 ]
 
@@ -60,9 +68,9 @@ export function SiteFooter() {
             <h3 className="text-sm font-bold text-ink-900">{column.title}</h3>
             <ul className="mt-4 space-y-2.5 text-sm text-ink-500">
               {column.links.map((link) => (
-                <li key={link}>
-                  <a href="#" className="hover:text-brand-600">
-                    {link}
+                <li key={link.label}>
+                  <a href={link.href} className="hover:text-brand-600">
+                    {link.label}
                   </a>
                 </li>
               ))}
