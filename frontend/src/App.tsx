@@ -49,10 +49,6 @@ function AppRoutes() {
       page = <CourseManagementPage />
       break
     case '/courses':
-    case '/about':
-    case '/ve-chung-toi':
-      page = <AboutPage />
-      break
     case '/khoa-hoc':
       page = <CourseListPage />
       break
@@ -75,12 +71,7 @@ function AppRoutes() {
       page = <CheckoutSuccessPage />
       break
     case '/':
-      page =
-        window.location.hash.toLowerCase() === '#ve-chung-toi' ? (
-          <AboutPage />
-        ) : (
-          <HomePage />
-        )
+      page = <CourseListPage />
       break
     case '/login':
       page = <LoginPage />

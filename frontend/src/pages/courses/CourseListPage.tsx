@@ -3,28 +3,26 @@ import {
   ArrowDownWideNarrow,
   ArrowRight,
   Award,
-  BookOpen,
+  Briefcase,
   CheckCircle2,
   ChevronDown,
   CircleDollarSign,
+  Clock3,
   GraduationCap,
   Laptop,
   LoaderCircle,
+  MessageSquareText,
   RotateCcw,
   Search,
   SlidersHorizontal,
   Target,
-  UserRound,
+  Users,
   X,
 } from 'lucide-react'
 import { SiteFooter, SiteHeader } from '../auth/AuthShared'
 import { courseCatalogApi } from './services/courseCatalogApi'
-import type { CourseReference } from './course-data'
+import { DEFAULT_COURSES, type CourseReference } from './course-data'
 import './course-list-page.css'
-
-function formatCurrency(amount: number): string {
-  return `${amount.toLocaleString('vi-VN')}đ`
-}
 
 function formatLevel(level: string): string {
   const labels: Record<string, string> = {
@@ -66,25 +64,65 @@ function courseMatchesFormat(course: CourseReference, format: string): boolean {
   return /1\s*[-–]?\s*1|kèm riêng|one[- ]to[- ]one|cá nhân hóa/i.test(text)
 }
 
+function getCourseTheme(course: CourseReference): string {
+  const subject = `${course.category} ${course.title}`.toLocaleLowerCase('vi')
+  if (/ielts/.test(subject)) return 'course-theme-ielts'
+  if (/giao tiếp|communication/.test(subject)) return 'course-theme-conversation'
+  if (/phát âm|pronunciation/.test(subject)) return 'course-theme-pronunciation'
+  if (/toeic/.test(subject)) return 'course-theme-toeic'
+  if (/mất gốc|beginner/.test(subject)) return 'course-theme-beginner'
+  if (/business|doanh nghiệp/.test(subject)) return 'course-theme-business'
+  return 'course-theme-default'
+}
+
 function CourseCard({ course }: { course: CourseReference }) {
+  const cornerIcon = () => {
+    switch (course.iconType) {
+      case 'users':
+        return <Users size={20} />
+      case 'briefcase':
+        return <Briefcase size={20} />
+      case 'award':
+      default:
+        return <Award size={20} />
+    }
+  }
+
+  const highlightIcon = (index: number) => {
+    if (index === 0) return <Clock3 size={15} />
+    if (index === 1) return <Users size={15} />
+    return <MessageSquareText size={15} />
+  }
+
   return (
-    <article className="public-course-card">
+    <article className={`public-course-card${course.isPopular ? ' is-popular' : ''}`}>
+      
       <a className="public-course-card-link" href={`/courses/${encodeURIComponent(course.slug)}`}>
-        <div className="public-course-card-image">
-          {course.thumbnailUrl
-            ? <img src={course.thumbnailUrl} alt="" loading="lazy" />
-            : <span aria-hidden="true"><BookOpen size={42} /></span>}
-          <span className="public-course-category">{course.category}</span>
-        </div>
+        {course.thumbnailUrl ? (
+          <div className={`public-course-card-image ${getCourseTheme(course)}`}>
+            <img src={course.thumbnailUrl} alt="" loading="lazy" />
+            <span className="public-course-category">{course.category}</span>
+          </div>
+        ) : null}
         <div className="public-course-card-copy">
-          <div className="public-course-meta"><span>{formatLevel(course.level)}</span><span>{course.totalLessons} bài học</span></div>
+          <div className="public-course-card-header-row">
+            <span className="public-course-tag-pill">{course.category}</span>
+            <span className="public-course-corner-icon">{cornerIcon()}</span>
+          </div>
           <h2>{course.title}</h2>
           <p>{course.description}</p>
-          <span className="public-course-instructor"><UserRound size={14} /> {course.instructor}</span>
-          <div className="public-course-card-bottom">
-            <strong>{formatCurrency(course.price)}</strong>
-            {course.originalPrice > course.price && <del>{formatCurrency(course.originalPrice)}</del>}
-            <span className="public-course-detail-cta">Xem chi tiết <ArrowRight size={15} /></span>
+          {course.highlights && course.highlights.length > 0 && (
+            <ul className="public-course-highlights" aria-label="Đặc điểm khóa học">
+              {course.highlights.map((item, idx) => (
+                <li key={idx} className="public-course-highlight-item">
+                  {highlightIcon(idx)}
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="public-course-card-bottom-action">
+            <span className="public-course-btn-primary">Xem chi tiết</span>
           </div>
         </div>
       </a>
@@ -93,25 +131,25 @@ function CourseCard({ course }: { course: CourseReference }) {
 }
 
 export function CourseListPage() {
-  const [courses, setCourses] = useState<CourseReference[]>([])
+  const [courses, setCourses] = useState<CourseReference[]>(DEFAULT_COURSES)
   const [query, setQuery] = useState('')
   const [submittedQuery, setSubmittedQuery] = useState('')
   const [level, setLevel] = useState('all')
   const [goal, setGoal] = useState('all')
   const [format, setFormat] = useState('all')
   const [priceRange, setPriceRange] = useState('all')
-  const [activeQuickFilters, setActiveQuickFilters] = useState<QuickFilter[]>(['ielts'])
+  const [activeQuickFilters, setActiveQuickFilters] = useState<QuickFilter[]>([])
   const [guaranteedOnly, setGuaranteedOnly] = useState(false)
   const [sort, setSort] = useState<CourseSort>('popular')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   async function loadCourses() {
     try {
-      setCourses(await courseCatalogApi.list())
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Không thể tải danh sách khóa học.')
-      setCourses([])
+      const data = await courseCatalogApi.list()
+      setCourses(data.length > 0 ? data : DEFAULT_COURSES)
+    } catch {
+      setCourses(DEFAULT_COURSES)
     } finally {
       setLoading(false)
     }
@@ -127,12 +165,11 @@ export function CourseListPage() {
     let active = true
     courseCatalogApi.list()
       .then((loadedCourses) => {
-        if (active) setCourses(loadedCourses)
+        if (active) setCourses(loadedCourses.length > 0 ? loadedCourses : DEFAULT_COURSES)
       })
-      .catch((loadError: unknown) => {
+      .catch(() => {
         if (!active) return
-        setError(loadError instanceof Error ? loadError.message : 'Không thể tải danh sách khóa học.')
-        setCourses([])
+        setCourses(DEFAULT_COURSES)
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -166,8 +203,15 @@ export function CourseListPage() {
 
     switch (sort) {
       case 'newest':
-      case 'popular':
         return filtered
+      case 'popular': {
+        const orderMap: Record<string, number> = {
+          'phat-am-tieng-anh': 1,
+          'tu-vung-tieng-anh': 2,
+          'ngu-phap-tieng-anh': 3,
+        }
+        return [...filtered].sort((first, second) => (orderMap[first.slug] || 99) - (orderMap[second.slug] || 99))
+      }
       case 'price-asc':
         return [...filtered].sort((first, second) => first.price - second.price)
       case 'price-desc':
@@ -236,96 +280,7 @@ export function CourseListPage() {
           </form>
         </header>
 
-        <section className="public-course-filter-panel" aria-label="Bộ lọc khóa học">
-          <div className="public-course-filter-grid">
-            <label className="public-course-filter-field">
-              <span><SlidersHorizontal size={14} /> Cấp độ học viên</span>
-              <span className="public-course-select-wrap">
-                <select value={level} onChange={(event) => setLevel(event.target.value)} aria-label="Cấp độ học viên">
-                  <option value="all">Tất cả cấp độ</option>
-                  {levels.map((item) => <option value={item} key={item}>{formatLevel(item)}</option>)}
-                </select>
-                <ChevronDown size={15} />
-              </span>
-            </label>
-            <label className="public-course-filter-field">
-              <span><Target size={14} /> Mục tiêu học tập</span>
-              <span className="public-course-select-wrap">
-                <select value={goal} onChange={(event) => setGoal(event.target.value)} aria-label="Mục tiêu học tập">
-                  <option value="all">Mọi mục tiêu</option>
-                  {goals.map((item) => <option value={item} key={item}>{item}</option>)}
-                </select>
-                <ChevronDown size={15} />
-              </span>
-            </label>
-            <label className="public-course-filter-field">
-              <span><Laptop size={14} /> Hình thức đào tạo</span>
-              <span className="public-course-select-wrap">
-                <select value={format} onChange={(event) => setFormat(event.target.value)} aria-label="Hình thức đào tạo">
-                  <option value="all">Tất cả hình thức</option>
-                  <option value="online">Học trực tuyến</option>
-                  <option value="one-to-one">Kèm cặp 1-1</option>
-                </select>
-                <ChevronDown size={15} />
-              </span>
-            </label>
-            <label className="public-course-filter-field">
-              <span><CircleDollarSign size={14} /> Mức học phí</span>
-              <span className="public-course-select-wrap">
-                <select value={priceRange} onChange={(event) => setPriceRange(event.target.value)} aria-label="Mức học phí">
-                  <option value="all">Tất cả mức giá</option>
-                  <option value="under-1m">Dưới 1.000.000đ</option>
-                  <option value="1m-3m">1.000.000đ – 3.000.000đ</option>
-                  <option value="over-3m">Trên 3.000.000đ</option>
-                </select>
-                <ChevronDown size={15} />
-              </span>
-            </label>
-          </div>
-
-          <div className="public-course-filter-footer">
-            <div className="public-course-quick-filters">
-              <strong>Bộ lọc phổ biến:</strong>
-              {quickFilters.map((filter) => {
-                const active = activeQuickFilters.includes(filter.id)
-                return (
-                  <button
-                    className={`public-course-quick-tag${active ? ' active' : ''}`}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => toggleQuickFilter(filter.id)}
-                    key={filter.id}
-                  >
-                    {filter.id === 'certificate' && <Award size={13} />}
-                    {filter.label}
-                    {active && <X size={13} aria-hidden="true" />}
-                  </button>
-                )
-              })}
-            </div>
-            <div className="public-course-sort-controls">
-              <label className="public-course-sort">
-                <span><ArrowDownWideNarrow size={14} /> Sắp xếp:</span>
-                <span className="public-course-select-wrap">
-                  <select value={sort} onChange={(event) => setSort(event.target.value as CourseSort)} aria-label="Sắp xếp khóa học">
-                    <option value="popular">Phổ biến nhất</option>
-                    <option value="newest">Mới nhất</option>
-                    <option value="price-asc">Giá thấp đến cao</option>
-                    <option value="price-desc">Giá cao đến thấp</option>
-                    <option value="title">Tên khóa học A–Z</option>
-                  </select>
-                  <ChevronDown size={14} />
-                </span>
-              </label>
-              <button className="public-course-reset" type="button" onClick={resetFilters} disabled={!hasFilters}>
-                <RotateCcw size={14} /> Đặt lại
-              </button>
-            </div>
-          </div>
-          <div className="public-course-filter-count" aria-live="polite">
-            {visibleCourses.length} khóa học phù hợp
-          </div>
-        </section>
+        
 
         {error && (
           <div className="public-course-error" role="alert">
@@ -337,9 +292,20 @@ export function CourseListPage() {
         {loading ? (
           <div className="public-course-status" role="status"><LoaderCircle size={20} /> Đang tải khóa học…</div>
         ) : visibleCourses.length > 0 ? (
-          <section className="public-course-grid" aria-label="Các khóa học hiện có">
-            {visibleCourses.map((course) => <CourseCard key={course.id} course={course} />)}
-          </section>
+          <>
+            <div className="public-course-section-header">
+              <div>
+                <span className="public-course-eyebrow">CHƯƠNG TRÌNH ĐÀO TẠO</span>
+                <h2 className="public-course-section-title">Các khóa học hiện tại</h2>
+              </div>
+              <a href="#all-courses" className="public-course-view-all">
+                Xem tất cả khóa học <ArrowRight size={16} />
+              </a>
+            </div>
+            <section className="public-course-grid" aria-label="Các khóa học hiện có">
+              {visibleCourses.map((course) => <CourseCard key={course.id} course={course} />)}
+            </section>
+          </>
         ) : !error ? (
           <div className="public-course-status">
             {courses.length ? 'Không tìm thấy khóa học phù hợp.' : 'Hiện chưa có khóa học nào được mở đăng ký.'}

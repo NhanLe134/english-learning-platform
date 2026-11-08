@@ -5,8 +5,10 @@ import {
   Flame,
   GraduationCap,
   Layers3,
+  Menu,
   Play,
   UserRound,
+  X,
   Zap,
 } from 'lucide-react'
 import { useAuth } from './auth-context'
@@ -45,6 +47,7 @@ export function SiteHeader({
 }: SiteHeaderProps) {
   const { user, logout, reportError } = useAuth()
   const [loggingOut, setLoggingOut] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
 
   async function handleAccountClick() {
     if (!user) {
@@ -71,12 +74,14 @@ export function SiteHeader({
           <span>{brandName}</span>
         </a>
 
-        <nav className="header-nav" aria-label="Điều hướng chính">
+        <nav id="site-navigation" className={`header-nav${menuOpen ? ' is-open' : ''}`} aria-label="Điều hướng chính">
           {navigationItems.map((item) => (
             <a href={item.href} key={item.label}>{item.label}</a>
           ))}
+          {!user && <a className="header-mobile-register" href="/register">Đăng ký</a>}
         </nav>
 
+        {!user && <a className="header-register-link" href="/register">Đăng ký</a>}
         <button
           type="button"
           className="avatar-button"
@@ -86,6 +91,16 @@ export function SiteHeader({
           disabled={loggingOut}
         >
           <UserRound size={16} />
+        </button>
+        <button
+          type="button"
+          className="header-menu-button"
+          aria-label={menuOpen ? 'Đóng menu điều hướng' : 'Mở menu điều hướng'}
+          aria-expanded={menuOpen}
+          aria-controls="site-navigation"
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          {menuOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
       </div>
     </header>
@@ -152,7 +167,7 @@ export function SiteFooter({ brandName = 'Your English Voice' }: { brandName?: s
             <BrandMark small />
             <span>{brandName}</span>
           </a>
-          <p>Đưa tiếng nói của bạn vươn xa.</p>
+          <p>Đưa tiếng nói của người Việt ra thế giới.</p>
         </div>
         <div>
           <h2>Thông tin liên hệ</h2>
