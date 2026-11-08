@@ -55,10 +55,14 @@ export const env = {
   authLoginRateLimit: positiveInteger('AUTH_LOGIN_RATE_LIMIT', 10),
   authResetRateLimit: positiveInteger('AUTH_RESET_RATE_LIMIT', 5),
   authRateLimitWindowMs: positiveInteger('AUTH_RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000),
-  authExposeResetLink: process.env.AUTH_EXPOSE_RESET_LINK === 'true' && nodeEnv === 'development',
+  authExposeRegistrationOtp:
+    process.env.AUTH_EXPOSE_REGISTRATION_OTP === 'true' && nodeEnv === 'development',
+  googleClientId: process.env.GOOGLE_CLIENT_ID ?? '',
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
   databaseUrl: process.env.DATABASE_URL ?? process.env.DB_URL ?? '',
   supabaseUrl: process.env.SUPABASE_URL ?? '',
-  supabaseAnonKey: process.env.SUPABASE_ANON_KEY ?? '',
+  supabasePublicKey:
+    process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.SUPABASE_ANON_KEY ?? '',
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
   cloudinaryCloudName: process.env.CLOUDINARY_CLOUD_NAME ?? '',
   cloudinaryApiKey: process.env.CLOUDINARY_API_KEY ?? '',

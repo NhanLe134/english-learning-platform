@@ -226,8 +226,10 @@ export class UsersRepository {
   }
 
   async authenticatePassword(email: string, password: string): Promise<UserProfile | null> {
-    if (!env.supabaseAnonKey) {
-      throw new Error('SUPABASE_ANON_KEY is required')
+    if (!env.supabasePublicKey) {
+      throw new Error(
+        'SUPABASE_PUBLISHABLE_KEY (or SUPABASE_ANON_KEY) is required for password sign-in'
+      )
     }
 
     const { data, error } = await createSupabasePublicClient().auth.signInWithPassword({
@@ -241,20 +243,116 @@ export class UsersRepository {
     }
     if (!data.user) return null
 
-    return this.findById(data.user.id)
+    return data.user.email ? this.findByEmail(data.user.email) : null
   }
 
-  async updatePassword(userId: string, password: string): Promise<void> {
+  async updatePassword(userId: string, email: string, password: string): Promise<void> {
     if (!this.hasSupabaseConfig()) {
       throw new Error('Supabase is not configured for password updates')
     }
 
-    const { error } = await createSupabaseClient().auth.admin.updateUserById(userId, {
+    const client = createSupabaseClient()
+    const { data: existingUser, error: lookupError } =
+      await client.auth.admin.getUserById(userId)
+
+    if (lookupError) {
+      if (lookupError.status !== 404) {
+        throw new Error('Unable to verify the Supabase Auth account before password recovery', {
+          cause: lookupError,
+        })
+      }
+
+      const { data: createdUser, error: createError } = await client.auth.admin.createUser({
+        email: email.trim().toLowerCase(),
+        password,
+        email_confirm: true,
+      })
+      if (!createError && createdUser.user) return
+
+      if (!createError) {
+        throw new Error('Supabase Auth did not return the recovered Admin account')
+      }
+
+      const duplicateEmail =
+        ('code' in createError && (
+          createError.code === 'email_exists' ||
+          createError.code === 'user_already_exists'
+        )) || /already (registered|exists)/i.test(createError.message)
+      if (!duplicateEmail) {
+        throw new Error('Unable to create the missing Supabase Auth account for Admin recovery', {
+          cause: createError,
+        })
+      }
+
+      const matchingUser = await this.findSupabaseAuthUserByEmail(client, email)
+      if (!matchingUser) {
+        throw new Error('Supabase reports the Admin email exists but could not find its Auth user', {
+          cause: createError,
+        })
+      }
+      const { error: updateError } = await client.auth.admin.updateUserById(matchingUser.id, {
+        password,
+        email_confirm: true,
+      })
+      if (updateError) {
+        throw new Error('Unable to update the existing Supabase Auth password and confirm its email', {
+          cause: updateError,
+        })
+      }
+      return
+    }
+
+    if (!existingUser.user) {
+      throw new Error('Supabase Auth returned no user for the Admin profile')
+    }
+    const { error } = await client.auth.admin.updateUserById(existingUser.user.id, {
       password,
+      email_confirm: true,
     })
     if (error) {
-      throw new Error('Unable to update the Supabase Auth password', { cause: error })
+      throw new Error('Unable to update the Supabase Auth password and confirm its email', {
+        cause: error,
+      })
     }
+  }
+
+  private async findSupabaseAuthUserByEmail(
+    client: ReturnType<typeof createSupabaseClient>,
+    email: string
+  ): Promise<{ id: string } | null> {
+    const normalizedEmail = email.trim().toLowerCase()
+    const perPage = 1000
+    for (let page = 1; page <= 100; page += 1) {
+      const { data, error } = await client.auth.admin.listUsers({ page, perPage })
+      if (error) {
+        throw new Error('Unable to find the existing Supabase Auth account by email', {
+          cause: error,
+        })
+      }
+      const user = data.users.find(
+        (candidate) => candidate.email?.toLowerCase() === normalizedEmail
+      )
+      if (user) return { id: user.id }
+      if (data.users.length < perPage) return null
+    }
+    throw new Error('Supabase Auth account search exceeded its safe page limit')
+  }
+
+  async verifyEmail(userId: string): Promise<void> {
+    if (!this.hasSupabaseConfig()) {
+      throw new Error('Supabase is not configured for email verification')
+    }
+
+    const { data, error } = await createSupabaseClient()
+      .from('profiles')
+      .update({ is_verified: true, updated_at: new Date().toISOString() })
+      .eq('id', userId)
+      .select('id')
+      .maybeSingle()
+    if (error) {
+      throw new Error('Unable to verify the Supabase profile email', { cause: error })
+    }
+    if (!data) throw new Error('Supabase profile was not found for email verification')
   }
 
   async deleteRegistrationAccount(userId: string): Promise<void> {

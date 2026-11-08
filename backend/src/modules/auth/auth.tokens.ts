@@ -5,7 +5,6 @@ const ISSUER = 'english-learning-platform-api'
 const AUDIENCE = 'english-learning-platform-client'
 const ACCESS_TOKEN_LIFETIME_SECONDS = 30 * 60
 export const REFRESH_TOKEN_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000
-export const RESET_TOKEN_LIFETIME_MS = 10 * 60 * 1000
 
 export interface AccessTokenClaims {
   sub: string
@@ -153,10 +152,6 @@ export function verifyRefreshToken(
   } catch {
     return null
   }
-}
-
-export function createResetToken(): string {
-  return randomBytes(32).toString('base64url')
 }
 
 export function hashToken(token: string): string {

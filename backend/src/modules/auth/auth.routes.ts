@@ -6,6 +6,14 @@ import { authRateLimit } from './auth.rate-limit.js'
 
 export const authRouter = Router()
 
+authRouter.get(
+  '/google',
+  authRateLimit(env.authLoginRateLimit),
+  (request, response, next) => authController.googleRedirect(request, response, next)
+)
+authRouter.get('/google/callback', (request, response, next) =>
+  authController.googleCallback(request, response, next)
+)
 authRouter.post(
   '/register',
   requireTrustedOrigin,
@@ -13,10 +21,34 @@ authRouter.post(
   (request, response, next) => authController.register(request, response, next)
 )
 authRouter.post(
+  '/register/verification/resend',
+  requireTrustedOrigin,
+  authRateLimit(env.authResetRateLimit),
+  (request, response, next) => authController.resendRegistrationOtp(request, response, next)
+)
+authRouter.post(
+  '/register/verification/verify',
+  requireTrustedOrigin,
+  authRateLimit(env.authLoginRateLimit),
+  (request, response, next) => authController.verifyRegistrationOtp(request, response, next)
+)
+authRouter.post(
   '/login',
   requireTrustedOrigin,
   authRateLimit(env.authLoginRateLimit),
   (request, response, next) => authController.login(request, response, next)
+)
+authRouter.post(
+  '/google',
+  requireTrustedOrigin,
+  authRateLimit(env.authLoginRateLimit),
+  (request, response, next) => authController.google(request, response, next)
+)
+authRouter.post(
+  '/google/identity',
+  requireTrustedOrigin,
+  authRateLimit(env.authLoginRateLimit),
+  (request, response, next) => authController.googleIdentity(request, response, next)
 )
 authRouter.post(
   '/refresh',
@@ -34,12 +66,6 @@ authRouter.post(
   requireTrustedOrigin,
   authRateLimit(env.authResetRateLimit),
   (request, response, next) => authController.forgotPassword(request, response, next)
-)
-authRouter.post(
-  '/reset-password',
-  requireTrustedOrigin,
-  authRateLimit(env.authResetRateLimit),
-  (request, response, next) => authController.resetPassword(request, response, next)
 )
 authRouter.get('/me', authenticate, (request, response, next) =>
   authController.me(request, response, next)

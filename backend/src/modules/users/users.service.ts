@@ -55,7 +55,7 @@ export class UsersService {
       role: dto.role,
       avatar_url: defaultAvatar,
       status: 'active',
-      is_verified: dto.role === 'TEACHER', // Auto verify teachers as in Figma
+      is_verified: true,
     }, password)
 
     // Optional: Send a welcome email without including the account password.
@@ -162,8 +162,12 @@ export class UsersService {
     return usersRepository.authenticatePassword(email, password)
   }
 
-  async updatePassword(userId: string, password: string): Promise<void> {
-    await usersRepository.updatePassword(userId, password)
+  async updatePassword(userId: string, email: string, password: string): Promise<void> {
+    await usersRepository.updatePassword(userId, email, password)
+  }
+
+  async verifyEmail(userId: string): Promise<void> {
+    await usersRepository.verifyEmail(userId)
   }
 
   async findById(userId: string): Promise<UserProfile | null> {

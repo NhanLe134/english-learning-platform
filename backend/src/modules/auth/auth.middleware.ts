@@ -8,7 +8,15 @@ export const requireTrustedOrigin: RequestHandler = (request, _response, next) =
   let expectedOrigins: string[]
 
   try {
-    expectedOrigins = [new URL(env.frontendUrl).origin, new URL(env.apiOrigin).origin]
+    const frontend = new URL(env.frontendUrl)
+    expectedOrigins = [frontend.origin, new URL(env.apiOrigin).origin]
+    if (env.nodeEnv !== 'production') {
+      if (frontend.hostname === 'localhost') {
+        expectedOrigins.push(`${frontend.protocol}//127.0.0.1:${frontend.port || '5173'}`)
+      } else if (frontend.hostname === '127.0.0.1') {
+        expectedOrigins.push(`${frontend.protocol}//localhost:${frontend.port || '5173'}`)
+      }
+    }
   } catch {
     next(new Error('FRONTEND_URL and API_ORIGIN must be valid URLs'))
     return

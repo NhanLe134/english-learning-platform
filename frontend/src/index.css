@@ -1,7 +1,26 @@
+@import url("https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&display=swap");
 @import "tailwindcss";
 
+@theme {
+  --font-sans: "Be Vietnam Pro", Inter, "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+
+  /* Brand red — màu chủ đạo của Your English Voice */
+  --color-brand-50: #fef1f2;
+  --color-brand-100: #fde0e3;
+  --color-brand-200: #fbb5bc;
+  --color-brand-500: #e02838;
+  --color-brand-600: #c8102e;
+  --color-brand-700: #a30d26;
+  --color-brand-800: #850d21;
+  --color-brand-900: #6b0a1b;
+
+  --color-ink-900: #17181c;
+  --color-ink-700: #3d4046;
+  --color-ink-500: #6b7076;
+}
+
 :root {
-  font-family: Inter, "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-sans);
   color: #1a1c1d;
   background: #ffffff;
   font-synthesis: none;

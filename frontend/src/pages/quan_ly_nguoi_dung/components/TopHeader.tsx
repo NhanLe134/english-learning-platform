@@ -2,7 +2,11 @@ import React, { useEffect, useRef, useState } from 'react'
 import { Bell, ChevronDown, ChevronRight, LogOut } from 'lucide-react'
 import { useAuth } from '../../auth/auth-context'
 
-export const TopHeader: React.FC = () => {
+interface TopHeaderProps {
+  currentPage?: string
+}
+
+export const TopHeader: React.FC<TopHeaderProps> = ({ currentPage = 'Quản lý người dùng' }) => {
   const { user, logout, reportError } = useAuth()
   const [loggingOut, setLoggingOut] = useState(false)
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
@@ -50,7 +54,7 @@ export const TopHeader: React.FC = () => {
       <div className="header-breadcrumb">
         <span className="breadcrumb-parent">Hệ thống</span>
         <ChevronRight size={14} className="breadcrumb-arrow" />
-        <span className="breadcrumb-current">Quản lý người dùng</span>
+        <span className="breadcrumb-current">{currentPage}</span>
       </div>
 
       {/* Header right: Notifications & Admin Profile */}
