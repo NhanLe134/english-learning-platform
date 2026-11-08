@@ -55,23 +55,17 @@ export class PaymentService {
   }
 
   async handleSePayWebhook(event: SePayWebhookEvent): Promise<VerifyPaymentResult> {
-    const { amountIn, content, reference, transactionId } = event
+    // SePay IPN sends order.id as a UUID that matches the DB primary key
+    const orderId = event.order.id
+    const transactionId = event.transaction.transaction_id
+    const amountIn = Number(event.transaction.transaction_amount)
 
     // Validate incoming amount
     if (!amountIn || amountIn <= 0) {
-      throw new Error('Invalid webhook amount: amountIn must be greater than zero')
+      throw new Error('Invalid webhook amount: transaction amount must be greater than zero')
     }
 
-    if (!content) {
-      throw new Error('Invalid webhook payload: transfer content is required')
-    }
-
-    // Extract order id from transfer content, e.g. DH{order_id}
-    const orderId = extractOrderIdFromContent(content)
-    if (!orderId) {
-      throw new Error(`Unable to parse order id from transfer content: ${content}`)
-    }
-
+    // Find order by ID from SePay
     const order = await this.repository.findOrderById(orderId)
     if (!order) {
       throw new Error(`Course order not found for order id: ${orderId}`)
