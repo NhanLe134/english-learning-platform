@@ -13,6 +13,9 @@ export interface CourseReference {
   targetAudience: string
   totalLessons: number
   modules: CourseModule[]
+  highlights?: string[]
+  isPopular?: boolean
+  iconType?: 'award' | 'users' | 'briefcase'
 }
 
 export interface CourseModule {
@@ -22,28 +25,118 @@ export interface CourseModule {
   lessons: string[]
 }
 
-export const FEATURED_COURSE: CourseReference = {
-  id: 'ielts-masterclass-7-plus',
-  slug: 'ielts-masterclass-7-plus',
-  title: 'IELTS Masterclass 7.0+ Toàn Diện',
-  details: '55 buổi học · 110 giờ học · Luyện thi đủ 4 kỹ năng',
-  thumbnailUrl: null,
-  instructor: 'ThS. Mark Davies',
-  price: 4_800_000,
-  originalPrice: 6_000_000,
-  description: 'Lộ trình tinh gọn dành riêng cho người học hướng tới dải điểm 7.0 – 8.0+. Làm chủ chiến thuật phòng thi thực chiến, triệt tiêu lỗi diễn đạt bằng nền tảng tư duy phản biện học thuật chuẩn Cambridge.',
-  category: 'IELTS',
-  level: 'Nâng cao',
-  targetAudience: 'Người học hướng tới IELTS 7.0+',
-  totalLessons: 55,
-  modules: [
-    { id: 'ielts-module-1', title: 'Phần 1: Nền tảng Academic Vocabulary & Advanced Grammar', description: '10 buổi · 120+ từ vựng C1–C2 theo chủ đề học thuật', lessons: [] },
-    { id: 'ielts-module-2', title: 'Phần 2: Listening & Reading Hack – Phương pháp Scan & Skim chuyên sâu', description: '12 buổi · Giải mã bẫy Paraphrasing & Kỹ thuật định vị Key-info', lessons: [] },
-    { id: 'ielts-module-3', title: 'Phần 3: Writing Task 1 & 2 – Cấu trúc bài điểm 7.5+', description: '12 buổi · Master lập luận PEEL & viết phân tích biểu đồ khó', lessons: [] },
-    { id: 'ielts-module-4', title: 'Phần 4: Speaking Master – Phản xạ tự nhiên & phát âm chuẩn C1', description: '11 buổi · Kỹ thuật mở rộng câu chuyện & tư duy diễn đạt', lessons: [] },
-    { id: 'ielts-module-5', title: 'Phần 5: Thi thử Mock Test 1-on-1 với ban giám khảo', description: '10 buổi · Đánh giá theo 4 tiêu chí chấm điểm thực tế', lessons: [] },
-  ],
-}
+export const DEFAULT_COURSES: CourseReference[] = [
+  {
+    id: 'phat-am-tieng-anh',
+    slug: 'phat-am-tieng-anh',
+    title: 'Phát âm tiếng Anh',
+    details: '20 video · Luyện phát âm chuẩn quốc tế',
+    thumbnailUrl: null,
+    instructor: 'Đội ngũ Your English Voice',
+    price: 1_200_000,
+    originalPrice: 1_800_000,
+    description: 'Tìm được chất giọng tiếng Anh của mình. Chữa lỗi phát âm 99% người Việt mắc phải. Các mẹo phát âm rõ ràng, giao tiếp hiệu quả.',
+    category: 'Tiếng Anh nền tảng',
+    level: 'Cơ bản',
+    targetAudience: 'Người mất gốc, người muốn cải thiện phát âm',
+    totalLessons: 20,
+    highlights: [
+      'Thời lượng: 20 video',
+      'Có bài tập thực hành sau mỗi video',
+      '1 buổi tư vấn 30 phút sau khi hoàn thành khoá học',
+    ],
+    isPopular: false,
+    iconType: 'award',
+    modules: [
+      {
+        id: 'pa-module-1',
+        title: 'Phần 1: Bảng ký hiệu ngữ âm quốc tế (IPA)',
+        description: 'Làm chủ nguyên âm đơn, nguyên âm đôi và phụ âm chuẩn Cambridge',
+        lessons: ['Nguyên âm ngắn & nguyên âm dài', 'Cặp phụ âm vô thanh & hữu thanh'],
+      },
+      {
+        id: 'pa-module-2',
+        title: 'Phần 2: Trọng âm, nối âm & ngữ điệu tự nhiên',
+        description: 'Quy tắc nhấn trọng âm từ, ngữ điệu câu và biến âm trong thực tế',
+        lessons: ['Kỹ thuật nối âm linking sounds', 'Ngữ điệu câu hỏi & trần thuật'],
+      },
+    ],
+  },
+  {
+    id: 'tu-vung-tieng-anh',
+    slug: 'tu-vung-tieng-anh',
+    title: 'Từ vựng tiếng Anh',
+    details: '20 video · Tư duy học từ vựng theo gốc từ',
+    thumbnailUrl: null,
+    instructor: 'Đội ngũ Your English Voice',
+    price: 1_200_000,
+    originalPrice: 1_800_000,
+    description: 'Nắm vững loạt từ vựng thiết yếu cho các chủ đề thường gặp. Phân biệt các từ gần nghĩa. Xây dựng tư duy học từ vựng dựa trên gốc từ.',
+    category: 'Tiếng Anh nền tảng',
+    level: 'Cơ bản',
+    targetAudience: 'Người muốn xây dựng vốn từ vựng nền tảng',
+    totalLessons: 20,
+    highlights: [
+      'Thời lượng: 20 video',
+      'Bài tập thực hành sau mỗi video',
+      '1 buổi tư vấn 30 phút sau khi hoàn thành khoá học',
+    ],
+    isPopular: true,
+    iconType: 'users',
+    modules: [
+      {
+        id: 'tv-module-1',
+        title: 'Phần 1: Phương pháp học từ vựng qua gốc từ (Etymology)',
+        description: 'Tiền tố, hậu tố và phương pháp suy luận nghĩa của từ mới',
+        lessons: ['Tiền tố phủ định và chuyển nghĩa', 'Hậu tố danh từ, tính từ và trạng từ'],
+      },
+      {
+        id: 'tv-module-2',
+        title: 'Phần 2: Từ vựng theo chủ đề đời sống & công việc',
+        description: 'Từ vựng thông dụng và phân biệt từ đồng nghĩa - gần nghĩa (Synonyms/Nuances)',
+        lessons: ['Chủ đề Công sở & Giao tiếp', 'Phân biệt các cặp từ dễ nhầm lẫn'],
+      },
+    ],
+  },
+  {
+    id: 'ngu-phap-tieng-anh',
+    slug: 'ngu-phap-tieng-anh',
+    title: 'Ngữ pháp tiếng Anh',
+    details: '20 video · Ngữ pháp thực hành nhẹ nhàng',
+    thumbnailUrl: null,
+    instructor: 'Đội ngũ Your English Voice',
+    price: 1_200_000,
+    originalPrice: 1_800_000,
+    description: 'Học các thì một cách nhẹ nhàng và vận dụng ngay trong ngữ cảnh thích hợp. Hiểu lý do của những quy tắc và ngoại lệ.',
+    category: 'Tiếng Anh nền tảng',
+    level: 'Cơ bản',
+    targetAudience: 'Người muốn nắm vững ngữ pháp thực hành',
+    totalLessons: 20,
+    highlights: [
+      'Thời lượng: 20 video',
+      'Bài tập thực hành sau mỗi video',
+      '1 buổi tư vấn 30 phút sau khi hoàn thành khoá học',
+    ],
+    isPopular: false,
+    iconType: 'briefcase',
+    modules: [
+      {
+        id: 'np-module-1',
+        title: 'Phần 1: Hệ thống các thì cốt lõi trong tiếng Anh',
+        description: 'Bản chất dòng thời gian của các thì và ứng dụng thực tế',
+        lessons: ['Hiện tại đơn & Hiện tại tiếp diễn', 'Quá khứ đơn & Hiện tại hoàn thành'],
+      },
+      {
+        id: 'np-module-2',
+        title: 'Phần 2: Cấu trúc câu & mệnh đề linh hoạt',
+        description: 'Mệnh đề quan hệ, câu điều kiện và câu bị động tự nhiên',
+        lessons: ['Mệnh đề quan hệ rút gọn', 'Câu điều kiện ứng dụng trong giao tiếp'],
+      },
+    ],
+  },
+]
+
+export const FEATURED_COURSE: CourseReference = DEFAULT_COURSES[1]
 
 export function createCheckoutUrl(course: CourseReference): string {
   const params = new URLSearchParams({

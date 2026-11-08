@@ -1,8 +1,27 @@
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&display=swap');
 @import "tailwindcss";
 
+@theme {
+  --font-sans: "Be Vietnam Pro", Inter, "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+
+  --color-brand-50: #FEF1F2;
+  --color-brand-100: #FDE0E3;
+  --color-brand-200: #FBB5BC;
+  --color-brand-500: #E02838;
+  --color-brand-600: #C8102E;
+  --color-brand-700: #A30D26;
+  --color-brand-800: #850D21;
+  --color-brand-900: #6B0A1B;
+
+  --color-ink-900: #17181C;
+  --color-ink-700: #3D4046;
+  --color-ink-500: #6B7076;
+  --color-ink-400: #9CA0A6;
+}
+
 :root {
-  font-family: Inter, "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-  color: #1a1c1d;
+  font-family: var(--font-sans);
+  color: var(--color-ink-900);
   background: #ffffff;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
