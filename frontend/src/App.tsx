@@ -108,23 +108,13 @@ function AppRoutes() {
       page = <CheckoutSuccessPage />
       break
     case '/about':
-    case '/ve-chung-toi':
       page = <AboutPage />
       break
     case '/home':
       page = <HomePage />
       break
-    case '/about':
-    case '/ve-chung-toi':
-      page = <AboutPage />
-      break
     case '/':
-      page =
-        window.location.hash.toLowerCase() === '#ve-chung-toi' ? (
-          <AboutPage />
-        ) : (
-          <HomePage />
-        )
+      page = <HomePage />
       break
     case '/login':
       page = <LoginPage />

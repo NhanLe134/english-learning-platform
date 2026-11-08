@@ -34,7 +34,7 @@ interface SiteHeaderProps {
 
 const defaultNavigationItems: SiteNavigationItem[] = [
   { label: 'Trang chủ', href: '/' },
-  { label: 'Về chúng tôi', href: '/#ve-chung-toi' },
+  { label: 'Về chúng tôi', href: '/about' },
   { label: 'Các khóa học', href: '/courses' },
   { label: 'Ebook', href: '/#ebook' },
   { label: 'Workshop', href: '/#workshop' },
@@ -182,7 +182,7 @@ export function SiteFooter({ brandName = 'Your English Voice' }: { brandName?: s
         </div>
         <div>
           <h2>Hỗ trợ &amp; Pháp lý</h2>
-          <a href="#ve-chung-toi">Về chúng tôi</a>
+          <a href="/about">Về chúng tôi</a>
           <a href="#chinh-sach-bao-mat">Chính sách bảo mật</a>
           <a href="#dieu-khoan">Điều khoản sử dụng</a>
         </div>
