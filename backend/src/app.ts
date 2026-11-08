@@ -6,6 +6,7 @@ import { errorHandler } from './middlewares/errorHandler.js'
 import { authRouter } from './modules/auth/auth.routes.js'
 import { coursesRouter } from './modules/courses/course.routes.js'
 import { usersRouter } from './modules/users/users.routes.js'
+import { paymentsRouter } from './modules/payments/payments.routes.js'
 import { openApiDocument } from './openapi.js'
 
 export const app = express()
@@ -44,6 +45,7 @@ app.get('/api/health', (_request, response) => {
 app.use('/api/users', usersRouter)
 app.use('/api/auth', authRouter)
 app.use('/api/courses', coursesRouter)
+app.use('/api/payment', paymentsRouter)
 
 app.get('/docs/openapi.json', (_request, response) => {
   response.status(200).json(openApiDocument)

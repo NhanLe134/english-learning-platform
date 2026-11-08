@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { SiteFooter, SiteHeader } from '../auth/AuthShared'
 import { courseCatalogApi } from './services/courseCatalogApi'
-import { DEFAULT_COURSES, type CourseReference } from './course-data'
+import { type CourseReference } from './course-data'
 import './course-list-page.css'
 
 function getCourseTheme(course: CourseReference): string {
@@ -82,19 +82,20 @@ function CourseCard({ course }: { course: CourseReference }) {
 }
 
 export function CourseListPage() {
-  const [courses, setCourses] = useState<CourseReference[]>(DEFAULT_COURSES)
+  const [courses, setCourses] = useState<CourseReference[]>([])
   const [query, setQuery] = useState('')
   const [submittedQuery, setSubmittedQuery] = useState('')
   const [guaranteedOnly, setGuaranteedOnly] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   async function loadCourses() {
     try {
       const data = await courseCatalogApi.list()
-      setCourses(data.length > 0 ? data : DEFAULT_COURSES)
-    } catch {
-      setCourses(DEFAULT_COURSES)
+      setCourses(data)
+      setError('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Không thể tải danh sách khóa học.')
     } finally {
       setLoading(false)
     }
@@ -107,19 +108,7 @@ export function CourseListPage() {
   }
 
   useEffect(() => {
-    let active = true
-    courseCatalogApi.list()
-      .then((loadedCourses) => {
-        if (active) setCourses(loadedCourses.length > 0 ? loadedCourses : DEFAULT_COURSES)
-      })
-      .catch(() => {
-        if (!active) return
-        setCourses(DEFAULT_COURSES)
-      })
-      .finally(() => {
-        if (active) setLoading(false)
-      })
-    return () => { active = false }
+    void loadCourses()
   }, [])
 
   const visibleCourses = useMemo(() => {
@@ -194,7 +183,7 @@ export function CourseListPage() {
           </>
         ) : !error ? (
           <div className="public-course-status">
-            {courses.length ? 'Không tìm thấy khóa học phù hợp.' : 'Hiện chưa có khóa học nào được mở đăng ký.'}
+            {submittedQuery || guaranteedOnly ? 'Không tìm thấy khóa học phù hợp với bộ lọc.' : 'Hiện chưa có khóa học nào được mở đăng ký.'}
           </div>
         ) : null}
       </main>

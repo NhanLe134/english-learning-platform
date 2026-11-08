@@ -1,4 +1,4 @@
-import { DEFAULT_COURSES, type CourseReference } from '../course-data'
+import { type CourseReference } from '../course-data'
 
 const API_BASE_URL = (
   import.meta.env.VITE_API_URL ||
@@ -33,6 +33,12 @@ interface ApiResponse<T> {
   data?: T
 }
 
+function inferIconType(slug: string): CourseReference['iconType'] {
+  if (slug.includes('tu-vung')) return 'users'
+  if (slug.includes('ngu-phap')) return 'briefcase'
+  return 'award'
+}
+
 function mapCourse(course: CourseCatalogRecord): CourseReference {
   const price = course.discounted_price ?? course.price
   const modules = course.topics.map((topic) => ({
@@ -42,20 +48,11 @@ function mapCourse(course: CourseCatalogRecord): CourseReference {
     lessons: topic.lessons.map((lesson) => lesson.title),
   }))
 
-  const defaultMeta = DEFAULT_COURSES.find(
-    (item) => item.slug === course.slug || item.id === course.id
-  )
-
-  const isPopular = defaultMeta?.isPopular ?? course.slug.includes('tu-vung')
-  const iconType = defaultMeta?.iconType ?? (
-    course.slug.includes('tu-vung') ? 'users' :
-    course.slug.includes('ngu-phap') ? 'briefcase' : 'award'
-  )
-  const highlights = defaultMeta?.highlights ?? [
-    `Thời lượng: ${course.total_lessons || 20} video`,
-    course.slug.includes('phat-am') ? 'Có bài tập thực hành sau mỗi video' : 'Bài tập thực hành sau mỗi video',
+  const highlights = [
+    course.total_lessons ? `Thời lượng: ${course.total_lessons} bài học` : null,
+    'Bài tập thực hành sau mỗi bài học',
     '1 buổi tư vấn 30 phút sau khi hoàn thành khoá học',
-  ]
+  ].filter(Boolean) as string[]
 
   return {
     id: course.id,
@@ -75,10 +72,10 @@ function mapCourse(course: CourseCatalogRecord): CourseReference {
     level: course.level,
     targetAudience: course.target_audience,
     totalLessons: course.total_lessons,
-    modules: modules.length > 0 ? modules : (defaultMeta?.modules ?? []),
+    modules,
     highlights,
-    isPopular,
-    iconType,
+    isPopular: false,
+    iconType: inferIconType(course.slug),
   }
 }
 
@@ -87,53 +84,36 @@ async function requestCourseData<T>(path: string): Promise<T> {
   try {
     response = await fetch(`${API_BASE_URL}/courses/${path}`)
   } catch {
-    throw new Error('Không thể kết nối danh sách khóa học. Vui lòng thử lại sau.')
+    throw new Error('Không thể kết nối máy chủ. Vui lòng kiểm tra kết nối mạng và thử lại.')
   }
 
   let result: ApiResponse<T>
   try {
     result = await response.json() as ApiResponse<T>
   } catch {
-    throw new Error('Máy chủ trả về dữ liệu khóa học không hợp lệ.')
+    throw new Error('Máy chủ trả về dữ liệu không hợp lệ.')
   }
 
   if (!response.ok || !result.success || result.data === undefined) {
-    throw new Error(result.message || `Không thể tải khóa học (HTTP ${response.status}).`)
+    throw new Error(result.message || `Không thể tải dữ liệu (HTTP ${response.status}).`)
   }
   return result.data
 }
 
 export const courseCatalogApi = {
   async list(): Promise<CourseReference[]> {
-    try {
-      const data = await requestCourseData<CourseCatalogRecord[]>('catalog')
-      if (Array.isArray(data) && data.length > 0) {
-        const orderMap: Record<string, number> = {
-          'phat-am-tieng-anh': 1,
-          'tu-vung-tieng-anh': 2,
-          'ngu-phap-tieng-anh': 3,
-        }
-        return data.map(mapCourse).sort((a, b) => (orderMap[a.slug] || 99) - (orderMap[b.slug] || 99))
-      }
-      return DEFAULT_COURSES
-    } catch {
-      return DEFAULT_COURSES
+    const data = await requestCourseData<CourseCatalogRecord[]>('catalog')
+    if (!Array.isArray(data) || data.length === 0) {
+      return []
     }
+    return data.map(mapCourse)
   },
 
   async get(identifier: string): Promise<CourseReference> {
-    try {
-      const data = await requestCourseData<CourseCatalogRecord>(encodeURIComponent(identifier))
-      if (data && typeof data === 'object' && data.id && data.title) {
-        return mapCourse(data)
-      }
-    } catch {
-      // Fallback to default courses if backend fails or doesn't have it
+    const data = await requestCourseData<CourseCatalogRecord>(encodeURIComponent(identifier))
+    if (!data || typeof data !== 'object' || !data.id || !data.title) {
+      throw new Error('Thông tin khóa học không hợp lệ.')
     }
-    const fallback = DEFAULT_COURSES.find(
-      (item) => item.slug === identifier || item.id === identifier
-    )
-    if (fallback) return fallback
-    throw new Error('Thông tin khóa học không đúng định dạng.')
+    return mapCourse(data)
   },
 }

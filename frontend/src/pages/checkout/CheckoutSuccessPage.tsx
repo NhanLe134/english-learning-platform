@@ -56,7 +56,7 @@ function SuccessHeader({
       <h1 id="payment-success-title">Thanh Toán &amp; Đăng Ký Khóa Học Thành Công!</h1>
       <p className="payment-success-subtitle">
         Chào mừng bạn <strong>{studentName}</strong> đã chính thức trở thành học viên khóa{' '}
-        <strong className="payment-success-course-name">{courseTitle}</strong> tại Lumina English Academy.
+        <strong className="payment-success-course-name">{courseTitle}</strong> tại Your English Voice.
       </p>
 
       <div className="payment-success-metadata">

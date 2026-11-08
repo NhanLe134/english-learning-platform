@@ -6,7 +6,6 @@ import {
   ChevronRight,
   CircleHelp,
   Clock3,
-  Copy,
   CreditCard,
   Headset,
   LockKeyhole,
@@ -20,11 +19,7 @@ import {
 import { useAuth } from '../auth/auth-context'
 import { SiteFooter, SiteHeader } from '../auth/AuthShared'
 import { readCheckoutCourse } from '../courses/course-data'
-import {
-  ENROLLMENT_STORAGE_KEY,
-  type EnrollmentRecord,
-  type PaymentMethod,
-} from './checkout-data'
+import { type EnrollmentRecord, type PaymentMethod, ENROLLMENT_STORAGE_KEY } from './checkout-data'
 import './checkout-page.css'
 
 interface StudentDetails {
@@ -74,18 +69,6 @@ function initialStudentDetails(): StudentDetails {
     email: '',
     phone: '',
   }
-}
-
-function QrPreview() {
-  return (
-    <div className="checkout-qr-preview" aria-label="Bản xem trước mã QR thanh toán">
-      <div className="checkout-qr-art" aria-hidden="true">
-        <QrCode size={104} strokeWidth={1.3} />
-      </div>
-      <span><QrCode size={13} /> Mã QR tự động cập nhật</span>
-      <small>Bản xem trước · Chưa kết nối thanh toán</small>
-    </div>
-  )
 }
 
 function EditStudentDialog({
@@ -184,7 +167,6 @@ export function CheckoutPage() {
   const [processing, setProcessing] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [paymentError, setPaymentError] = useState('')
-  const [copyMessage, setCopyMessage] = useState('')
   const copyMessageTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const paymentTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const currentStudent = {
@@ -199,17 +181,6 @@ export function CheckoutPage() {
   }, [])
 
   const expireOrder = useCallback(() => setExpired(true), [])
-
-  async function copyValue(label: string, value: string) {
-    try {
-      await navigator.clipboard.writeText(value)
-      setCopyMessage(`Đã sao chép ${label}.`)
-    } catch {
-      setCopyMessage('Không thể sao chép tự động. Vui lòng chọn và sao chép nội dung.')
-    }
-    if (copyMessageTimer.current) clearTimeout(copyMessageTimer.current)
-    copyMessageTimer.current = setTimeout(() => setCopyMessage(''), 2800)
-  }
 
   function handlePayment() {
     if (processing || expired) return
@@ -239,8 +210,6 @@ export function CheckoutPage() {
         window.location.assign('/checkout/success')
       } catch {
         setPaymentError('Không thể lưu trạng thái ghi danh trên thiết bị này. Vui lòng thử lại.')
-      } finally {
-        setProcessing(false)
       }
     }, 1800)
   }
@@ -307,22 +276,19 @@ export function CheckoutPage() {
                   </button>
 
                   {paymentMethod === 'vietqr' && (
-                    <div className="checkout-vietqr-details">
-                      <QrPreview />
-                      <dl className="checkout-bank-details">
-                        <div><dt>Ngân hàng:</dt><dd>Vietcombank (VCB)</dd></div>
-                        <div>
-                          <dt>Số tài khoản:</dt>
-                          <dd>1029 8839 001 <button type="button" onClick={() => void copyValue('số tài khoản', '10298839001')} aria-label="Sao chép số tài khoản"><Copy size={13} /></button></dd>
-                        </div>
-                        <div><dt>Chủ tài khoản:</dt><dd>YOUR VOICE ENGLISH</dd></div>
-                        <div className="checkout-bank-amount"><dt>Số tiền chính xác:</dt><dd>{formatCurrency(course.price)}</dd></div>
-                        <div className="checkout-bank-syntax">
-                          <dt>Cú pháp chuyển khoản:</dt>
-                          <dd>LUMINA 9842 <button type="button" onClick={() => void copyValue('cú pháp chuyển khoản', 'LUMINA 9842')} aria-label="Sao chép cú pháp chuyển khoản"><Copy size={13} /></button></dd>
-                        </div>
-                      </dl>
-                    </div>
+                    <dl className="checkout-bank-details">
+                      <div><dt>Ngân hàng:</dt><dd>Vietcombank (VCB)</dd></div>
+                      <div>
+                        <dt>Số tài khoản:</dt>
+                        <dd>1029 8839 001</dd>
+                      </div>
+                      <div><dt>Chủ tài khoản:</dt><dd>YOUR VOICE ENGLISH</dd></div>
+                      <div className="checkout-bank-amount"><dt>Số tiền chính xác:</dt><dd>{formatCurrency(course.price)}</dd></div>
+                      <div className="checkout-bank-syntax">
+                        <dt>Cú pháp chuyển khoản:</dt>
+                        <dd>YOURENGLISHVOICE</dd>
+                      </div>
+                    </dl>
                   )}
                 </article>
 
@@ -363,7 +329,6 @@ export function CheckoutPage() {
                   Phương thức này đang ở chế độ mô phỏng; không yêu cầu nhập thông tin thẻ hoặc ví.
                 </p>
               )}
-              {copyMessage && <p className="checkout-copy-feedback" role="status">{copyMessage}</p>}
             </section>
           </div>
 

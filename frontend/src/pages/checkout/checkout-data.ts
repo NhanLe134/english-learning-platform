@@ -1,4 +1,4 @@
-import { FEATURED_COURSE } from '../courses/course-data'
+// import { FEATURED_COURSE } from '../courses/course-data'
 
 export type PaymentMethod = 'vietqr' | 'card' | 'wallet'
 
@@ -15,9 +15,9 @@ export interface EnrollmentRecord {
   createdAt: string
 }
 
-export const COURSE_ID = FEATURED_COURSE.id
-export const COURSE_TITLE = FEATURED_COURSE.title
-export const PAYMENT_AMOUNT = FEATURED_COURSE.price
+// export const COURSE_ID = FEATURED_COURSE.id
+// export const COURSE_TITLE = FEATURED_COURSE.title
+// export const PAYMENT_AMOUNT = FEATURED_COURSE.price
 export const ENROLLMENT_STORAGE_KEY = 'your-english-voice-simulated-enrollment'
 
 export function readEnrollmentRecord(): EnrollmentRecord | null {

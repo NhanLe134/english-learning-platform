@@ -109,10 +109,6 @@ function AppRoutes() {
     case '/home':
       page = <HomePage />
       break
-    case '/about':
-    case '/ve-chung-toi':
-      page = <AboutPage />
-      break
     case '/':
       page =
         window.location.hash.toLowerCase() === '#ve-chung-toi' ? (
