@@ -41,5 +41,6 @@ body {
 
 button,
 input {
-  font: inherit;
+  font-family: inherit;
+  font-size: 100%;
 }

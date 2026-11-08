@@ -53,7 +53,8 @@ authRouter.post(
 authRouter.post(
   '/refresh',
   requireTrustedOrigin,
-  authRateLimit(env.authLoginRateLimit),
+  // KHÔNG rate limit: refresh chạy tự động mỗi lần tải trang, giới hạn sẽ chặn
+  // cả người dùng duyệt web bình thường (rate limit chỉ dành cho login/OTP).
   (request, response, next) => authController.refresh(request, response, next)
 )
 authRouter.post(
