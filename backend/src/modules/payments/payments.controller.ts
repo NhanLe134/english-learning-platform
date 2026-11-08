@@ -123,14 +123,7 @@ export class PaymentController {
     next: NextFunction,
   ): Promise<void> {
     try {
-      const secretKey = process.env.SEPAY_SECRET_KEY || ''
-      const rawAuthHeader = request.headers['x-secret-key']
-      const authHeader = Array.isArray(rawAuthHeader) ? rawAuthHeader[0] ?? '' : rawAuthHeader || ''
-      if (!authHeader.startsWith('Apikey ') && authHeader !== secretKey) {
-        console.error('[SePayWebhook] Invalid X-Secret-Key header')
-        response.status(401).json({ success: false, message: 'Unauthorized' })
-        return
-      }
+      // SePay IPN Auth Type = None: không yêu cầu Secret Key
 
       const rawBody = request.body as unknown
 
