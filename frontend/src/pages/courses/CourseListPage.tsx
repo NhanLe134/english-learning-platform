@@ -3,6 +3,7 @@ import {
   ArrowRight,
   Award,
   Briefcase,
+  CalendarDays,
   CheckCircle2,
   Clock3,
   GraduationCap,
@@ -28,6 +29,8 @@ function getCourseTheme(course: CourseReference): string {
 }
 
 function CourseCard({ course }: { course: CourseReference }) {
+  const courseLink = `/courses/${encodeURIComponent(course.slug)}`
+
   const cornerIcon = () => {
     switch (course.iconType) {
       case 'users':
@@ -42,23 +45,38 @@ function CourseCard({ course }: { course: CourseReference }) {
 
   const highlightIcon = (index: number) => {
     if (index === 0) return <Clock3 size={15} />
-    if (index === 1) return <Users size={15} />
-    return <MessageSquareText size={15} />
+    if (index === 1) return <Clock3  size={15} />
+    return <Clock3 size={15} />
   }
 
+  const instructorInitials = course.instructor
+    .trim()
+    .split(/\s+/)
+    .map((part) => part[0])
+    .slice(-2)
+    .join('')
+
+  const price = `${course.price.toLocaleString('vi-VN')}đ`
+  const originalPrice = `${course.originalPrice.toLocaleString('vi-VN')}đ`
+
   return (
-    <article className={`public-course-card${course.isPopular ? ' is-popular' : ''}`}>
-      <a className="public-course-card-link" href={`/courses/${encodeURIComponent(course.slug)}`}>
-        {course.thumbnailUrl ? (
-          <div className={`public-course-card-image ${getCourseTheme(course)}`}>
+    <article className="public-course-card">
+      <a className="public-course-card-link" href={courseLink} aria-label={`Xem chi tiết khóa học ${course.title}`}>
+        <div className={`public-course-card-image ${getCourseTheme(course)}`}>
+          {course.thumbnailUrl ? (
             <img src={course.thumbnailUrl} alt="" loading="lazy" />
+          ) : (
+            <span className="public-course-cover-icon" aria-hidden="true">{cornerIcon()}</span>
+          )}
+          <div className="public-course-cover-badges">
+            {course.isPopular && <span className="public-course-status-badge">BÁN CHẠY</span>}
             <span className="public-course-category">{course.category}</span>
           </div>
-        ) : null}
+        </div>
         <div className="public-course-card-copy">
-          <div className="public-course-card-header-row">
-            <span className="public-course-tag-pill">{course.category}</span>
-            <span className="public-course-corner-icon">{cornerIcon()}</span>
+          <div className="public-course-meta">
+            <span>{course.level || course.category}</span>
+            <span className="public-course-lesson-count"><CalendarDays size={14} /> {course.totalLessons} buổi học</span>
           </div>
           <h2>{course.title}</h2>
           <p>{course.description}</p>
@@ -72,8 +90,16 @@ function CourseCard({ course }: { course: CourseReference }) {
               ))}
             </ul>
           )}
-          <div className="public-course-card-bottom-action">
-            <span className="public-course-btn-primary">Xem chi tiết</span>
+          <div className="public-course-instructor-row">
+            <span className="public-course-instructor-avatar" aria-hidden="true">{instructorInitials}</span>
+            <span className="public-course-instructor-name">{course.instructor}</span>
+          </div>
+          <div className="public-course-card-bottom">
+            <span className="public-course-price-group">
+              {course.originalPrice > course.price && <del>{originalPrice}</del>}
+              <strong>{price}</strong>
+            </span>
+            <span className="public-course-btn-primary">Xem chi tiết <ArrowRight size={15} /></span>
           </div>
         </div>
       </a>
@@ -130,11 +156,12 @@ export function CourseListPage() {
     <div className="public-course-page">
       <SiteHeader />
       <main className="public-course-main">
-        <header className="public-course-heading">
-          <span className="public-course-eyebrow"><GraduationCap size={15} /> CHƯƠNG TRÌNH ĐÀO TẠO</span>
-          <h1>Danh Sách Khóa Học</h1>
-          <p>Chọn lộ trình phù hợp và bắt đầu hành trình chinh phục tiếng Anh của bạn.</p>
-          <form className="public-course-search" onSubmit={submitSearch}>
+        <section className="public-course-hero">
+          <div className="public-course-container">
+            <span className="public-course-eyebrow"><GraduationCap size={16} /> CHƯƠNG TRÌNH ĐÀO TẠO</span>
+            <h1>Danh Sách Khóa Học</h1>
+            <p>Chọn lộ trình phù hợp và bắt đầu hành trình chinh phục tiếng Anh của bạn.</p>
+            <form className="public-course-search" onSubmit={submitSearch}>
             <label className="public-course-search-field">
               <Search size={18} />
               <span className="public-course-visually-hidden">Tìm khóa học</span>
@@ -154,8 +181,9 @@ export function CourseListPage() {
               <CheckCircle2 size={15} /> Bảo đảm đầu ra
             </button>
             <button className="public-course-search-button" type="submit">Tìm Kiếm <ArrowRight size={17} /></button>
-          </form>
-        </header>
+            </form>
+          </div>
+        </section>
 
         {error && (
           <div className="public-course-error" role="alert">
@@ -164,28 +192,26 @@ export function CourseListPage() {
           </div>
         )}
 
-        {loading ? (
-          <div className="public-course-status" role="status"><LoaderCircle size={20} /> Đang tải khóa học…</div>
-        ) : visibleCourses.length > 0 ? (
-          <>
-            <div className="public-course-section-header">
-              <div>
-                <span className="public-course-eyebrow">CHƯƠNG TRÌNH ĐÀO TẠO</span>
-                <h2 className="public-course-section-title">Các khóa học hiện tại</h2>
-              </div>
-              <a href="#all-courses" className="public-course-view-all">
-                Xem tất cả khóa học <ArrowRight size={16} />
-              </a>
+        <section className="public-course-results public-course-container" id="all-courses" aria-label="Danh sách khóa học">
+          <div className="public-course-section-header">
+            <div>
+              <span className="public-course-eyebrow">CHƯƠNG TRÌNH ĐÀO TẠO</span>
+              <h2 className="public-course-section-title">Danh Sách Khóa Học</h2>
             </div>
-            <section className="public-course-grid" aria-label="Các khóa học hiện có">
-              {visibleCourses.map((course) => <CourseCard key={course.id} course={course} />)}
-            </section>
-          </>
-        ) : !error ? (
-          <div className="public-course-status">
-            {submittedQuery || guaranteedOnly ? 'Không tìm thấy khóa học phù hợp với bộ lọc.' : 'Hiện chưa có khóa học nào được mở đăng ký.'}
+            {!loading && <span className="public-course-result-count">{visibleCourses.length} khóa học</span>}
           </div>
-        ) : null}
+          {loading ? (
+            <div className="public-course-status" role="status"><LoaderCircle size={20} /> Đang tải khóa học…</div>
+          ) : visibleCourses.length > 0 ? (
+            <div className="public-course-grid">
+              {visibleCourses.map((course) => <CourseCard key={course.id} course={course} />)}
+            </div>
+          ) : !error ? (
+            <div className="public-course-status public-course-empty">
+              {submittedQuery || guaranteedOnly ? 'Không tìm thấy khóa học phù hợp với bộ lọc.' : 'Hiện chưa có khóa học nào được mở đăng ký.'}
+            </div>
+          ) : null}
+        </section>
       </main>
       <SiteFooter brandName="Your English Voice" />
     </div>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import {
   ArrowRight,
   BadgeCheck,
@@ -30,28 +30,14 @@ interface StudentDetails {
 
 const HOLD_TIME_SECONDS = 15 * 60
 
-const formatCurrency = (amount: number) => `${amount.toLocaleString('vi-VN')} đ`
+const formatCurrency = (amount: number) => new Intl.NumberFormat('vi-VN', {
+  style: 'currency', currency: 'VND', maximumFractionDigits: 0,
+}).format(amount)
 
 function formatTime(seconds: number): string {
   const minutes = Math.floor(seconds / 60).toString().padStart(2, '0')
   const remainder = (seconds % 60).toString().padStart(2, '0')
   return `${minutes}:${remainder}`
-}
-
-function VoucherBadge({
-  code,
-  description,
-}: {
-  code: string
-  description: string
-}) {
-  return (
-    <div className="checkout-voucher">
-      <div>
-        <BadgeCheck size={13} /><strong>Mã giảm giá đã áp dụng:</strong><b>{code}</b></div>
-      <small>{description}</small>
-    </div>
-  )
 }
 
 function OrderHoldTimer({ onExpire }: { onExpire: () => void }) {
@@ -185,16 +171,11 @@ export function CheckoutPage() {
   const [editOpen, setEditOpen] = useState(false)
   const [paymentError, setPaymentError] = useState('')
   const [showQr, setShowQr] = useState(false)
-  const copyMessageTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const currentStudent = {
     fullName: student.fullName || user?.fullName || '',
     email: student.email || user?.email || '',
     phone: student.phone || user?.phoneNumber || '',
   }
-
-  useEffect(() => () => {
-    if (copyMessageTimer.current) clearTimeout(copyMessageTimer.current)
-  }, [])
 
   useEffect(() => {
     let active = true
@@ -223,6 +204,7 @@ export function CheckoutPage() {
     setProcessing(false)
     setShowQr(false)
   }, [])
+  const handleQrOrderReady = useCallback(() => setProcessing(false), [])
 
   function handlePayment() {
     if (processing || expired || courseLoading || courseLoadError) return
@@ -283,7 +265,7 @@ export function CheckoutPage() {
               <div className="checkout-method-option selected">
                 <span className="checkout-method-copy">
                   <strong>Chuyển khoản ngân hàng qua SePay</strong>
-                  <small>Hoàn tất thanh toán trên trang bảo mật do SePay cung cấp.</small>
+                  <small>Quét mã QR và xem thông tin người nhận trên trang thanh toán bảo mật của SePay.</small>
                 </span>
                 <QrCode size={19} className="checkout-method-icon" />
               </div>
@@ -318,13 +300,9 @@ export function CheckoutPage() {
                   <strong>-{formatCurrency(discount)}</strong>
                 </div>
               </div>
-              <VoucherBadge
-  code="LUMINA2025"
-  description="Ưu đãi khóa hè -0 đ"
-/>
               <div className="checkout-total">
-                <strong>Tổng thanh toán:</strong>
-                <div><b>{formatCurrency(course.price)}</b><small>Đã bao gồm VAT và toàn bộ giáo trình gốc</small></div>
+                <strong>Tổng tiền cần thanh toán:</strong>
+                <div><b>{formatCurrency(course.price)}</b><small>Đơn hàng gồm 1 khóa học · VND</small></div>
               </div>
 
               {/* SePay VietQR Payment Component */}
@@ -332,28 +310,29 @@ export function CheckoutPage() {
                 <SePayVietQR
                   courseId={course.id}
                   onPaymentError={handleQrPaymentError}
+                  onOrderReady={handleQrOrderReady}
                 />
               )}
 
               {courseLoading && <p role="status">Đang tải thông tin khóa học…</p>}
               {courseLoadError && <p className="checkout-inline-error" role="alert">{courseLoadError}</p>}
               {paymentError && <p className="checkout-inline-error" role="alert">{paymentError}</p>}
-              <button
+              {!showQr && <button
                 type="button"
                 className="checkout-primary-button checkout-pay-button"
                 onClick={handlePayment}
                 disabled={processing || expired || showQr || courseLoading || Boolean(courseLoadError)}
               >
                 {processing
-                  ? <><span className="checkout-spinner" aria-hidden="true" /> ĐANG XÁC NHẬN…</>
+                  ? <><span className="checkout-spinner" aria-hidden="true" /> ĐANG TẠO ĐƠN…</>
                   : expired
                     ? 'ĐƠN HÀNG ĐÃ HẾT HẠN'
-                    : <>Tạo đơn &amp; hiển thị QR ({course.price.toLocaleString('vi-VN')}đ) <ArrowRight size={17} /></>}
-              </button>
+                    : <>Tạo đơn &amp; tiếp tục thanh toán ({formatCurrency(course.price)}) <ArrowRight size={17} /></>}
+              </button>}
 
               <ul className="checkout-guarantees">
-                <li><LockKeyhole size={13} /> Thanh toán bảo mật mã hóa SSL 256-bit chuẩn PCI-DSS</li>
-                <li><BadgeCheck size={13} /> Cam kết hoàn tiền 100% không lý do trong 7 ngày nếu chưa hài lòng</li>
+                <li><LockKeyhole size={13} /> Thông tin thanh toán được xử lý trên trang bảo mật của SePay.</li>
+                <li><BadgeCheck size={13} /> Khóa học chỉ được kích hoạt sau khi hệ thống xác nhận giao dịch.</li>
               </ul>
             </section>
 

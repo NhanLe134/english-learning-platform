@@ -17,6 +17,7 @@ function createOrder(status: PaymentOrder['status'] = 'pending'): PaymentOrder {
     status,
     transfer_content: `DH${ORDER_ID}`,
     provider: 'sepay',
+    provider_order_id: status === 'paid' ? 'sepay-order-1' : null,
     provider_transaction_id: status === 'paid' ? 'sepay-tx-1' : null,
     paid_at: status === 'paid' ? new Date().toISOString() : null,
     expired_at: null,
@@ -75,9 +76,9 @@ function setup(
       if (lookup === 'database-error') throw new Error('database unavailable')
       return lookup === 'missing' ? null : order
     },
-    markOrderPaid: async () => {
+    markOrderPaid: async (_orderId: string, providerOrderId: string) => {
       if (order.status === 'paid') return { order, isNewlyPaid: false }
-      order = { ...order, status: 'paid', provider_transaction_id: 'sepay-tx-1' }
+      order = { ...order, status: 'paid', provider_order_id: providerOrderId, provider_transaction_id: 'sepay-tx-1' }
       return { order, isNewlyPaid: true }
     },
     createEnrollment: async () => {
@@ -96,12 +97,26 @@ describe('SePay payment confirmation', () => {
   it('marks a valid pending order paid and creates its course enrollment', async () => {
     const test = setup()
 
-    const result = await test.service.handleSePayWebhook(createEvent())
+    const result = await test.service.handleSePayWebhook(createEvent({
+      order: { ...createEvent().order, id: 'e2c195be-c721-47eb-b323-99ab24e52d86' },
+    }))
 
     assert.equal(result.status, 'paid')
     assert.equal(result.isNewlyPaid, true)
     assert.equal(test.getOrder().status, 'paid')
+    assert.equal(test.getOrder().provider_order_id, 'sepay-order-1')
     assert.equal(test.getEnrollmentAttempts(), 1)
+  })
+
+  it('rejects a SePay order reference that differs from the stored reference', async () => {
+    const test = setup('paid')
+    await assert.rejects(
+      test.service.handleSePayWebhook(createEvent({
+        order: { ...createEvent().order, order_id: 'different-sepay-order' },
+      })),
+      /payment reference does not match/,
+    )
+    assert.equal(test.getEnrollmentAttempts(), 0)
   })
 
   it('handles duplicate IPN delivery without duplicating enrollment', async () => {

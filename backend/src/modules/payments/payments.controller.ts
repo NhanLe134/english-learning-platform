@@ -168,7 +168,8 @@ export class PaymentController {
     if (!Number.isSafeInteger(timestamp) || timestamp <= 0) throw new PaymentWebhookError('Invalid webhook timestamp', 400)
     if (notification_type !== 'ORDER_PAID') throw new PaymentWebhookError('Unsupported SePay notification type', 400)
 
-    // Order object - order.id is a UUID that directly matches the DB primary key
+    // SePay's order.id is its own UUID; order_invoice_number is the merchant
+    // invoice used to locate the platform order, while order_id is SePay's ref.
     const rawOrder = (record.order && typeof record.order === 'object'
       ? record.order
       : {}) as Record<string, unknown>
@@ -183,9 +184,11 @@ export class PaymentController {
       ? record.customer
       : {}) as Record<string, unknown>
 
-    // Extract order ID from SePay IPN - order.id is a UUID that matches DB primary key
+    // Validate the SePay order UUID format, but do not compare it to our DB ID.
     const order_id = typeof rawOrder.id === 'string' ? rawOrder.id : null
     if (!order_id || !UUID_PATTERN.test(order_id)) throw new PaymentWebhookError('Invalid SePay order ID', 400)
+    const sepay_order_id = typeof rawOrder.order_id === 'string' ? rawOrder.order_id.trim() : ''
+    if (!sepay_order_id) throw new PaymentWebhookError('Missing SePay payment reference', 400)
 
     // Extract amount from transaction
     const amount = Number(rawTransaction.transaction_amount)
@@ -212,7 +215,7 @@ export class PaymentController {
       notification_type,
       order: {
         id: order_id ?? '',
-        order_id: String(rawOrder.order_id ?? order_id ?? ''),
+        order_id: sepay_order_id,
         order_status: String(rawOrder.order_status ?? ''),
         order_currency: orderCurrency,
         order_amount: orderAmount,

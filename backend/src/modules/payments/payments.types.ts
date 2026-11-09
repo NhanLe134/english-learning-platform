@@ -9,6 +9,7 @@ export interface PaymentOrder {
   status: PaymentOrderStatus
   transfer_content: string
   provider: string
+  provider_order_id: string | null
   provider_transaction_id: string | null
   paid_at: string | null
   expired_at: string | null

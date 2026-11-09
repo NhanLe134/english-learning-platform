@@ -77,8 +77,8 @@ export class PaymentService {
   }
 
   async handleSePayWebhook(event: SePayWebhookEvent): Promise<VerifyPaymentResult> {
-    // SePay IPN sends order.id as a UUID that matches the DB primary key
     const invoiceNumber = event.order.order_invoice_number
+    const sepayOrderId = event.order.order_id
     const transactionId = event.transaction.transaction_id
     const amountIn = Number(event.transaction.transaction_amount)
 
@@ -87,12 +87,17 @@ export class PaymentService {
       throw new PaymentWebhookError('Invalid webhook amount: transaction amount must be greater than zero', 422)
     }
 
-    // Find order by ID from SePay
+    if (!sepayOrderId.trim()) throw new PaymentWebhookError('Missing SePay payment reference.', 422)
+
+    // The merchant invoice is the platform order lookup key. SePay's order.id
+    // is its own UUID; order.order_id is the gateway reference persisted below.
     const order = await this.repository.findOrderByTransferContent(invoiceNumber)
     if (!order) {
       throw new PaymentWebhookError(`Course order not found for invoice number: ${invoiceNumber}`, 404)
     }
-    if (event.order.id !== order.id) throw new PaymentWebhookError('SePay order ID does not match the invoice number.', 422)
+    if (order.provider_order_id && order.provider_order_id !== sepayOrderId) {
+      throw new PaymentWebhookError('SePay payment reference does not match the stored reference.', 422)
+    }
     if (event.notification_type !== 'ORDER_PAID' || event.transaction.transaction_status !== 'APPROVED') {
       throw new PaymentWebhookError('SePay notification does not represent an approved payment.', 422)
     }
@@ -111,7 +116,7 @@ export class PaymentService {
     }
 
     if (order.status === 'expired' || order.status === 'cancelled' || order.status === 'failed') throw new PaymentWebhookError('Order is no longer payable.', 422)
-    const result = await this.repository.markOrderPaid(order.id, transactionId, amountIn)
+    const result = await this.repository.markOrderPaid(order.id, sepayOrderId, transactionId, amountIn)
 
     // Retry enrollment when payment was committed but an earlier IPN failed before enrollment.
     await this.repository.createEnrollment(order.student_id, order.course_id)

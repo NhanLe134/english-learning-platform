@@ -2,7 +2,7 @@ import { createSupabaseClient } from '../../config/supabase.js'
 import type { CreatePaymentOrderInput, PaymentOrder, PaymentOrderRow } from './payments.types.js'
 
 const COURSE_ORDER_COLUMNS =
-  'id,student_id,course_id,amount,currency,status,transfer_content,provider,provider_transaction_id,paid_at,expired_at,created_at,updated_at'
+  'id,student_id,course_id,amount,currency,status,transfer_content,provider,provider_order_id,provider_transaction_id,paid_at,expired_at,created_at,updated_at'
 
 function mapPaymentOrder(row: PaymentOrderRow): PaymentOrder {
   return {
@@ -88,6 +88,7 @@ export class PaymentOrderRepository {
 
   async markOrderPaid(
     orderId: string,
+    providerOrderId: string,
     providerTransactionId: string | null,
     amount: number,
   ): Promise<{ order: PaymentOrder; isNewlyPaid: boolean }> {
@@ -95,14 +96,34 @@ export class PaymentOrderRepository {
     if (!existing) {
       throw new Error(`Course order ${orderId} not found`)
     }
+    if (existing.provider_order_id && existing.provider_order_id !== providerOrderId) {
+      throw new Error('SePay order reference does not match the stored payment reference.')
+    }
     if (existing.status === 'paid') {
-      return { order: existing, isNewlyPaid: false }
+      if (existing.provider_order_id) return { order: existing, isNewlyPaid: false }
+
+      // Older paid rows may predate persistence of SePay's generated reference.
+      // Bind the authenticated repeat notification once, then require it on future retries.
+      const { error: bindError } = await createSupabaseClient()
+        .from('course_orders')
+        .update({ provider_order_id: providerOrderId })
+        .eq('id', orderId)
+        .eq('status', 'paid')
+        .is('provider_order_id', null)
+      if (bindError) throw new Error(`Unable to persist SePay order reference: ${bindError.message}`, { cause: bindError })
+      const refreshed = await this.findOrderById(orderId)
+      if (!refreshed) throw new Error(`Course order ${orderId} not found after reference update`)
+      if (refreshed.provider_order_id !== providerOrderId) {
+        throw new Error('SePay order reference does not match the stored payment reference.')
+      }
+      return { order: refreshed, isNewlyPaid: false }
     }
 
     const { data, error } = await createSupabaseClient()
       .from('course_orders')
       .update({
         status: 'paid',
+        provider_order_id: providerOrderId,
         provider_transaction_id: providerTransactionId ?? existing.provider_transaction_id,
         paid_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -118,6 +139,9 @@ export class PaymentOrderRepository {
       // Order may have been updated concurrently; re-fetch
       const refreshed = await this.findOrderById(orderId)
       if (!refreshed) throw new Error(`Course order ${orderId} not found after update`)
+      if (refreshed.provider_order_id !== providerOrderId) {
+        throw new Error('SePay order reference does not match the stored payment reference.')
+      }
       return { order: refreshed, isNewlyPaid: refreshed.status === 'paid' }
     }
 
