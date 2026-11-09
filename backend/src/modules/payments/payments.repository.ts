@@ -16,6 +16,7 @@ export class PaymentOrderRepository {
     const { data, error } = await createSupabaseClient()
       .from('course_orders')
       .insert({
+        id: input.id,
         student_id: input.studentId,
         course_id: input.courseId,
         amount: input.amount,
@@ -30,6 +31,33 @@ export class PaymentOrderRepository {
 
     if (error) throw new Error(`Unable to create course order: ${error.message}`, { cause: error })
     return mapPaymentOrder(data as unknown as PaymentOrderRow)
+  }
+
+  async findPublishedCourse(courseId: string): Promise<{ id: string; title: string; price: number; discounted_price: number | null } | null> {
+    const { data, error } = await createSupabaseClient()
+      .from('courses')
+      .select('id,title,price,discounted_price')
+      .eq('id', courseId)
+      .eq('status', 'published')
+      .maybeSingle()
+    if (error) throw new Error(`Unable to retrieve course price: ${error.message}`, { cause: error })
+    if (!data) return null
+    return {
+      id: String(data.id),
+      title: String(data.title),
+      price: Number(data.price),
+      discounted_price: data.discounted_price === null ? null : Number(data.discounted_price),
+    }
+  }
+
+  async findCourseTitle(courseId: string): Promise<string | null> {
+    const { data, error } = await createSupabaseClient()
+      .from('courses')
+      .select('title')
+      .eq('id', courseId)
+      .maybeSingle()
+    if (error) throw new Error(`Unable to retrieve course title: ${error.message}`, { cause: error })
+    return data ? String(data.title) : null
   }
 
   async findOrderById(orderId: string): Promise<PaymentOrder | null> {

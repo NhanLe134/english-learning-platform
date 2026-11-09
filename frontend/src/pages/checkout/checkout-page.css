@@ -453,7 +453,6 @@
   padding-right: 4px;
 }
 
-.checkout-simulated-method-note,
 .checkout-copy-feedback {
   margin: 11px 0 0;
   color: #5F3E39;
@@ -956,16 +955,7 @@
   color: #BC0002;
 }
 
-.checkout-success-dialog .checkout-simulation-note {
-  margin: 12px 0 17px;
-  padding: 9px 10px;
-  border: 1px solid #F2E0C1;
-  border-radius: 6px;
-  background: #FFF9EF;
-  color: #5F3E39;
-  font-size: 10px;
-  text-align: left;
-}
+
 
 .checkout-success-button {
   width: 100%;

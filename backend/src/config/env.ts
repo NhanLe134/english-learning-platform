@@ -9,6 +9,17 @@ const nodeEnv = process.env.NODE_ENV ?? 'development'
 const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:5173'
 const apiOrigin = process.env.API_ORIGIN ?? `http://localhost:${port}`
 const authJwtSecret = process.env.AUTH_JWT_SECRET ?? ''
+const sepayEnv = process.env.SEPAY_ENV ?? 'sandbox'
+const sepayMerchantId = process.env.SEPAY_MERCHANT_ID ?? ''
+const sepaySecretKey = process.env.SEPAY_SECRET_KEY ?? ''
+const sepayIpnSecretKey = process.env.SEPAY_IPN_SECRET_KEY ?? ''
+
+if (!['sandbox', 'production'].includes(sepayEnv)) {
+  throw new Error('SEPAY_ENV must be either sandbox or production')
+}
+if (nodeEnv === 'production' && sepayEnv === 'production' && (!sepayMerchantId || !sepaySecretKey || !sepayIpnSecretKey)) {
+  throw new Error('Production SePay requires SEPAY_MERCHANT_ID, SEPAY_SECRET_KEY, and SEPAY_IPN_SECRET_KEY')
+}
 
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
   throw new Error('PORT must be an integer between 1 and 65535')
@@ -70,9 +81,12 @@ export const env = {
   resendApiKey: process.env.RESEND_API_KEY ?? '',
   emailFrom: process.env.EMAIL_FROM ?? '',
   sepayApiKey: process.env.SEPAY_API_KEY ?? '',
-  sepayMerchantId: process.env.SEPAY_MERCHANT_ID ?? '',
-  sepaySecretKey: process.env.SEPAY_SECRET_KEY ?? '',
-  sepayEnv: (process.env.SEPAY_ENV ?? 'sandbox') as 'sandbox' | 'production',
+  sepayMerchantId,
+  sepaySecretKey,
+  sepayIpnSecretKey,
+  sepayEnv: sepayEnv as 'sandbox' | 'production',
+  sepayBankCode: process.env.SEPAY_BANK_CODE ?? '',
+  sepayAccountNumber: process.env.SEPAY_ACCOUNT_NUMBER ?? '',
   payosClientId: process.env.PAYOS_CLIENT_ID ?? '',
   payosApiKey: process.env.PAYOS_API_KEY ?? '',
   payosChecksumKey: process.env.PAYOS_CHECKSUM_KEY ?? '',

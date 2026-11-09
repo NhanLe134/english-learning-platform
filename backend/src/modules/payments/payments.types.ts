@@ -17,6 +17,7 @@ export interface PaymentOrder {
 }
 
 export interface CreatePaymentOrderInput {
+  id: string
   studentId: string
   courseId: string
   amount: number
@@ -47,7 +48,7 @@ export interface SePayWebhookEvent {
     order_status: string
     order_currency: string
     order_amount: number | string
-    order_invoice_number: string | null
+    order_invoice_number: string
     custom_data: unknown[]
     user_agent: string
     ip_address: string

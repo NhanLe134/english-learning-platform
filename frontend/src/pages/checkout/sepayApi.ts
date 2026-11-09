@@ -12,9 +12,6 @@ interface ApiResponse<T> {
 
 interface CreateOrderRequest {
   courseId: string
-  amount: number
-  transferContent: string
-  expiredAt: string
 }
 
 interface CreateOrderResponse {
@@ -23,12 +20,16 @@ interface CreateOrderResponse {
   amount: number
   transferContent: string
   expiredAt: string | null
-  vietQrUrl: string
+  checkoutUrl: string
+  checkoutFields: Record<string, string | number>
+  course: { id: string; title: string; price: number }
   createdAt: string
 }
 
 interface OrderStatusResponse {
   orderId: string
+  courseId: string
+  courseTitle: string | null
   status: string
   amount: number
   transferContent: string

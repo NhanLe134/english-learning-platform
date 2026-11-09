@@ -12,14 +12,14 @@ import {
   Pencil,
   QrCode,
   ShieldCheck,
-  Smartphone,
   UserRound,
   X,
 } from 'lucide-react'
 import { useAuth } from '../auth/auth-context'
 import { SiteFooter, SiteHeader } from '../auth/AuthShared'
-import { readCheckoutCourse } from '../courses/course-data'
-import { type EnrollmentRecord, type PaymentMethod, ENROLLMENT_STORAGE_KEY } from './checkout-data'
+import { courseCatalogApi } from '../courses/services/courseCatalogApi'
+import { readCheckoutCourse, type CourseReference } from '../courses/course-data'
+import SePayVietQR from './SePayVietQR'
 import './checkout-page.css'
 
 interface StudentDetails {
@@ -36,6 +36,22 @@ function formatTime(seconds: number): string {
   const minutes = Math.floor(seconds / 60).toString().padStart(2, '0')
   const remainder = (seconds % 60).toString().padStart(2, '0')
   return `${minutes}:${remainder}`
+}
+
+function VoucherBadge({
+  code,
+  description,
+}: {
+  code: string
+  description: string
+}) {
+  return (
+    <div className="checkout-voucher">
+      <div>
+        <BadgeCheck size={13} /><strong>Mã giảm giá đã áp dụng:</strong><b>{code}</b></div>
+      <small>{description}</small>
+    </div>
+  )
 }
 
 function OrderHoldTimer({ onExpire }: { onExpire: () => void }) {
@@ -159,16 +175,17 @@ function EditStudentDialog({
 
 export function CheckoutPage() {
   const { user } = useAuth()
-  const course = readCheckoutCourse(window.location.search)
+  const [course, setCourse] = useState<CourseReference>(() => readCheckoutCourse(window.location.search))
+  const [courseLoading, setCourseLoading] = useState(true)
+  const [courseLoadError, setCourseLoadError] = useState('')
   const discount = course.originalPrice - course.price
   const [student, setStudent] = useState(initialStudentDetails)
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('vietqr')
   const [expired, setExpired] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [paymentError, setPaymentError] = useState('')
+  const [showQr, setShowQr] = useState(false)
   const copyMessageTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const paymentTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const currentStudent = {
     fullName: student.fullName || user?.fullName || '',
     email: student.email || user?.email || '',
@@ -177,13 +194,38 @@ export function CheckoutPage() {
 
   useEffect(() => () => {
     if (copyMessageTimer.current) clearTimeout(copyMessageTimer.current)
-    if (paymentTimer.current) clearTimeout(paymentTimer.current)
   }, [])
 
+  useEffect(() => {
+    let active = true
+    if (!course.id) {
+      setCourseLoadError('Không tìm thấy khóa học cần thanh toán.')
+      setCourseLoading(false)
+      return () => { active = false }
+    }
+    setCourseLoading(true)
+    void courseCatalogApi.get(course.id)
+      .then((selectedCourse) => {
+        if (active) setCourse(selectedCourse)
+      })
+      .catch((error: unknown) => {
+        if (active) setCourseLoadError(error instanceof Error ? error.message : 'Không thể tải thông tin khóa học.')
+      })
+      .finally(() => {
+        if (active) setCourseLoading(false)
+      })
+    return () => { active = false }
+  }, [course.id])
+
   const expireOrder = useCallback(() => setExpired(true), [])
+  const handleQrPaymentError = useCallback((message: string) => {
+    setPaymentError(message)
+    setProcessing(false)
+    setShowQr(false)
+  }, [])
 
   function handlePayment() {
-    if (processing || expired) return
+    if (processing || expired || courseLoading || courseLoadError) return
     if (!currentStudent.fullName.trim() || !currentStudent.email.trim() || !currentStudent.phone.trim()) {
       setPaymentError('Vui lòng bổ sung đầy đủ thông tin học viên trước khi thanh toán.')
       setEditOpen(true)
@@ -191,27 +233,7 @@ export function CheckoutPage() {
     }
     setPaymentError('')
     setProcessing(true)
-    paymentTimer.current = setTimeout(() => {
-      const enrollment: EnrollmentRecord = {
-        orderId: '#LM-982417',
-        courseId: course.id,
-        courseTitle: course.title,
-        amount: course.price,
-        status: 'simulated_paid',
-        paymentMethod,
-        studentName: currentStudent.fullName,
-        studentEmail: currentStudent.email,
-        studentPhone: currentStudent.phone,
-        createdAt: new Date().toISOString(),
-      }
-
-      try {
-        window.localStorage.setItem(ENROLLMENT_STORAGE_KEY, JSON.stringify(enrollment))
-        window.location.assign('/checkout/success')
-      } catch {
-        setPaymentError('Không thể lưu trạng thái ghi danh trên thiết bị này. Vui lòng thử lại.')
-      }
-    }, 1800)
+    setShowQr(true)
   }
 
   return (
@@ -258,77 +280,13 @@ export function CheckoutPage() {
                 </div>
               </header>
 
-              <div className="checkout-method-list" role="radiogroup" aria-label="Chọn phương thức thanh toán">
-                <article className={`checkout-method-option${paymentMethod === 'vietqr' ? ' selected' : ''}`}>
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={paymentMethod === 'vietqr'}
-                    className="checkout-method-select"
-                    onClick={() => setPaymentMethod('vietqr')}
-                  >
-                    <span className="checkout-radio"><i /></span>
-                    <span className="checkout-method-copy">
-                      <strong>Chuyển khoản Ngân hàng qua VietQR <b>Khuyên Dùng</b></strong>
-                      <small>Xử lý tự động 24/7 · Kích hoạt tài khoản ngay tức thì trong 30 giây</small>
-                    </span>
-                    <QrCode size={19} className="checkout-method-icon" />
-                  </button>
-
-                  {paymentMethod === 'vietqr' && (
-                    <dl className="checkout-bank-details">
-                      <div><dt>Ngân hàng:</dt><dd>Vietcombank (VCB)</dd></div>
-                      <div>
-                        <dt>Số tài khoản:</dt>
-                        <dd>1029 8839 001</dd>
-                      </div>
-                      <div><dt>Chủ tài khoản:</dt><dd>YOUR VOICE ENGLISH</dd></div>
-                      <div className="checkout-bank-amount"><dt>Số tiền chính xác:</dt><dd>{formatCurrency(course.price)}</dd></div>
-                      <div className="checkout-bank-syntax">
-                        <dt>Cú pháp chuyển khoản:</dt>
-                        <dd>YOURENGLISHVOICE</dd>
-                      </div>
-                    </dl>
-                  )}
-                </article>
-
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={paymentMethod === 'card'}
-                  className={`checkout-method-option checkout-method-select checkout-method-compact${paymentMethod === 'card' ? ' selected' : ''}`}
-                  onClick={() => setPaymentMethod('card')}
-                >
-                  <span className="checkout-radio"><i /></span>
-                  <span className="checkout-method-copy">
-                    <strong>Thẻ tín dụng / Ghi nợ quốc tế</strong>
-                    <small>Hỗ trợ thanh toán an toàn qua thẻ Visa, Mastercard, JCB</small>
-                  </span>
-                  <span className="checkout-card-brands" aria-label="Visa, Mastercard, JCB">
-                    <b>VISA</b><i>●●</i><small>JCB</small>
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={paymentMethod === 'wallet'}
-                  className={`checkout-method-option checkout-method-select checkout-method-compact${paymentMethod === 'wallet' ? ' selected' : ''}`}
-                  onClick={() => setPaymentMethod('wallet')}
-                >
-                  <span className="checkout-radio"><i /></span>
-                  <span className="checkout-method-copy">
-                    <strong>Ví điện tử MoMo / ZaloPay / Apple Pay</strong>
-                    <small>Thanh toán tức thì bằng ứng dụng trên điện thoại di động</small>
-                  </span>
-                  <Smartphone size={17} className="checkout-method-icon" />
-                </button>
+              <div className="checkout-method-option selected">
+                <span className="checkout-method-copy">
+                  <strong>Chuyển khoản ngân hàng qua SePay</strong>
+                  <small>Hoàn tất thanh toán trên trang bảo mật do SePay cung cấp.</small>
+                </span>
+                <QrCode size={19} className="checkout-method-icon" />
               </div>
-              {paymentMethod !== 'vietqr' && (
-                <p className="checkout-simulated-method-note">
-                  Phương thức này đang ở chế độ mô phỏng; không yêu cầu nhập thông tin thẻ hoặc ví.
-                </p>
-              )}
             </section>
           </div>
 
@@ -360,27 +318,37 @@ export function CheckoutPage() {
                   <strong>-{formatCurrency(discount)}</strong>
                 </div>
               </div>
-              <div className="checkout-voucher">
-                <div><BadgeCheck size={13} /><strong>Mã giảm giá đã áp dụng:</strong><b>LUMINA2025</b></div>
-                <small>Ưu đãi khóa hè <strong>-0 đ</strong></small>
-              </div>
+              <VoucherBadge
+  code="LUMINA2025"
+  description="Ưu đãi khóa hè -0 đ"
+/>
               <div className="checkout-total">
                 <strong>Tổng thanh toán:</strong>
                 <div><b>{formatCurrency(course.price)}</b><small>Đã bao gồm VAT và toàn bộ giáo trình gốc</small></div>
               </div>
 
+              {/* SePay VietQR Payment Component */}
+              {showQr && !expired && (
+                <SePayVietQR
+                  courseId={course.id}
+                  onPaymentError={handleQrPaymentError}
+                />
+              )}
+
+              {courseLoading && <p role="status">Đang tải thông tin khóa học…</p>}
+              {courseLoadError && <p className="checkout-inline-error" role="alert">{courseLoadError}</p>}
               {paymentError && <p className="checkout-inline-error" role="alert">{paymentError}</p>}
               <button
                 type="button"
                 className="checkout-primary-button checkout-pay-button"
                 onClick={handlePayment}
-                disabled={processing || expired}
+                disabled={processing || expired || showQr || courseLoading || Boolean(courseLoadError)}
               >
                 {processing
                   ? <><span className="checkout-spinner" aria-hidden="true" /> ĐANG XÁC NHẬN…</>
                   : expired
                     ? 'ĐƠN HÀNG ĐÃ HẾT HẠN'
-                    : <>Xác Nhận Thanh Toán ({course.price.toLocaleString('vi-VN')}đ) <ArrowRight size={17} /></>}
+                    : <>Tạo đơn &amp; hiển thị QR ({course.price.toLocaleString('vi-VN')}đ) <ArrowRight size={17} /></>}
               </button>
 
               <ul className="checkout-guarantees">
@@ -394,7 +362,7 @@ export function CheckoutPage() {
               <span><strong>Cần trợ giúp kích hoạt?</strong><small>Hotline hỗ trợ học viên 24/7</small></span>
               <b>1800 6889</b>
             </a>
-            <p className="checkout-safe-note"><CircleHelp size={13} /> Chưa thực hiện giao dịch thật — đây là bản mô phỏng.</p>
+              <p className="checkout-safe-note"><CircleHelp size={13} /> Thanh toán được xác nhận sau khi SePay gửi thông báo bảo mật.</p>
           </aside>
         </div>
       </main>

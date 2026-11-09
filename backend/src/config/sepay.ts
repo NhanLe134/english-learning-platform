@@ -4,6 +4,9 @@ import { env } from './env.js'
 let sepayClient: SePayPgClient | null = null
 
 export function getSePayClient(): SePayPgClient {
+  if (!['sandbox', 'production'].includes(env.sepayEnv)) {
+    throw new Error('SEPAY_ENV must be either sandbox or production')
+  }
   if (!env.sepayMerchantId || !env.sepaySecretKey) {
     throw new Error('SEPAY_MERCHANT_ID and SEPAY_SECRET_KEY are required for SePay integration')
   }
@@ -39,29 +42,6 @@ export interface SePayWebhookPayload {
  * Build a VietQR image URL using SePay merchant account info.
  * Standard VietQR format: https://img.vietqr.io/image/{bankCode}-{accountNo}?amount={amount}&addInfo={content}&accountName={name}
  */
-export function buildVietQrUrl({
-  bankCode,
-  accountNumber,
-  amount,
-  transferContent,
-  accountName,
-}: {
-  bankCode: string
-  accountNumber: string
-  amount: number
-  transferContent: string
-  accountName: string
-}): string {
-  const params = new URLSearchParams({
-    amount: String(Math.round(amount)),
-    addInfo: transferContent,
-    accountName,
-    format: 'png',
-  })
-
-  return `https://img.vietqr.io/image/${bankCode}-${accountNumber}?${params.toString()}`
-}
-
 /**
  * Extract the order id from a SePay transfer content string.
  * Expected format: DH{order_id} (e.g. DH550e8400-e29b-41d4-a716-446655440000)

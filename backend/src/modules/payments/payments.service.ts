@@ -1,11 +1,12 @@
+import { randomUUID } from 'node:crypto'
 import { env } from '../../config/env.js'
-import { getSePayClient, buildVietQrUrl, extractOrderIdFromContent } from '../../config/sepay.js'
+import { getSePayClient } from '../../config/sepay.js'
+import { PaymentWebhookError } from './payments.errors.js'
 import {
   PaymentOrderRepository,
   paymentOrderRepository,
 } from './payments.repository.js'
 import type {
-  CreatePaymentOrderInput,
   PaymentOrder,
   PaymentOrderStatus,
   SePayWebhookEvent,
@@ -17,35 +18,56 @@ const ORDER_HOLD_MINUTES = 15
 export class PaymentService {
   constructor(private readonly repository: PaymentOrderRepository = paymentOrderRepository) {}
 
-  async createOrder(input: CreatePaymentOrderInput): Promise<{
+  async createOrder(input: { studentId: string; courseId: string }): Promise<{
     order: PaymentOrder
-    vietQrUrl: string
+    checkoutUrl: string
+    checkoutFields: Record<string, string | number>
+    course: { id: string; title: string; price: number }
   }> {
-    const order = await this.repository.createOrder(input)
-
-    // SePay VietQR requires merchant account details. These come from env or
-    // fall back to sensible placeholders that must be configured for production.
-    const bankCode = env.sepayMerchantId // merchant id used as bank identifier placeholder
-    const accountNumber = env.sepayMerchantId
-    const accountName = 'Your English Voice'
-
-    // In a real integration the bank code and account number are the SePay
-    // merchant's registered VietQR account. Here we build the VietQR URL from
-    // configured values so the QR contains the exact transfer content (DH{order_id})
-    // and amount so the student's banking app pre-fills the transfer.
-    const vietQrUrl = buildVietQrUrl({
-      bankCode: String(bankCode || 'sepay'),
-      accountNumber: String(accountNumber || 'sepay'),
-      amount: order.amount,
-      transferContent: order.transfer_content,
-      accountName,
+    const course = await this.repository.findPublishedCourse(input.courseId)
+    if (!course) throw new Error('Course not found or no longer available.')
+    const amount = course.discounted_price ?? course.price
+    if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error('Course price is invalid.')
+    const sepay = getSePayClient()
+    const id = randomUUID()
+    const transferContent = `DH${id}`
+    const order = await this.repository.createOrder({
+      ...input,
+      id,
+      amount,
+      transferContent,
+      expiredAt: new Date(Date.now() + ORDER_HOLD_MINUTES * 60 * 1000).toISOString(),
     })
-
-    return { order, vietQrUrl }
+    const checkoutFields = sepay.checkout.initOneTimePaymentFields({
+      operation: 'PURCHASE',
+      payment_method: 'BANK_TRANSFER',
+      order_invoice_number: transferContent,
+      order_amount: order.amount,
+      currency: 'VND',
+      order_description: `Course: ${course.title} (${transferContent})`,
+      customer_id: order.student_id,
+      success_url: `${env.frontendUrl}/checkout/success?orderId=${encodeURIComponent(order.id)}`,
+      error_url: `${env.frontendUrl}/checkout?payment=error&orderId=${encodeURIComponent(order.id)}`,
+      cancel_url: `${env.frontendUrl}/checkout?payment=cancel&orderId=${encodeURIComponent(order.id)}`,
+    })
+    return {
+      order,
+      checkoutUrl: sepay.checkout.initCheckoutUrl(),
+      checkoutFields,
+      course: { id: course.id, title: course.title, price: amount },
+    }
   }
 
   async getOrder(orderId: string): Promise<PaymentOrder | null> {
-    return this.repository.findOrderById(orderId)
+    const order = await this.repository.findOrderById(orderId)
+    if (order?.status === 'pending' && order.expired_at && Date.parse(order.expired_at) <= Date.now()) {
+      return (await this.repository.markOrderExpired(order.id)) ?? order
+    }
+    return order
+  }
+
+  async getCourseTitle(courseId: string): Promise<string | null> {
+    return this.repository.findCourseTitle(courseId)
   }
 
   async expireStaleOrders(): Promise<void> {
@@ -56,47 +78,43 @@ export class PaymentService {
 
   async handleSePayWebhook(event: SePayWebhookEvent): Promise<VerifyPaymentResult> {
     // SePay IPN sends order.id as a UUID that matches the DB primary key
-    const orderId = event.order.id
+    const invoiceNumber = event.order.order_invoice_number
     const transactionId = event.transaction.transaction_id
     const amountIn = Number(event.transaction.transaction_amount)
 
     // Validate incoming amount
-    if (!amountIn || amountIn <= 0) {
-      throw new Error('Invalid webhook amount: transaction amount must be greater than zero')
+    if (!Number.isFinite(amountIn) || amountIn <= 0) {
+      throw new PaymentWebhookError('Invalid webhook amount: transaction amount must be greater than zero', 422)
     }
 
     // Find order by ID from SePay
-    const order = await this.repository.findOrderById(orderId)
+    const order = await this.repository.findOrderByTransferContent(invoiceNumber)
     if (!order) {
-      throw new Error(`Course order not found for order id: ${orderId}`)
+      throw new PaymentWebhookError(`Course order not found for invoice number: ${invoiceNumber}`, 404)
+    }
+    if (event.order.id !== order.id) throw new PaymentWebhookError('SePay order ID does not match the invoice number.', 422)
+    if (event.notification_type !== 'ORDER_PAID' || event.transaction.transaction_status !== 'APPROVED') {
+      throw new PaymentWebhookError('SePay notification does not represent an approved payment.', 422)
+    }
+    if (event.order.order_status !== 'CAPTURED' || event.transaction.transaction_type !== 'PAYMENT' || event.transaction.payment_method !== 'BANK_TRANSFER') {
+      throw new PaymentWebhookError('SePay order, transaction state, or payment method is invalid.', 422)
+    }
+    if (order.currency !== 'VND' || event.order.order_currency !== order.currency || event.transaction.transaction_currency !== order.currency) {
+      throw new PaymentWebhookError('Unsupported payment currency.', 422)
     }
 
-    // Idempotency: if already paid, return without changes
-    if (order.status === 'paid') {
-      return {
-        orderId: order.id,
-        status: order.status,
-        amount: order.amount,
-        transferContent: order.transfer_content,
-        providerTransactionId: order.provider_transaction_id,
-        isNewlyPaid: false,
-      }
-    }
-
-    // Amount tolerance: allow small rounding differences (±100 VND)
-    const amountTolerance = 100
-    if (Math.abs(amountIn - order.amount) > amountTolerance) {
-      throw new Error(
+    if (amountIn !== order.amount || Number(event.order.order_amount) !== order.amount) {
+      throw new PaymentWebhookError(
         `Amount mismatch: webhook amount ${amountIn} does not match order amount ${order.amount}`,
+        422,
       )
     }
 
+    if (order.status === 'expired' || order.status === 'cancelled' || order.status === 'failed') throw new PaymentWebhookError('Order is no longer payable.', 422)
     const result = await this.repository.markOrderPaid(order.id, transactionId, amountIn)
 
-    // Grant course access only when newly paid
-    if (result.isNewlyPaid) {
-      await this.repository.createEnrollment(order.student_id, order.course_id)
-    }
+    // Retry enrollment when payment was committed but an earlier IPN failed before enrollment.
+    await this.repository.createEnrollment(order.student_id, order.course_id)
 
     return {
       orderId: result.order.id,
