@@ -6,11 +6,31 @@ import { authRateLimit } from './auth.rate-limit.js'
 
 export const authRouter = Router()
 
+authRouter.get(
+  '/google',
+  authRateLimit(env.authLoginRateLimit),
+  (request, response, next) => authController.googleRedirect(request, response, next)
+)
+authRouter.get('/google/callback', (request, response, next) =>
+  authController.googleCallback(request, response, next)
+)
 authRouter.post(
   '/register',
   requireTrustedOrigin,
   authRateLimit(env.authLoginRateLimit),
   (request, response, next) => authController.register(request, response, next)
+)
+authRouter.post(
+  '/register/verification/resend',
+  requireTrustedOrigin,
+  authRateLimit(env.authResetRateLimit),
+  (request, response, next) => authController.resendRegistrationOtp(request, response, next)
+)
+authRouter.post(
+  '/register/verification/verify',
+  requireTrustedOrigin,
+  authRateLimit(env.authLoginRateLimit),
+  (request, response, next) => authController.verifyRegistrationOtp(request, response, next)
 )
 authRouter.post(
   '/login',
@@ -19,9 +39,27 @@ authRouter.post(
   (request, response, next) => authController.login(request, response, next)
 )
 authRouter.post(
-  '/refresh',
+  '/google',
   requireTrustedOrigin,
   authRateLimit(env.authLoginRateLimit),
+  (request, response, next) => authController.google(request, response, next)
+)
+authRouter.post(
+  '/google/session',
+  requireTrustedOrigin,
+  authRateLimit(env.authLoginRateLimit),
+  (request, response, next) => authController.consumeGoogleLogin(request, response, next)
+)
+authRouter.post(
+  '/google/identity',
+  requireTrustedOrigin,
+  authRateLimit(env.authLoginRateLimit),
+  (request, response, next) => authController.googleIdentity(request, response, next)
+)
+authRouter.post(
+  '/refresh',
+  requireTrustedOrigin,
+  // Only an explicit request may rotate an existing session's refresh token.
   (request, response, next) => authController.refresh(request, response, next)
 )
 authRouter.post(
@@ -34,12 +72,6 @@ authRouter.post(
   requireTrustedOrigin,
   authRateLimit(env.authResetRateLimit),
   (request, response, next) => authController.forgotPassword(request, response, next)
-)
-authRouter.post(
-  '/reset-password',
-  requireTrustedOrigin,
-  authRateLimit(env.authResetRateLimit),
-  (request, response, next) => authController.resetPassword(request, response, next)
 )
 authRouter.get('/me', authenticate, (request, response, next) =>
   authController.me(request, response, next)

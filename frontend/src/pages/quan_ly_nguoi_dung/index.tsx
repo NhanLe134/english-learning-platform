@@ -225,6 +225,11 @@ export const QuanLyNguoiDungPage: React.FC = () => {
     showToast('success', `Đã tạo & sao chép mã đăng ký mới: ${code}`)
   }
 
+  const navigateAdmin = (tab: string) => {
+    if (tab === 'quan_ly_nguoi_dung') window.location.assign('/admin/users')
+    if (tab === 'khoa_hoc_bai_tap') window.location.assign('/admin/courses')
+  }
+
   return (
     <div className="user-management-page-container">
       {/* Toast Notification Container */}
@@ -242,7 +247,7 @@ export const QuanLyNguoiDungPage: React.FC = () => {
       )}
 
       {/* Left Navigation Sidebar */}
-      <Sidebar activeTab="quan_ly_nguoi_dung" />
+      <Sidebar activeTab="quan_ly_nguoi_dung" onTabChange={navigateAdmin} />
 
       {/* Main Content Area (Crisp White Background) */}
       <div className="user-management-main-wrapper">

@@ -40,6 +40,7 @@ const jsonBody = (schema: string) => ({
 
 const tags = [
   { name: 'Authentication' },
+  { name: 'Courses', description: 'Public course selection and ADMIN-only course management.' },
   { name: 'User Management', description: 'ADMIN-only user administration endpoints.' },
 ]
 
@@ -62,6 +63,175 @@ export const openApiDocument = {
   servers: [{ url: new URL(env.apiOrigin).origin, description: 'Configured API origin' }],
   tags,
   paths: {
+    '/api/courses': {
+      get: {
+        tags: ['Courses'],
+        summary: 'Retrieve selected published courses',
+        description:
+          'Returns course details and teacher information for a comma-separated list of course UUIDs. Unpublished or unknown IDs are reported as missing. Pricing is reserved for the admin course-management API.',
+        operationId: 'getSelectedCourses',
+        parameters: [
+          {
+            in: 'query',
+            name: 'ids',
+            required: true,
+            description: 'Comma-separated course UUIDs (maximum 50).',
+            schema: { type: 'string', example: 'c0a80101-0000-4000-8000-000000000001,c0a80101-0000-4000-8000-000000000002' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Selected course details',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    success: { type: 'boolean', example: true },
+                    data: {
+                      type: 'array',
+                      items: { $ref: '#/components/schemas/Course' },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          '400': jsonResponse('Missing or invalid course IDs', {
+            $ref: '#/components/schemas/ErrorResponse',
+          }),
+          '404': jsonResponse('One or more courses are unavailable', {
+            $ref: '#/components/schemas/MissingCoursesResponse',
+          }),
+          '503': jsonResponse('Course catalog is not configured', {
+            $ref: '#/components/schemas/ErrorResponse',
+          }),
+        },
+      },
+    },
+    '/api/courses/catalog': {
+      get: {
+        tags: ['Courses'],
+        summary: 'List published courses for the public course page',
+        operationId: 'listPublishedCourses',
+        responses: {
+          '200': jsonResponse('Published course catalog'),
+          '503': jsonResponse('Course catalog is not configured', {
+            $ref: '#/components/schemas/ErrorResponse',
+          }),
+        },
+      },
+    },
+    '/api/courses/{identifier}': {
+      get: {
+        tags: ['Courses'],
+        summary: 'Get a published course by ID or slug',
+        operationId: 'getPublishedCourse',
+        parameters: [
+          {
+            in: 'path',
+            name: 'identifier',
+            required: true,
+            schema: { type: 'string' },
+            description: 'Course UUID or URL slug.',
+          },
+        ],
+        responses: {
+          '200': jsonResponse('Published course details and curriculum'),
+          '400': jsonResponse('Invalid course ID or slug', {
+            $ref: '#/components/schemas/ErrorResponse',
+          }),
+          '404': jsonResponse('Published course not found', {
+            $ref: '#/components/schemas/ErrorResponse',
+          }),
+          '503': jsonResponse('Course catalog is not configured', {
+            $ref: '#/components/schemas/ErrorResponse',
+          }),
+        },
+      },
+    },
+    '/api/courses/admin': {
+      get: {
+        tags: ['Courses'],
+        summary: 'List and filter courses',
+        description: 'ADMIN only. Returns a paginated course catalog, including draft and archived courses.',
+        operationId: 'listManagedCourses',
+        security: adminSecurity,
+        parameters: [
+          { in: 'query', name: 'search', schema: { type: 'string', maxLength: 100 } },
+          { in: 'query', name: 'category', schema: { type: 'string', maxLength: 100 } },
+          { in: 'query', name: 'level', schema: { type: 'string', enum: ['all', 'beginner', 'intermediate', 'advanced'], default: 'all' } },
+          { in: 'query', name: 'status', schema: { type: 'string', enum: ['all', 'draft', 'published', 'archived'], default: 'all' } },
+          { in: 'query', name: 'sort', schema: { type: 'string', enum: ['newest', 'price_asc', 'price_desc'], default: 'newest' } },
+          { in: 'query', name: 'page', schema: { type: 'integer', minimum: 1, default: 1 } },
+          { in: 'query', name: 'limit', schema: { type: 'integer', minimum: 1, maximum: 100, default: 10 } },
+        ],
+        responses: {
+          '200': jsonResponse('Paginated course catalog', { $ref: '#/components/schemas/ManagedCoursePageResponse' }),
+          ...adminResponses,
+        },
+      },
+      post: {
+        tags: ['Courses'],
+        summary: 'Create a course',
+        description: 'ADMIN only. The authenticated administrator is assigned as the course teacher.',
+        operationId: 'createManagedCourse',
+        security: adminSecurity,
+        requestBody: jsonBody('CourseManagementInput'),
+        responses: {
+          '201': jsonResponse('Course created', { $ref: '#/components/schemas/ManagedCourseResponse' }),
+          ...adminResponses,
+          '409': jsonResponse('Course slug is already in use', { $ref: '#/components/schemas/ErrorResponse' }),
+        },
+      },
+    },
+    '/api/courses/admin/{id}': {
+      patch: {
+        tags: ['Courses'],
+        summary: 'Update a course',
+        description: 'ADMIN only.',
+        operationId: 'updateManagedCourse',
+        security: adminSecurity,
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' } }],
+        requestBody: jsonBody('CourseManagementInput'),
+        responses: {
+          '200': jsonResponse('Course updated', { $ref: '#/components/schemas/ManagedCourseResponse' }),
+          ...adminResponses,
+          '404': jsonResponse('Course not found', { $ref: '#/components/schemas/ErrorResponse' }),
+          '409': jsonResponse('Course slug is already in use', { $ref: '#/components/schemas/ErrorResponse' }),
+        },
+      },
+      delete: {
+        tags: ['Courses'],
+        summary: 'Delete a course',
+        description: 'ADMIN only. Deletion may be rejected while related course data exists.',
+        operationId: 'deleteManagedCourse',
+        security: adminSecurity,
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' } }],
+        responses: {
+          '200': jsonResponse('Course deleted'),
+          ...adminResponses,
+          '404': jsonResponse('Course not found', { $ref: '#/components/schemas/ErrorResponse' }),
+          '409': jsonResponse('Course has linked enrollment or content data', { $ref: '#/components/schemas/ErrorResponse' }),
+        },
+      },
+    },
+    '/api/courses/admin/{id}/status': {
+      patch: {
+        tags: ['Courses'],
+        summary: 'Publish or draft a course',
+        description: 'ADMIN only.',
+        operationId: 'updateManagedCourseStatus',
+        security: adminSecurity,
+        parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' } }],
+        requestBody: jsonBody('CourseStatusUpdateRequest'),
+        responses: {
+          '200': jsonResponse('Course status updated', { $ref: '#/components/schemas/ManagedCourseResponse' }),
+          ...adminResponses,
+          '404': jsonResponse('Course not found', { $ref: '#/components/schemas/ErrorResponse' }),
+        },
+      },
+    },
     '/api/users': {
       get: {
         tags: ['User Management'],
@@ -166,15 +336,47 @@ export const openApiDocument = {
         tags: ['Authentication'],
         summary: 'Register a student account',
         description:
-          'Creates a PostgreSQL profile and stores its bcrypt password hash in the private auth_credentials table. The role is always assigned server-side as STUDENT; a client-supplied role is ignored. Requires the database auth migration.',
+          'Creates an unverified PostgreSQL student profile and stores its bcrypt password hash in the private auth_credentials table. Selected course IDs must identify published courses. Request a verification code using the resend endpoint, then verify it to receive an authenticated session. The role is always assigned server-side as STUDENT; a client-supplied role is ignored. Requires the database auth and registration profile migrations.',
         operationId: 'register',
         requestBody: jsonBody('RegisterRequest'),
         responses: {
-          '201': jsonResponse('Account created; refresh token is set as an HttpOnly cookie', {
-            $ref: '#/components/schemas/TokenResponse',
+          '202': jsonResponse('Account created and awaiting email verification', {
+            $ref: '#/components/schemas/RegistrationPendingResponse',
           }),
           '409': jsonResponse('Email is already registered', {
             $ref: '#/components/schemas/ErrorResponse',
+          }),
+          ...errorResponses,
+        },
+      },
+    },
+    '/api/auth/register/verification/resend': {
+      post: {
+        tags: ['Authentication'],
+        summary: 'Send or resend a registration verification code',
+        description:
+          'When eligible, sends a six-digit, one-time code through the configured Resend integration. Codes expire after 10 minutes, allow five failed attempts, and can be resent once per 60 seconds. The status and body are identical for unknown, verified, cooling-down, and eligible addresses; successful provider acceptance does not confirm inbox receipt. A provider delivery failure invalidates the code and returns 503 unless the explicit development-only AUTH_EXPOSE_REGISTRATION_OTP=true fallback is enabled; then developmentOtp is returned for local testing. The value is never returned in production. Requires the registration OTP migration.',
+        operationId: 'resendRegistrationOtp',
+        requestBody: jsonBody('RegistrationOtpEmailRequest'),
+        responses: {
+          '202': jsonResponse('Same generic accepted response for all account states; inbox receipt is not confirmed', {
+            $ref: '#/components/schemas/MessageResponse',
+          }),
+          ...errorResponses,
+        },
+      },
+    },
+    '/api/auth/register/verification/verify': {
+      post: {
+        tags: ['Authentication'],
+        summary: 'Verify a registration email',
+        description:
+          'Consumes a valid, unexpired six-digit code and marks the account verified. Verification does not authenticate the user or issue tokens; the user must log in afterward. All unsuccessful verification states return the same generic 400 response.',
+        operationId: 'verifyRegistrationOtp',
+        requestBody: jsonBody('RegistrationOtpVerifyRequest'),
+        responses: {
+          '200': jsonResponse('Email verified; no authentication tokens issued', {
+            $ref: '#/components/schemas/RegistrationVerificationResponse',
           }),
           ...errorResponses,
         },
@@ -194,12 +396,83 @@ export const openApiDocument = {
         },
       },
     },
+    '/api/auth/google': {
+      get: {
+        tags: ['Authentication'],
+        summary: 'Start Google OAuth login or signup',
+        description:
+          'Redirects the browser to Google OAuth. Configure GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and the API callback URL as an authorized redirect URI.',
+        operationId: 'startGoogleOAuth',
+        responses: {
+          '302': { description: 'Redirect to Google authorization' },
+          ...errorResponses,
+        },
+      },
+      post: {
+        tags: ['Authentication'],
+        summary: 'Log in or sign up with a Google token',
+        description:
+          'Verifies the Google identity, creates an active STUDENT profile when needed, and issues a session. Google identity verification is required.',
+        operationId: 'loginWithGoogle',
+        requestBody: jsonBody('GoogleAuthRequest'),
+        responses: {
+          '200': jsonResponse('Authenticated; refresh token is set as an HttpOnly cookie', {
+            $ref: '#/components/schemas/TokenResponse',
+          }),
+          ...errorResponses,
+        },
+      },
+    },
+    '/api/auth/google/callback': {
+      get: {
+        tags: ['Authentication'],
+        summary: 'Complete Google OAuth login or signup',
+        description:
+          'Exchanges the authorization code, verifies the Google identity, creates a student profile if needed, issues the login session, and sets HttpOnly session cookies. A short-lived, one-time handoff lets the frontend retrieve the already-issued access token after redirect.',
+        operationId: 'completeGoogleOAuth',
+        responses: {
+          '302': { description: 'Redirect to the frontend with the authenticated session established' },
+          ...errorResponses,
+        },
+      },
+    },
+    '/api/auth/google/session': {
+      post: {
+        tags: ['Authentication'],
+        summary: 'Complete Google login session handoff',
+        description:
+          'Consumes a short-lived, one-time HttpOnly handoff cookie created by the successful Google OAuth callback and returns its existing access token. This endpoint does not issue or rotate tokens.',
+        operationId: 'consumeGoogleLoginHandoff',
+        responses: {
+          '200': jsonResponse('Existing Google login access token and user returned', {
+            $ref: '#/components/schemas/TokenResponse',
+          }),
+          ...errorResponses,
+        },
+      },
+    },
+    '/api/auth/google/identity': {
+      post: {
+        tags: ['Authentication'],
+        summary: 'Verify Google identity for registration form prefilling',
+        description:
+          'Verifies the Google token and returns the verified email, display name, and avatar URL. It does not create an account or issue an application session.',
+        operationId: 'getGoogleIdentity',
+        requestBody: jsonBody('GoogleAuthRequest'),
+        responses: {
+          '200': jsonResponse('Verified Google profile details', {
+            $ref: '#/components/schemas/GoogleIdentityResponse',
+          }),
+          ...errorResponses,
+        },
+      },
+    },
     '/api/auth/refresh': {
       post: {
         tags: ['Authentication'],
         summary: 'Rotate the refresh token',
         description:
-          'Verifies the HMAC-SHA256-signed seven-day token expiration and active server-side session before rotating the HttpOnly refresh cookie and returning a new access token. Reuse of an old refresh token revokes the session.',
+          'Only an explicit refresh request may rotate an existing session. The endpoint verifies the presented HttpOnly refresh cookie, its expiration, and active server-side session before rotating the cookie and returning a new access token. Reuse of an old refresh token revokes the session. This is session renewal, not login.',
         operationId: 'refresh',
         security: [{ refreshCookie: [] }],
         responses: {
@@ -227,29 +500,15 @@ export const openApiDocument = {
     '/api/auth/forgot-password': {
       post: {
         tags: ['Authentication'],
-        summary: 'Request a password reset',
+        summary: 'Request a temporary password',
         description:
-          'Always returns the same generic message to avoid revealing whether an account exists. Eligible users receive a Resend email with a 10-minute reset link. For local testing only, AUTH_EXPOSE_RESET_LINK=true in development adds resetUrl to the response; it is never exposed in production.',
+          'Validates the account email, generates a cryptographically secure temporary password, and emails it through Resend. Admin accounts are updated through Supabase Auth; PostgreSQL-authenticated accounts receive an updated bcrypt hash. Active sessions are revoked. The response is generic and never includes the password.',
         operationId: 'forgotPassword',
         requestBody: jsonBody('ForgotPasswordRequest'),
         responses: {
-          '200': jsonResponse('Generic response; resetUrl is only included when explicitly enabled in development', {
+          '200': jsonResponse('Generic response; the temporary password is sent only by email', {
             $ref: '#/components/schemas/ForgotPasswordResponse',
           }),
-          ...errorResponses,
-        },
-      },
-    },
-    '/api/auth/reset-password': {
-      post: {
-        tags: ['Authentication'],
-        summary: 'Reset a password',
-        description:
-          'Consumes the reset token once, updates the PostgreSQL password hash, and revokes every active application session.',
-        operationId: 'resetPassword',
-        requestBody: jsonBody('ResetPasswordRequest'),
-        responses: {
-          '204': { description: 'Password changed and active sessions revoked' },
           ...errorResponses,
         },
       },
@@ -275,22 +534,136 @@ export const openApiDocument = {
         type: 'http',
         scheme: 'bearer',
         bearerFormat: 'JWT',
-        description: 'Use the accessToken returned by register, login, or refresh.',
+        description: 'Use the accessToken returned by successful login or explicit refresh.',
       },
       refreshCookie: {
         type: 'apiKey',
         in: 'cookie',
         name: 'english_learning_platform_refresh',
         description:
-          'Set automatically by the API as an HttpOnly cookie after login or registration; browser requests must include credentials.',
+          'Set automatically by the API as an HttpOnly cookie after login or successful email verification; browser requests must include credentials.',
       },
     },
     schemas: {
+      Course: {
+        type: 'object',
+        required: ['id', 'title', 'status'],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          title: { type: 'string' },
+          description: { type: 'string', nullable: true },
+          thumbnail_url: { type: 'string', format: 'uri', nullable: true },
+          status: { type: 'string' },
+          teacher: {
+            type: 'object',
+            nullable: true,
+            properties: {
+              id: { type: 'string', format: 'uuid' },
+              full_name: { type: 'string' },
+              avatar_url: { type: 'string', format: 'uri', nullable: true },
+            },
+          },
+          ManagedCourse: {
+            type: 'object',
+            required: [
+              'id', 'title', 'slug', 'category', 'level', 'target_audience', 'price',
+              'total_lessons', 'status', 'teacher_id', 'created_at', 'updated_at',
+            ],
+            properties: {
+              id: { type: 'string', format: 'uuid' },
+              title: { type: 'string', maxLength: 200 },
+              slug: { type: 'string', maxLength: 180 },
+              description: { type: 'string', nullable: true },
+              category: { type: 'string', maxLength: 100 },
+              level: { type: 'string', enum: ['beginner', 'intermediate', 'advanced'] },
+              target_audience: { type: 'string', maxLength: 500 },
+              price: { type: 'number', minimum: 0 },
+              discounted_price: { type: 'number', minimum: 0, nullable: true },
+              total_lessons: { type: 'integer', minimum: 0 },
+              thumbnail_url: { type: 'string', format: 'uri', nullable: true },
+              status: { type: 'string', enum: ['draft', 'published', 'archived'] },
+              teacher_id: { type: 'string', format: 'uuid' },
+              created_at: { type: 'string', format: 'date-time' },
+              updated_at: { type: 'string', format: 'date-time' },
+            },
+          },
+          ManagedCourseResponse: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean', example: true },
+              data: { $ref: '#/components/schemas/ManagedCourse' },
+            },
+          },
+          ManagedCoursePageResponse: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean', example: true },
+              data: { type: 'array', items: { $ref: '#/components/schemas/ManagedCourse' } },
+              pagination: {
+                type: 'object',
+                properties: {
+                  page: { type: 'integer' },
+                  limit: { type: 'integer' },
+                  total: { type: 'integer' },
+                  totalPages: { type: 'integer' },
+                },
+              },
+            },
+          },
+          CourseManagementInput: {
+            type: 'object',
+            required: [
+              'title', 'slug', 'category', 'level', 'target_audience', 'price',
+              'total_lessons', 'status',
+            ],
+            properties: {
+              title: { type: 'string', minLength: 1, maxLength: 200 },
+              slug: { type: 'string', pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$', maxLength: 180 },
+              description: { type: 'string', nullable: true },
+              category: { type: 'string', minLength: 1, maxLength: 100 },
+              level: { type: 'string', enum: ['beginner', 'intermediate', 'advanced'] },
+              target_audience: { type: 'string', minLength: 1, maxLength: 500 },
+              price: { type: 'number', minimum: 0, maximum: 99999999 },
+              discounted_price: { type: 'number', minimum: 0, nullable: true },
+              total_lessons: { type: 'integer', minimum: 0, maximum: 100000 },
+              thumbnail_url: { type: 'string', format: 'uri', nullable: true },
+              status: { type: 'string', enum: ['draft', 'published'] },
+            },
+          },
+          CourseStatusUpdateRequest: {
+            type: 'object',
+            required: ['status'],
+            properties: { status: { type: 'string', enum: ['draft', 'published'] } },
+          },
+        },
+      },
+      MissingCoursesResponse: {
+        type: 'object',
+        required: ['success', 'message', 'missingIds'],
+        properties: {
+          success: { type: 'boolean', example: false },
+          message: { type: 'string' },
+          missingIds: { type: 'array', items: { type: 'string', format: 'uuid' } },
+        },
+      },
       RegisterRequest: {
         type: 'object',
-        required: ['email', 'password', 'confirmPassword'],
+        required: ['fullName', 'dateOfBirth', 'email', 'phoneNumber', 'password', 'confirmPassword'],
         properties: {
+          fullName: { type: 'string', minLength: 1, maxLength: 120, example: 'Nguyễn Minh Anh' },
+          dateOfBirth: { type: 'string', format: 'date', example: '2000-01-15' },
           email: { type: 'string', format: 'email', maxLength: 254, example: 'learner@example.com' },
+          phoneNumber: {
+            type: 'string',
+            maxLength: 32,
+            pattern: '^\\+?[0-9\\s().-]+$',
+            description: 'Phone number containing 7–15 digits.',
+            example: '+84 912 345 678',
+          },
+          googleAccessToken: {
+            type: 'string',
+            description: 'Optional short-lived Google token for registration only. The server validates it and retrieves allowed People API fields.',
+          },
           password: {
             type: 'string',
             minLength: 8,
@@ -305,6 +678,67 @@ export const openApiDocument = {
             description: 'Must match password.',
             example: 'a-long-example-password',
           },
+          selectedCourseIds: {
+            type: 'array',
+            maxItems: 50,
+            uniqueItems: true,
+            items: { type: 'string', format: 'uuid' },
+            description: 'Optional. Every ID must refer to a published course. IDs are stored in the private pending registration details and do not enroll the user.',
+          },
+        },
+      },
+      RegistrationPendingResponse: {
+        type: 'object',
+        required: ['success', 'message', 'data'],
+        properties: {
+          success: { type: 'boolean', example: true },
+          message: { type: 'string' },
+          data: {
+            type: 'object',
+            required: ['verificationRequired', 'email', 'selectedCourseIds'],
+            properties: {
+              verificationRequired: { type: 'boolean', enum: [true] },
+              email: { type: 'string', format: 'email' },
+              selectedCourseIds: { type: 'array', items: { type: 'string', format: 'uuid' } },
+            },
+          },
+        },
+      },
+      RegistrationOtpEmailRequest: {
+        type: 'object',
+        required: ['email'],
+        properties: {
+          email: {
+            type: 'string',
+            format: 'email',
+            maxLength: 254,
+            example: 'learner@example.com',
+          },
+        },
+      },
+      RegistrationOtpVerifyRequest: {
+        type: 'object',
+        required: ['email', 'otp'],
+        properties: {
+          email: {
+            type: 'string',
+            format: 'email',
+            maxLength: 254,
+            example: 'learner@example.com',
+          },
+          otp: { type: 'string', pattern: '^\\d{6}$', example: '042615' },
+        },
+      },
+      MessageResponse: {
+        type: 'object',
+        properties: {
+          success: { type: 'boolean', example: true },
+          message: { type: 'string' },
+          developmentOtp: {
+            type: 'string',
+            pattern: '^\\d{6}$',
+            description: 'Included only when NODE_ENV=development and AUTH_EXPOSE_REGISTRATION_OTP=true.',
+          },
         },
       },
       LoginRequest: {
@@ -313,6 +747,44 @@ export const openApiDocument = {
         properties: {
           email: { type: 'string', format: 'email', example: 'learner@example.com' },
           password: { type: 'string', format: 'password', example: 'your-account-password' },
+          rememberMe: {
+            type: 'boolean',
+            description: 'When true, keeps the refresh cookie for seven days; otherwise it lasts for the browser session.',
+            default: true,
+          },
+        },
+      },
+      GoogleAuthRequest: {
+        type: 'object',
+        description: 'Provide one valid Google or Supabase token accepted by the selected flow.',
+        properties: {
+          credential: { type: 'string', description: 'Google Identity Services credential.' },
+          idToken: { type: 'string', description: 'Google ID token.' },
+          accessToken: { type: 'string', description: 'Google OAuth access token.' },
+          supabaseToken: { type: 'string', description: 'Supabase access token issued by Google OAuth.' },
+        },
+        anyOf: [
+          { required: ['credential'] },
+          { required: ['idToken'] },
+          { required: ['accessToken'] },
+          { required: ['supabaseToken'] },
+        ],
+      },
+      GoogleIdentityResponse: {
+        type: 'object',
+        properties: {
+          success: { type: 'boolean', example: true },
+          data: {
+            type: 'object',
+            required: ['email', 'fullName', 'avatarUrl', 'phoneNumber', 'dateOfBirth'],
+            properties: {
+              email: { type: 'string', format: 'email' },
+              fullName: { type: 'string' },
+              avatarUrl: { type: 'string', format: 'uri', nullable: true },
+              phoneNumber: { type: 'string', nullable: true },
+              dateOfBirth: { type: 'string', format: 'date', nullable: true },
+            },
+          },
         },
       },
       ForgotPasswordRequest: {
@@ -396,33 +868,14 @@ export const openApiDocument = {
           },
         },
       },
-      ResetPasswordRequest: {
-        type: 'object',
-        required: ['token', 'newPassword', 'confirmPassword'],
-        properties: {
-          token: { type: 'string', description: 'Token from the reset email link.' },
-          newPassword: {
-            type: 'string',
-            minLength: 8,
-            maxLength: 72,
-            format: 'password',
-            description: 'At least 8 characters and no more than 72 UTF-8 bytes.',
-          },
-          confirmPassword: {
-            type: 'string',
-            minLength: 8,
-            maxLength: 72,
-            format: 'password',
-            description: 'Must match newPassword.',
-          },
-        },
-      },
       PublicUser: {
         type: 'object',
-        required: ['id', 'email', 'role'],
+        required: ['id', 'email', 'full_name', 'role'],
         properties: {
           id: { type: 'string', format: 'uuid' },
           email: { type: 'string', format: 'email' },
+          full_name: { type: 'string' },
+          phone_number: { type: 'string', nullable: true },
           role: { type: 'string', enum: ['STUDENT', 'TEACHER', 'ADMIN'] },
         },
       },
@@ -436,6 +889,16 @@ export const openApiDocument = {
               accessToken: { type: 'string', description: '30-minute bearer access JWT.' },
               user: { $ref: '#/components/schemas/PublicUser' },
             },
+          },
+        },
+      },
+      RegistrationVerificationResponse: {
+        type: 'object',
+        properties: {
+          success: { type: 'boolean', example: true },
+          data: {
+            type: 'object',
+            properties: { verified: { type: 'boolean', example: true } },
           },
         },
       },
@@ -455,12 +918,7 @@ export const openApiDocument = {
         required: ['success', 'message'],
         properties: {
           success: { type: 'boolean', example: true },
-          message: { type: 'string', example: 'If an account exists for that address, a reset link will be sent.' },
-          resetUrl: {
-            type: 'string',
-            format: 'uri',
-            description: 'Only present in development when AUTH_EXPOSE_RESET_LINK=true. Never returned in production.',
-          },
+          message: { type: 'string', example: 'If an account exists for that address, a temporary password will be sent.' },
         },
       },
       ErrorResponse: {

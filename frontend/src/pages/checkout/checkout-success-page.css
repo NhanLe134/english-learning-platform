@@ -1,0 +1,482 @@
+.success-page {
+  background: #F7F7F8;
+}
+
+.checkout-success-main {
+  box-sizing: border-box;
+  width: min(1120px, calc(100% - 64px));
+  flex: 1;
+  margin: 0 auto;
+  padding: 28px 0 34px;
+}
+
+.checkout-success-missing {
+  display: grid;
+  min-height: 55vh;
+  align-content: start;
+  justify-items: center;
+}
+
+.payment-success-empty {
+  box-sizing: border-box;
+  display: flex;
+  width: min(100%, 800px);
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: clamp(22px, 4vw, 36px);
+  border: 1px solid #F0EEEE;
+  border-radius: 16px;
+  background: #FFFFFF;
+  box-shadow: 0 8px 30px #C8102E14;
+  text-align: center;
+}
+
+.payment-success-state-icon {
+  display: grid;
+  width: 64px;
+  height: 64px;
+  flex: 0 0 64px;
+  place-items: center;
+  border-radius: 50%;
+  background: #FEF1F2;
+  color: #C8102E;
+}
+
+.payment-success-empty.is-paid .payment-success-state-icon {
+  background: #EAF7EF;
+  color: #16834A;
+}
+
+.payment-success-empty.has-error .payment-success-state-icon {
+  background: #FEF1F2;
+  color: #C8102E;
+}
+
+.payment-success-status-pill {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #FEF1F2;
+  color: #C8102E;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.payment-success-status-pill.paid {
+  background: #EAF7EF;
+  color: #16834A;
+}
+
+.payment-success-status-pill.failed {
+  background: #FEF1F2;
+  color: #A30D26;
+}
+
+.payment-success-empty > h1 {
+  max-width: 100%;
+  margin: 0;
+  color: #17181C;
+  font-size: clamp(22px, 4vw, 30px);
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.payment-success-empty > p {
+  max-width: 620px;
+  margin: 0 0 4px;
+  color: #3D4046;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.payment-success-details {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin: 4px 0;
+  padding: 16px;
+  border: 1px solid #E5E7EB;
+  border-radius: 12px;
+  background: #FFFFFF;
+  text-align: left;
+}
+
+.payment-success-course {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #E5E7EB;
+}
+
+.payment-success-course > img,
+.payment-success-course-fallback {
+  display: grid;
+  width: 72px;
+  height: 72px;
+  flex: 0 0 72px;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #FEF1F2;
+  color: #C8102E;
+  object-fit: cover;
+}
+
+.payment-success-course > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.payment-success-course small {
+  color: #6B7076;
+  font-size: 12px;
+}
+
+.payment-success-course strong {
+  color: #17181C;
+  font-size: 16px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.payment-success-metadata {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.payment-success-metadata > div {
+  min-width: 0;
+  padding: 11px 12px;
+  border-radius: 8px;
+  background: #F9FAFB;
+}
+
+.payment-success-metadata dt {
+  margin-bottom: 5px;
+  color: #6B7076;
+  font-size: 12px;
+}
+
+.payment-success-metadata dd {
+  min-width: 0;
+  margin: 0;
+  color: #17181C;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.payment-success-metadata dd.paid,
+.payment-success-metadata dd.amount {
+  color: #C8102E;
+  font-weight: 800;
+}
+
+.payment-success-metadata .payment-success-reference {
+  grid-column: 1 / -1;
+}
+
+.payment-success-reference dd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.payment-success-reference code {
+  min-width: 0;
+  color: #C8102E;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.payment-success-reference button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid #E5E7EB;
+  border-radius: 7px;
+  background: #FFFFFF;
+  color: #303238;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.payment-success-course-full {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin-top: 16px;
+  padding: clamp(16px, 3vw, 24px);
+  border: 1px solid #F0EEEE;
+  border-radius: 12px;
+  background: #FFFFFF;
+  box-shadow: 0 3px 12px #2417140A;
+  text-align: left;
+}
+
+.payment-success-course-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+  color: #C8102E;
+}
+
+.payment-success-course-heading > div { min-width: 0; }
+.payment-success-course-heading span {
+  color: #9B5960;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .08em;
+}
+.payment-success-course-heading h2 {
+  margin: 4px 0 0;
+  color: #17181C;
+  font-size: clamp(18px, 2.5vw, 22px);
+  font-weight: 600;
+  line-height: 1.3;
+}
+.payment-success-course-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: #5F3E39;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.payment-success-course-state.is-error { color: #A30D26; }
+
+.payment-success-course-overview {
+  display: grid;
+  grid-template-columns: minmax(160px, .8fr) minmax(0, 1.6fr);
+  align-items: start;
+  gap: 20px;
+}
+.payment-success-course-overview > img {
+  display: block;
+  width: 100%;
+  max-height: 260px;
+  aspect-ratio: 16 / 10;
+  border-radius: 10px;
+  object-fit: cover;
+}
+.payment-success-course-overview > div { min-width: 0; }
+.payment-success-course-overview h3 {
+  margin: 0 0 8px;
+  color: #17181C;
+  font-size: 19px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.payment-success-course-overview p,
+.payment-success-learning-audience p {
+  margin: 0;
+  color: #5F6368;
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.payment-success-course-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin-top: 14px;
+}
+.payment-success-course-tags > span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border: 1px solid #F0E1E3;
+  border-radius: 999px;
+  background: #FCF6F7;
+  color: #713A42;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.payment-success-course-tags svg { flex: 0 0 auto; }
+
+.payment-success-instructor {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 11px;
+  margin-top: 16px;
+  padding: 11px 12px;
+  border: 1px solid #ECEDEF;
+  border-radius: 10px;
+  background: #F9FAFB;
+}
+.payment-success-instructor > img,
+.payment-success-instructor > span {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  place-items: center;
+  border-radius: 50%;
+  background: #F9F1F2;
+  color: #C8102E;
+  object-fit: cover;
+}
+.payment-success-instructor > div { display: grid; min-width: 0; gap: 3px; }
+.payment-success-instructor small { color: #6B7076; font-size: 11px; }
+.payment-success-instructor strong { color: #17181C; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+
+.payment-success-learning-audience {
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 9px;
+  background: #F9FAFB;
+}
+.payment-success-learning-audience strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #17181C;
+  font-size: 12px;
+}
+
+.payment-success-price-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+.payment-success-price-summary > div {
+  display: grid;
+  min-width: 0;
+  align-content: center;
+  gap: 6px;
+  padding: 13px 14px;
+  border: 1px solid #ECEDEF;
+  border-radius: 9px;
+  background: #F9FAFB;
+}
+.payment-success-price-summary span { color: #6B7076; font-size: 11px; line-height: 1.4; }
+.payment-success-price-summary strong { color: #303238; font-size: 15px; line-height: 1.35; overflow-wrap: anywhere; }
+.payment-success-price-summary strong.discount { color: #16834B; }
+.payment-success-price-summary > .paid-total { border-color: #F3DADD; background: #FDF1F2; }
+.payment-success-price-summary > .paid-total span { color: #8E434D; }
+.payment-success-price-summary > .paid-total strong { color: #C8102E; font-size: 18px; font-weight: 800; }
+
+.payment-success-curriculum { margin-top: 22px; }
+.payment-success-curriculum > h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  color: #17181C;
+  font-size: 15px;
+}
+.payment-success-curriculum > h3 svg { flex: 0 0 auto; color: #C8102E; }
+.payment-success-curriculum details { border-top: 1px solid #ECEDEF; }
+.payment-success-curriculum summary {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  cursor: pointer;
+  list-style: none;
+}
+.payment-success-curriculum summary::-webkit-details-marker { display: none; }
+.payment-success-curriculum summary > span { flex: 0 0 auto; color: #C8102E; font-size: 11px; font-weight: 750; }
+.payment-success-curriculum summary > strong { min-width: 0; flex: 1; color: #25272B; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.payment-success-curriculum summary > small { flex: 0 0 auto; color: #6B7076; font-size: 11px; }
+.payment-success-curriculum details > p { margin: 0 0 9px 30px; color: #5F6368; font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; }
+.payment-success-curriculum ul { margin: 0 0 14px 30px; padding-left: 18px; color: #51545A; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+
+.payment-success-access {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 16px 0 0;
+  color: #16834B;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.payment-success-access svg { flex: 0 0 auto; }
+
+.payment-success-empty > a.checkout-primary-button {
+  min-height: 44px;
+  margin-top: 4px;
+  border-color: #C8102E;
+  border-radius: 12px;
+  background: #C8102E;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.payment-success-empty > a.checkout-primary-button:hover { background: #A30D26; }
+
+@media (max-width: 820px) {
+  .checkout-success-main { width: calc(100% - 38px); }
+  .payment-success-course-overview { grid-template-columns: minmax(140px, .75fr) minmax(0, 1.4fr); gap: 15px; }
+}
+
+@media (max-width: 640px) {
+  .checkout-success-main { width: calc(100% - 28px); padding: 16px 0 24px; }
+  .payment-success-empty { padding: 24px 16px; }
+  .payment-success-details { padding: 12px; }
+  .payment-success-metadata { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .payment-success-metadata .payment-success-reference { grid-column: auto; }
+  .payment-success-reference dd { align-items: stretch; flex-direction: column; }
+  .payment-success-reference button { width: 100%; }
+  .payment-success-course-overview { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .payment-success-course-overview > img { max-height: 220px; }
+  .payment-success-price-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .payment-success-price-summary > .paid-total { grid-column: 1 / -1; }
+}
+
+@media (max-width: 390px) {
+  .checkout-success-main { width: calc(100% - 20px); }
+  .payment-success-empty { padding: 20px 12px; }
+  .payment-success-details { padding: 10px; }
+  .payment-success-course > img,
+  .payment-success-course-fallback { width: 58px; height: 58px; flex-basis: 58px; }
+  .payment-success-metadata > div { padding: 10px; }
+  .payment-success-course-full { padding: 14px 12px; }
+  .payment-success-course-tags { gap: 7px; }
+  .payment-success-course-tags > span { padding: 6px 8px; font-size: 11px; }
+  .payment-success-price-summary { grid-template-columns: minmax(0, 1fr); }
+  .payment-success-price-summary > .paid-total { grid-column: auto; }
+  .payment-success-curriculum summary { gap: 7px; }
+  .payment-success-curriculum summary > small { font-size: 10px; }
+}

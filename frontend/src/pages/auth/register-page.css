@@ -15,7 +15,7 @@
 
 .register-card h2 {
   margin: 0 0 5px;
-  color: #1a1c1d;
+  color: var(--heading);
   font-size: 19px;
   font-weight: 750;
   letter-spacing: -0.5px;
@@ -34,8 +34,8 @@
 .register-form > label:not(.terms-option) {
   display: block;
   margin: 0 0 5px;
-  color: #5e4945;
-  font-size: 10px;
+  color: var(--description);
+  font-size: 12px;
   font-weight: 650;
 }
 
@@ -48,11 +48,11 @@
 }
 
 .register-form .input-wrap {
-  height: 35px;
+  height: 44px;
 }
 
 .register-form .input-wrap input::placeholder {
-  color: #5e4945;
+  color: var(--description);
   opacity: 0.6;
 }
 
@@ -62,7 +62,7 @@
   align-items: flex-start;
   gap: 7px;
   margin: 18px 0 16px;
-  color: #5e4945;
+  color: var(--description);
   cursor: pointer;
 }
 
@@ -87,13 +87,48 @@
 }
 
 .terms-option > input:focus-visible + .custom-checkbox {
-  outline: 2px solid #e0000466;
+  outline: 2px solid rgba(188, 0, 2, 0.4);
   outline-offset: 2px;
 }
 
 .terms-copy {
   font-size: 13px;
   line-height: 1.5;
+}
+
+.register-verification-form {
+  margin-top: 20px;
+}
+
+.register-verification-form .submit-button {
+  margin-top: 15px;
+}
+
+.resend-otp-button,
+.change-email-button {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 5px;
+  border: 0;
+  background: transparent;
+  color: var(--accent-red);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.resend-otp-button:disabled,
+.change-email-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.change-email-button {
+  margin-top: 3px;
+  color: var(--description);
+  font-size: 12px;
 }
 
 .terms-copy a {
@@ -103,7 +138,7 @@
 }
 
 .register-form .submit-button {
-  height: 38px;
+  min-height: 44px;
 }
 
 .register-card .signup-prompt {
@@ -128,7 +163,7 @@
   }
 
   .register-form .input-wrap {
-    height: 42px;
+    height: 44px;
   }
 
   .terms-copy,
@@ -147,4 +182,686 @@
   .register-card {
     padding: 27px clamp(22px, 7vw, 40px);
   }
+}
+
+.register-page-shell {
+  background: #FFFFFF;
+  color: #1A1C1D;
+  --heading: #1A1C1D;
+  --description: #5F3E39;
+  --accent-red: #BC0002;
+  --brand-red: #BC0002;
+  --primary-button: #E00004;
+  --input-bg: #FFFFFF;
+}
+
+.register-main {
+  width: min(1280px, calc(100% - 64px));
+}
+
+.register-main {
+  flex: 1;
+  margin-inline: auto;
+  padding-block: 24px 44px;
+}
+
+.register-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 16px;
+  color: var(--description);
+  font-size: 12px;
+}
+
+.register-breadcrumb a {
+  color: var(--description);
+  text-decoration: none;
+}
+
+.register-breadcrumb a:hover {
+  color: var(--accent-red);
+}
+
+.register-breadcrumb > span {
+  color: var(--heading);
+  font-weight: 600;
+}
+
+.register-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(340px, 0.92fr);
+  align-items: start;
+  gap: clamp(24px, 4vw, 48px);
+}
+
+.register-layout.verification-layout {
+  grid-template-columns: minmax(0, 620px);
+  justify-content: center;
+}
+
+.register-main.verification-main {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.email-otp-card {
+  width: 100%;
+  padding: clamp(26px, 5vw, 44px);
+  border: 1px solid #EEE9E8;
+  border-radius: 12px;
+  background: #FFFFFF;
+  box-shadow: 0 12px 36px rgba(26, 28, 29, 0.1);
+  text-align: center;
+}
+
+.email-otp-icon {
+  position: relative;
+  display: grid;
+  width: 62px;
+  height: 62px;
+  place-items: center;
+  margin: 0 auto 17px;
+  border-radius: 50%;
+  background: #FFF1F0;
+  color: var(--accent-red);
+}
+
+.email-otp-icon > span {
+  position: absolute;
+  right: -3px;
+  bottom: -2px;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 2px solid #FFFFFF;
+  border-radius: 50%;
+  background: var(--accent-red);
+  color: #FFFFFF;
+}
+
+.email-otp-step {
+  margin: 0 0 8px;
+  color: var(--description);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.email-otp-step strong {
+  color: var(--accent-red);
+}
+
+.email-otp-card h1 {
+  margin: 0;
+  color: var(--heading);
+  font-size: clamp(23px, 3vw, 30px);
+  font-weight: 750;
+  letter-spacing: -0.035em;
+}
+
+.email-otp-description {
+  margin: 12px 0 4px;
+  color: var(--description);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.email-otp-address {
+  margin: 0;
+  color: var(--heading);
+  font-size: 16px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.email-otp-note {
+  margin: 6px 0 23px;
+  color: var(--description);
+  font-size: 12px;
+}
+
+.email-otp-form {
+  display: grid;
+  justify-items: center;
+}
+
+.email-otp-inputs {
+  display: flex;
+  justify-content: center;
+  gap: clamp(8px, 2vw, 13px);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.email-otp-inputs input {
+  width: clamp(42px, 8vw, 54px);
+  height: clamp(48px, 9vw, 60px);
+  border: 1px solid #DED8D6;
+  border-radius: 8px;
+  background: #FFFFFF;
+  color: var(--heading);
+  font: inherit;
+  font-size: 24px;
+  font-weight: 700;
+  text-align: center;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.email-otp-inputs input:focus {
+  border-color: var(--accent-red);
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(188, 0, 2, 0.1);
+}
+
+.email-otp-inputs input.filled {
+  border-color: #D7B5B4;
+  background: #FFFCFC;
+}
+
+.email-otp-inputs input[aria-invalid="true"] {
+  border-color: #B42318;
+}
+
+.email-otp-inputs:disabled input {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.auth-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+.email-otp-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 20px 0 17px;
+  padding: 8px 12px;
+  border: 1px solid #F0D8D7;
+  border-radius: 999px;
+  background: #FFF8F7;
+  color: var(--accent-red);
+  font-size: 12px;
+}
+
+.email-otp-timer strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.email-otp-timer.expired {
+  border-color: #F2C7C8;
+  background: #FFF2F2;
+  color: #A90002;
+}
+
+.email-otp-form > .auth-feedback {
+  width: 100%;
+  margin-top: 0;
+}
+
+.email-otp-submit {
+  min-height: 46px;
+  border-radius: 7px;
+  font-size: 14px;
+}
+
+.email-otp-submit:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.email-otp-resend {
+  margin: 17px 0 21px;
+  color: var(--description);
+  font-size: 13px;
+}
+
+.email-otp-resend button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-red);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.email-otp-resend button:disabled {
+  color: #8A7773;
+  cursor: not-allowed;
+}
+
+.email-otp-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid #EEE9E8;
+  border-radius: 8px;
+  background: #FAF8F7;
+}
+
+.email-otp-options > * {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px;
+  color: var(--description);
+  font: inherit;
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.email-otp-options > * + * {
+  border-left: 1px solid #EEE9E8;
+}
+
+.email-otp-options button {
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.email-otp-options button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.email-otp-options svg {
+  color: var(--accent-red);
+}
+
+.email-otp-security {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin-top: 22px;
+  color: var(--description);
+  font-size: 10px;
+}
+
+.email-otp-security span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.email-otp-security svg {
+  color: var(--accent-red);
+}
+
+.register-card {
+  padding: clamp(24px, 3vw, 38px);
+  border: 1px solid #EEE9E8;
+  border-radius: 12px;
+  background: #FFFFFF;
+  box-shadow: 0 8px 26px rgba(26, 28, 29, 0.06);
+  text-align: left;
+}
+
+.register-card h1 {
+  margin: 0 0 5px;
+  color: var(--heading);
+  font-size: clamp(22px, 2.4vw, 30px);
+  font-weight: 750;
+  letter-spacing: -0.5px;
+  line-height: 1.25;
+}
+
+.register-card .card-description {
+  max-width: none;
+  margin: 0 0 18px;
+  color: var(--description);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.register-card .google-login-button {
+  min-height: 42px;
+}
+
+.register-card .auth-divider {
+  margin-block: 16px 14px;
+  justify-content: center;
+}
+
+.register-form {
+  text-align: left;
+}
+
+.register-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 16px;
+}
+
+.register-field {
+  min-width: 0;
+}
+
+.register-field-wide {
+  grid-column: 1 / -1;
+}
+
+.register-field > label {
+  display: block;
+  margin: 0 0 6px;
+  color: var(--heading);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.register-field > label > span {
+  color: var(--accent-red);
+}
+
+.register-page-shell .register-field .input-wrap {
+  height: 42px;
+  border-color: #E5E0DF;
+  background: #FFFFFF;
+}
+
+.register-page-shell .register-field .input-wrap > svg {
+  color: #BC0002;
+}
+
+.register-page-shell .register-field .input-wrap:focus-within {
+  border-color: #BC0002;
+  box-shadow: 0 0 0 3px rgba(188, 0, 2, 0.08);
+}
+
+.register-field .input-wrap input {
+  font-size: 13px;
+}
+
+.register-card .terms-option {
+  margin: 16px 0;
+}
+
+.register-card .terms-copy {
+  color: #5F3E39;
+  font-size: 12px;
+}
+
+.register-card .submit-button {
+  min-height: 46px;
+  border-radius: 6px;
+  background: #E00004;
+  color: #FFFFFF;
+  font-size: 13px;
+}
+
+.register-card .submit-button:hover {
+  background: #BC0002;
+}
+
+.register-card .signup-prompt {
+  margin: 18px 0 0;
+  color: #5F3E39;
+  text-align: center;
+  font-size: 12px;
+}
+
+.register-course-panel {
+  overflow: hidden;
+  border: 1px solid #EEE9E8;
+  border-radius: 12px;
+  background: #FFFFFF;
+  box-shadow: 0 8px 26px rgba(26, 28, 29, 0.08);
+}
+
+.register-course-visual {
+  position: relative;
+  display: grid;
+  min-height: 210px;
+  place-items: center;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 70% 20%, rgba(255, 255, 255, 0.24), transparent 35%),
+    linear-gradient(140deg, #542B2C 0%, #9A3D38 52%, #BC0002 100%);
+}
+
+.register-course-visual > img {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.register-course-visual-art {
+  display: grid;
+  width: 130px;
+  height: 130px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #FFFFFF;
+}
+
+.register-course-visual::before,
+.register-course-visual::after {
+  position: absolute;
+  width: 56%;
+  height: 70%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  content: '';
+  transform: rotate(-12deg);
+}
+
+.register-course-visual::after {
+  width: 40%;
+  height: 52%;
+  transform: rotate(12deg);
+}
+
+.register-course-play {
+  z-index: 1;
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  padding-left: 3px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  color: #BC0002;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+}
+
+.register-course-visual-caption {
+  position: absolute;
+  z-index: 1;
+  right: 14px;
+  bottom: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border: 1px solid #FFFFFF;
+  border-radius: 20px;
+  background: #FFFFFF;
+  color: #BC0002;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.register-course-visual-caption svg {
+  color: #BC0002;
+}
+
+.register-course-content {
+  padding: clamp(20px, 2.4vw, 28px);
+}
+
+.register-course-kicker {
+  margin: 0 0 7px;
+  color: var(--accent-red);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.1em;
+}
+
+.register-course-content h2 {
+  margin: 0;
+  color: var(--heading);
+  font-size: clamp(20px, 2vw, 24px);
+  line-height: 1.35;
+}
+
+.register-course-description {
+  margin: 8px 0 15px;
+  color: var(--description);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.register-course-price {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 9px 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #F0EEEE;
+}
+
+.register-course-price del {
+  color: #5F3E39;
+  font-size: 13px;
+}
+
+.register-course-price strong {
+  color: #BC0002;
+  font-size: 27px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+
+.register-course-offer {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 13px 0 18px;
+  padding: 10px 12px;
+  border: 1px solid #F2D4D3;
+  border-radius: 7px;
+  background: #FFF7F6;
+  color: #BC0002;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.register-course-offer svg {
+  flex: 0 0 auto;
+  color: #BC0002;
+}
+
+.register-course-content h3 {
+  margin: 0 0 11px;
+  color: var(--heading);
+  font-size: 15px;
+}
+
+.register-course-content ul {
+  display: grid;
+  gap: 11px;
+  margin: 0;
+  padding: 0;
+  color: var(--description);
+  font-size: 12px;
+  line-height: 1.5;
+  list-style: none;
+}
+
+.register-course-content li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.register-course-content li svg {
+  flex: 0 0 auto;
+  color: #BC0002;
+}
+
+@media (max-width: 760px) {
+  .register-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .register-card {
+    padding: clamp(22px, 5vw, 32px);
+  }
+
+  .register-course-panel {
+    width: min(100%, 620px);
+    justify-self: center;
+  }
+
+}
+
+@media (max-width: 640px) {
+  .register-main {
+    width: calc(100% - 32px);
+  }
+
+  .register-main {
+    padding-block: 16px 32px;
+  }
+
+  .register-layout {
+    gap: 20px;
+  }
+
+  .email-otp-card {
+    padding: 25px 18px;
+  }
+
+  .email-otp-options {
+    grid-template-columns: 1fr;
+  }
+
+  .email-otp-options > * + * {
+    border-top: 1px solid #EEE9E8;
+    border-left: 0;
+  }
+
+  .email-otp-security {
+    gap: 9px 14px;
+  }
+
+  .register-card {
+    padding: 22px 18px;
+  }
+
+  .register-field-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 13px;
+  }
+
+  .register-field-wide {
+    grid-column: auto;
+  }
+
+  .register-course-visual {
+    min-height: 190px;
+  }
+
+  .register-course-content {
+    padding: 20px;
+  }
+
 }
