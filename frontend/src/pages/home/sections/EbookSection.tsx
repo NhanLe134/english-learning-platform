@@ -7,13 +7,14 @@ export function EbookSection() {
   return (
     <section id="ebook" className="bg-gray-50/80">
       <div className="mx-auto grid max-w-7xl items-center gap-10 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:gap-14 lg:px-8 lg:py-20">
-        {/* Ảnh minh họa — thay bằng ảnh thật trong src/assets khi có */}
-        <div className="relative">
-          <div className="flex aspect-[4/3] items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-[#f0e6dc] via-[#e7e0d6] to-[#d9cfc4] shadow-lg">
-            <div className="flex flex-col items-center gap-3 text-ink-500">
-              <BookHeadphones className="size-16" strokeWidth={1.5} />
-              <span className="text-sm font-medium">Ảnh tủ sách / Ebook</span>
-            </div>
+        {/* Ảnh minh họa — sách bìa dọc hiển thị đầy đủ trên nền kệ sách */}
+        <div className="relative mx-auto w-full max-w-sm">
+          <div className="flex aspect-[3/4] items-center justify-center rounded-2xl bg-gradient-to-b from-gray-50 to-gray-200 p-6 shadow-lg">
+            <img
+              src="/ebook5.jpg"
+              alt="Tủ sách tự học tiếng Anh của Your English Voice"
+              className="max-h-full max-w-full object-contain shadow-[0_16px_32px_rgba(23,24,28,0.3)]"
+            />
           </div>
           <span className="absolute bottom-4 left-4 flex items-center gap-1.5 rounded-full bg-white/90 px-3.5 py-1.5 text-xs font-semibold text-ink-700 shadow-sm backdrop-blur">
             <BookHeadphones className="size-4 text-brand-600" />
@@ -50,12 +51,12 @@ export function EbookSection() {
             })}
           </ul>
 
-          <button
-            type="button"
-            className="mt-8 rounded-xl bg-brand-600 px-6 py-3 text-sm font-bold text-white transition-colors hover:bg-brand-700"
+          <a
+            href="/ebooks"
+            className="mt-8 inline-block rounded-xl bg-brand-600 px-6 py-3 text-sm font-bold text-white transition-colors hover:bg-brand-700"
           >
             Xem tất cả Ebook
-          </button>
+          </a>
         </div>
       </div>
     </section>

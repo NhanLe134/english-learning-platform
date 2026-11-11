@@ -1,7 +1,7 @@
 import { env } from '../../config/env.js'
 import { createSupabaseClient } from '../../config/supabase.js'
 import { AuthError } from './auth.errors.js'
-import type { GoogleAuthInput, GoogleUserInfo } from './google.types.js'
+import type { GoogleAuthInput, GoogleRegistrationDetails, GoogleUserInfo } from './google.types.js'
 
 interface GoogleTokenInfoResponse {
   iss?: string
@@ -60,6 +60,37 @@ export async function verifyGoogleAuthInput(
   }
 
   throw new AuthError('Vui lòng cung cấp mã thông thực Google (credential hoặc idToken).', 400)
+}
+
+export async function getGoogleRegistrationDetails(accessToken: string): Promise<GoogleRegistrationDetails> {
+  const identity = await verifyGoogleAccessToken(accessToken.trim())
+  try {
+    const response = await fetch('https://people.googleapis.com/v1/people/me?personFields=names,emailAddresses,phoneNumbers,birthdays,photos', {
+      headers: { Authorization: `Bearer ${accessToken.trim()}` },
+    })
+    if (!response.ok) return { ...identity, phoneNumber: null, dateOfBirth: null }
+    const data = await response.json() as {
+      phoneNumbers?: Array<{ value?: string; metadata?: { primary?: boolean } }>
+      birthdays?: Array<{ date?: { year?: number; month?: number; day?: number }; metadata?: { primary?: boolean } }>
+      names?: Array<{ displayName?: string; metadata?: { primary?: boolean } }>
+      photos?: Array<{ url?: string; metadata?: { primary?: boolean } }>
+    }
+    const preferred = <T extends { metadata?: { primary?: boolean } }>(values: T[] | undefined) =>
+      values?.find((value) => value.metadata?.primary) ?? values?.[0]
+    const birthday = preferred(data.birthdays)?.date
+    const dateOfBirth = birthday?.year && birthday.month && birthday.day
+      ? `${String(birthday.year).padStart(4, '0')}-${String(birthday.month).padStart(2, '0')}-${String(birthday.day).padStart(2, '0')}`
+      : null
+    return {
+      ...identity,
+      name: preferred(data.names)?.displayName?.trim() || identity.name,
+      avatarUrl: preferred(data.photos)?.url || identity.avatarUrl,
+      phoneNumber: preferred(data.phoneNumbers)?.value?.trim() || null,
+      dateOfBirth,
+    }
+  } catch {
+    return { ...identity, phoneNumber: null, dateOfBirth: null }
+  }
 }
 
 async function verifyGoogleIdToken(

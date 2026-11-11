@@ -45,6 +45,12 @@ authRouter.post(
   (request, response, next) => authController.google(request, response, next)
 )
 authRouter.post(
+  '/google/session',
+  requireTrustedOrigin,
+  authRateLimit(env.authLoginRateLimit),
+  (request, response, next) => authController.consumeGoogleLogin(request, response, next)
+)
+authRouter.post(
   '/google/identity',
   requireTrustedOrigin,
   authRateLimit(env.authLoginRateLimit),
@@ -53,7 +59,7 @@ authRouter.post(
 authRouter.post(
   '/refresh',
   requireTrustedOrigin,
-  authRateLimit(env.authLoginRateLimit),
+  // Only an explicit request may rotate an existing session's refresh token.
   (request, response, next) => authController.refresh(request, response, next)
 )
 authRouter.post(

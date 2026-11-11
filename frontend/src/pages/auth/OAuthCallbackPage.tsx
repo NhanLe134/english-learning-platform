@@ -7,7 +7,7 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || ''
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
 
 export function OAuthCallbackPage() {
-  const { setSession, refreshSession } = useAuth()
+  const { setSession } = useAuth()
   const [error, setError] = useState<string | null>(null)
   const isRegistration = new URLSearchParams(window.location.search).get('flow') === 'register'
 
@@ -18,10 +18,11 @@ export function OAuthCallbackPage() {
       try {
         const provider = new URLSearchParams(window.location.search).get('provider')
         if (provider === 'google') {
-          const appSession = await refreshSession()
+          const appSession = await authApi.completeGoogleLogin()
           if (!active) return
+          setSession(appSession)
           window.location.replace(
-            appSession.user.role === 'ADMIN' ? '/admin/users' : '/courses'
+            appSession.user.role === 'ADMIN' ? '/admin/users' : `/checkout${window.location.search}`
           )
           return
         }
@@ -38,17 +39,14 @@ export function OAuthCallbackPage() {
         }
 
         if (isRegistration) {
-          const profile = await authApi.googleIdentity({
+          await authApi.googleIdentity({
             supabaseToken: data.session.access_token,
           })
           if (!active) return
-          sessionStorage.setItem('google-registration-profile', JSON.stringify(profile))
-
           const requestedReturnTo = new URLSearchParams(window.location.search).get('returnTo')
           const returnUrl = requestedReturnTo?.startsWith('/register')
             ? new URL(requestedReturnTo, window.location.origin)
             : new URL('/register', window.location.origin)
-          returnUrl.searchParams.set('googleProfile', '1')
           window.location.replace(`${returnUrl.pathname}${returnUrl.search}${returnUrl.hash}`)
           return
         }
@@ -63,7 +61,7 @@ export function OAuthCallbackPage() {
         if (appSession.user.role === 'ADMIN') {
           window.location.replace('/admin/users')
         } else {
-          window.location.replace('/courses')
+          window.location.replace(`/checkout${window.location.search}`)
         }
       } catch (err) {
         if (!active) return
@@ -75,7 +73,7 @@ export function OAuthCallbackPage() {
     return () => {
       active = false
     }
-  }, [isRegistration, refreshSession, setSession])
+  }, [isRegistration, setSession])
 
   if (error) {
     return (

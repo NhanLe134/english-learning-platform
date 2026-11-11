@@ -32,7 +32,7 @@ export function LoginPage() {
     if (session.user.role === 'ADMIN') {
       window.location.assign('/admin/users')
     } else {
-      window.location.assign('/courses')
+      window.location.assign(`/checkout${window.location.search}`)
     }
   }
 
@@ -149,7 +149,7 @@ export function LoginPage() {
             </form>
 
             <p className="signup-prompt">
-              Chưa có tài khoản? <a href="/courses">Đăng ký ngay</a>
+              Chưa có tài khoản? <a href={`/register${window.location.search}`}>Đăng ký ngay</a>
             </p>
 
             <div className="login-security">

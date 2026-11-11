@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import {
   BookOpen,
   CheckCircle2,
@@ -18,7 +18,6 @@ import { GoogleAuthButton } from './AuthShared'
 import { SiteHeader } from '../../components/layout/SiteHeader'
 import { SiteFooter } from '../../components/layout/SiteFooter'
 import { EmailOtpVerification } from './EmailOtpVerification'
-import { useAuth } from './auth-context'
 import { authApi, getErrorMessage } from './auth-api'
 import { readCheckoutCourse } from '../courses/course-data'
 import { initiateGoogleRegistration } from './google-auth'
@@ -41,6 +40,9 @@ export function RegisterPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [fullName, setFullName] = useState('')
+  const [googleAccessToken, setGoogleAccessToken] = useState('')
+  const [dateOfBirth, setDateOfBirth] = useState('')
+  const [phoneNumber, setPhoneNumber] = useState('')
   const [email, setEmail] = useState('')
   const [verified, setVerified] = useState(false)
   const [otpDeliveryFailed, setOtpDeliveryFailed] = useState(false)
@@ -50,36 +52,7 @@ export function RegisterPage() {
   const [developmentOtp, setDevelopmentOtp] = useState('')
   const [googleLoading, setGoogleLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const { setSession } = useAuth()
 
-  useEffect(() => {
-    const storedProfile = sessionStorage.getItem('google-registration-profile')
-    if (!storedProfile) return
-
-    sessionStorage.removeItem('google-registration-profile')
-    try {
-      const profile: unknown = JSON.parse(storedProfile)
-      if (
-        !profile || typeof profile !== 'object' ||
-        !('email' in profile) || typeof profile.email !== 'string' ||
-        !('fullName' in profile) || typeof profile.fullName !== 'string'
-      ) {
-        throw new Error('Thông tin Google để điền biểu mẫu không hợp lệ.')
-      }
-      setEmail(profile.email)
-      setFullName(profile.fullName)
-      setInfoMessage('Đã điền tên và email từ Google. Vui lòng bổ sung ngày sinh, số điện thoại và mật khẩu.')
-      const currentUrl = new URL(window.location.href)
-      currentUrl.searchParams.delete('googleProfile')
-      window.history.replaceState(
-        null,
-        '',
-        `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`
-      )
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Không thể đọc thông tin Google.')
-    }
-  }, [])
 
   async function handleGoogleLogin() {
     setErrorMessage('')
@@ -89,6 +62,9 @@ export function RegisterPage() {
       onSuccess: (profile) => {
         setEmail(profile.email)
         setFullName(profile.fullName)
+        setGoogleAccessToken(profile.accessToken)
+        setDateOfBirth(profile.dateOfBirth ?? '')
+        setPhoneNumber(profile.phoneNumber ?? '')
         setInfoMessage('Đã điền tên và email từ Google. Vui lòng bổ sung ngày sinh, số điện thoại và mật khẩu.')
       },
       onError: (msg) => setErrorMessage(msg),
@@ -132,7 +108,8 @@ export function RegisterPage() {
         String(formData.get('phoneNumber') ?? '').trim(),
         password,
         confirmPassword,
-        validCourseId
+        validCourseId,
+        googleAccessToken || undefined
       )
       setEmail(registration.email)
       try {
@@ -163,11 +140,10 @@ export function RegisterPage() {
     setInfoMessage('')
     setSubmitting(true)
     try {
-      const session = await authApi.verifyRegistrationOtp(email, otp)
-      setSession(session)
+      await authApi.verifyRegistrationOtp(email, otp)
       setVerified(true)
-      setSuccessMessage('Xác minh thành công. Tài khoản học viên của bạn đã sẵn sàng.')
-      window.location.assign(`/checkout${window.location.search}`)
+      setSuccessMessage('Xác minh thành công. Vui lòng đăng nhập để tiếp tục.')
+      window.location.assign(`/login${window.location.search}`)
     } catch (error) {
       setErrorMessage(getErrorMessage(error))
     } finally {
@@ -254,7 +230,9 @@ export function RegisterPage() {
                         type="date"
                         autoComplete="bday"
                         max={MAX_BIRTH_DATE}
-                        required
+                        value={dateOfBirth}
+                        onChange={(event) => setDateOfBirth(event.target.value)}
+                        required={!googleAccessToken}
                       />
                     </div>
                   </div>
@@ -288,7 +266,9 @@ export function RegisterPage() {
                         autoComplete="tel"
                         maxLength={32}
                         placeholder="0912 345 678"
-                        required
+                        value={phoneNumber}
+                        onChange={(event) => setPhoneNumber(event.target.value)}
+                        required={!googleAccessToken}
                       />
                     </div>
                   </div>
@@ -369,7 +349,7 @@ export function RegisterPage() {
                 </button>
               </form>
               <p className="signup-prompt">
-                Đã có tài khoản học viên? <a href="/login">Đăng nhập ngay</a>
+                Đã có tài khoản học viên? <a href={`/login${window.location.search}`}>Đăng nhập ngay</a>
               </p>
             </section>
           ) : (

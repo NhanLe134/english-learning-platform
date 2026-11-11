@@ -86,6 +86,14 @@ export class CourseService {
     return this.repository.findPublishedCourse(identifier, isId)
   }
 
+  async getCourseForPaidOrder(courseId: string): Promise<CourseCatalogEntry | null> {
+    if (!UUID_PATTERN.test(courseId)) return null
+    if (!env.supabaseUrl || !env.supabaseServiceRoleKey) {
+      throw new CourseRequestError('The course catalog is not configured.', 503)
+    }
+    return this.repository.findCourseById(courseId)
+  }
+
   async createManagedCourse(value: unknown, teacherId: string): Promise<ManagedCourse> {
     if (!UUID_PATTERN.test(teacherId)) {
       throw new CourseRequestError('An authenticated administrator is required.', 401)

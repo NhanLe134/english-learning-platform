@@ -85,6 +85,9 @@ export interface GoogleProfile {
   email: string
   fullName: string
   avatarUrl: string | null
+  phoneNumber: string | null
+  dateOfBirth: string | null
+  accessToken: string
 }
 
 export interface GoogleRegistrationOptions {
@@ -109,7 +112,7 @@ export async function initiateGoogleRegistration({
 
       const client = window.google.accounts.oauth2.initTokenClient({
         client_id: GOOGLE_CLIENT_ID,
-        scope: 'email profile openid',
+        scope: 'openid email profile https://www.googleapis.com/auth/user.phonenumbers.read https://www.googleapis.com/auth/user.birthday.read',
         prompt: 'select_account',
         callback: async (response) => {
           if (response.error || !response.access_token) {
@@ -124,7 +127,7 @@ export async function initiateGoogleRegistration({
             const profile = await authApi.googleIdentity({
               accessToken: response.access_token,
             })
-            onSuccess(profile)
+            onSuccess({ ...profile, accessToken: response.access_token })
           } catch (error) {
             onError(error instanceof Error ? error.message : 'Không thể xác thực tài khoản Google.')
           } finally {
@@ -187,7 +190,7 @@ export async function initiateGoogleRegistration({
           name: email.split('@')[0] || 'Google Learner',
         },
       })
-      onSuccess(profile)
+      onSuccess({ ...profile, accessToken: '', phoneNumber: null, dateOfBirth: null })
     } catch (error) {
       onError(error instanceof Error ? error.message : 'Không thể xác thực tài khoản Google.')
     } finally {

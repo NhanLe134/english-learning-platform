@@ -150,7 +150,7 @@ export function SiteHeader({ activeTab: explicitActiveTab, brandName = 'Your Eng
         <div className="flex items-center gap-3">
           <a
             href="/register"
-            className="rounded-full bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-700"
+            className="rounded-full bg-brand-600 px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-brand-700"
           >
             Đăng ký
           </a>

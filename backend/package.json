@@ -17,6 +17,7 @@
     "express": "^5.1.0",
     "pg": "^8.23.1",
     "resend": "^6.1.0",
+    "sepay-pg-node": "^1.0.0",
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {

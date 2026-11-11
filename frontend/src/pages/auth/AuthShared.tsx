@@ -76,7 +76,6 @@ export function LoginVisual() {
   )
 }
 
-
 export function LearningIllustration() {
   return (
     <div className="learning-illustration" aria-label="Minh họa hành trình học tiếng Anh">

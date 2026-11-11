@@ -118,7 +118,7 @@ Tất cả dùng `leading-tight` (1.25) cho tiêu đề, `leading-relaxed` (1.62
 | 900 Black         | `font-black`    | Chỉ dành cho H1 hero                           |
 | 800 ExtraBold     | `font-extrabold`| H2 section, giá tiền                           |
 | 700 Bold          | `font-bold`     | H3, tên giảng viên, label nhấn, chip dark      |
-| 600 SemiBold      | `font-semibold` | Nút, label form, nav, badge                    |
+| 600 SemiBold      | `font-semibold` | Label form, nav, badge                          |
 | 500 Medium        | `font-medium`   | Option select, nav mobile, meta                |
 | 400 Regular       | (mặc định)      | Đoạn văn                                       |
 
@@ -206,14 +206,24 @@ Tất cả dùng `leading-tight` (1.25) cho tiêu đề, `leading-relaxed` (1.62
 
 ### 6.2. Nút (Buttons)
 
-| Loại         | Class mẫu                                                                  |
-| ------------ | -------------------------------------------------------------------------- |
-| Primary      | `bg-brand-600 text-white font-semibold/bold rounded-lg|xl hover:bg-brand-700` |
-| Pill (CTA)   | `rounded-full bg-brand-600 px-5 py-2.5 text-sm font-semibold`              |
-| Chip dark    | `rounded-full bg-ink-900 text-white px-3 py-1.5 text-xs font-semibold`     |
-| Chip light   | `rounded-full bg-gray-100 text-ink-700 px-3 py-1.5 text-xs font-semibold`  |
-| Text link đỏ | `text-brand-600 font-semibold text-sm hover:text-brand-700` (+ icon `size-4`) |
-| Icon button  | `size-10 rounded-lg|full border border-gray-200 text-ink-700 hover:border-brand-600 hover:text-brand-600` |
+Quy tắc chung: **button là thẻ `<button>` → `font-bold`** (không dùng `font-semibold`);
+riêng cặp CTA hero trang chủ dùng `font-medium`. Cỡ chữ 14px (`text-sm`) cho CTA lớn,
+12px (`text-xs`) cho button nằm trong card.
+
+> ⚠️ Lưu ý kỹ thuật: không dùng shorthand `font: inherit` cho `button` trong CSS — nó
+> reset `font-weight` và đè mọi class `font-*` của Tailwind (CSS ngoài layer ưu tiên
+> hơn `@layer utilities`). Chỉ đặt `font-family: inherit; font-size: 100%`.
+
+| Loại                          | Class chuẩn                                                                                          | Cỡ chữ | Padding    |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------- | ------ | ---------- |
+| Primary lớn (hero, banner CTA)| `rounded-xl bg-brand-600 px-6 py-3 text-sm text-white hover:bg-brand-700` — hero dùng `font-medium`, CTA banner khác `font-bold` | 14px   | 24px / 12px |
+| Card button (trong thẻ)       | `rounded-lg px-3 py-2 text-xs font-bold text-white` — nền `bg-brand-600` (mua) / `bg-ink-900` (miễn phí) | 12px   | 12px / 8px  |
+| Pill (Đăng ký trên header)    | `rounded-full bg-brand-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-brand-700`               | 14px   | 20px / 10px |
+| Pill nền trắng (CTA trên banner đỏ) | `rounded-full bg-white px-7 py-3 text-sm font-bold text-brand-600 hover:bg-brand-50`            | 14px   | 28px / 12px |
+| Chip dark                     | `rounded-full bg-ink-900 px-3 py-1.5 text-xs font-bold text-white`                                   | 12px   | 12px / 6px  |
+| Chip light                    | `rounded-full bg-gray-100 px-3 py-1.5 text-xs font-bold text-ink-700 hover:bg-gray-200`              | 12px   | 12px / 6px  |
+| Text link đỏ                  | `text-brand-600 text-sm font-bold hover:text-brand-700` (+ icon `size-4`)                            | 14px   | —          |
+| Icon button                   | `size-10 rounded-lg|full border border-gray-200 text-ink-700 hover:border-brand-600 hover:text-brand-600` | —   | —          |
 
 ### 6.3. Form control (Select / Input)
 
@@ -242,7 +252,21 @@ Cấu trúc từ trên xuống:
 4. **Mô tả** `text-sm text-ink-500 line-clamp-2` (đúng 2 dòng, có dấu "…")
 5. **Giảng viên**: avatar tròn 40px + tên `text-xs font-bold` + credential `text-[11px] text-ink-500`
 6. **Giá + CTA**: giá gốc gạch ngang → giá bán `text-xl font-extrabold text-brand-600`,
-   nút "Xem chi tiết ›" (`bg-brand-600 rounded-lg px-4 py-2.5 text-sm font-semibold`)
+   nút "Xem chi tiết ›" theo chuẩn **Card button** (mục 6.2: `px-3 py-2 text-xs font-bold`)
+
+### 6.5b. Card ebook (EbooksPage) — bố cục ngang
+
+Khác card khóa học (dọc), card ebook bố cục **ngang: ảnh trái — nội dung phải**,
+**tối đa 2 thẻ mỗi dòng** (`grid gap-6 md:grid-cols-2`):
+
+1. **Bìa sách (cột trái)** `w-36 sm:w-44`: khung dọc tỉ lệ sách, nền gradient xám nhạt
+   (`#f9fafb → #f3f4f6`) làm "kệ sách", ảnh `object-contain` — **không bao giờ crop** —
+   kèm đổ bóng đứng; badge format (góc trên) + số trang (góc dưới); ebook chưa có ảnh
+   thì fallback gradient riêng + icon
+2. **Nội dung (cột phải)**: danh mục đỏ → tiêu đề `text-lg font-bold` → tác giả →
+   mô tả `line-clamp-2` → ⭐ đánh giá + lượt tải → giá + CTA ("Tải xuống" nền `ink-900`
+   cho sách miễn phí / "Mua ebook ›" nền `brand-600`) theo chuẩn Card button
+   (`px-3 py-2 text-xs font-medium`)
 
 ### 6.6. Pagination
 

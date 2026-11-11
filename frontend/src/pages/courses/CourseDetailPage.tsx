@@ -14,18 +14,9 @@ import {
 } from 'lucide-react'
 import { SiteHeader } from '../../components/layout/SiteHeader'
 import { SiteFooter } from '../../components/layout/SiteFooter'
-import { createRegistrationUrl, FEATURED_COURSE, type CourseReference } from './course-data'
+import { createRegistrationUrl, type CourseReference } from './course-data'
 import { courseCatalogApi } from './services/courseCatalogApi'
 import './course-detail-page.css'
-
-const learningGoals = [
-  ['Đạt mốc 7.0+ Overall chắc chắn', 'Chiến lược cân bằng điểm Listening & Reading để kéo band Writing và Speaking an toàn.'],
-  ['Làm chủ Speaking Part 2 & 3', 'Biết triển khai ý sâu có cấu trúc, mạch lạc, loại bỏ hiện tượng ngập ngừng bằng tư duy “Idea Pyramid”.'],
-  ['Kỹ thuật viết Task 1 & 2 độc quyền', 'Sở hữu 15 khung lập luận Academic, kiểm soát ngữ pháp phức tạp mà không bị gượng gạo.'],
-  ['Đột phá Scanning & Skimming', 'Xử lý 40 câu hỏi Reading trong vòng 52 phút, nâng tỷ lệ câu hỏi khó Matching Headings lên >90%.'],
-  ['Bắt nhịp “Distractor” Listening', 'Nhận diện các bẫy gây nhiễu thông tin trong Section 3 và Section 4 có độ phức tạp cao.'],
-  ['Chuẩn hóa phát âm IPA & Intonation', 'Tối ưu hóa ngữ âm từ, nối âm, và ngữ điệu tự nhiên giúp gây ấn tượng trực tiếp với giám khảo bản xứ.'],
-]
 
 const formatCurrency = (amount: number) => `${amount.toLocaleString('vi-VN')}đ`
 
@@ -43,7 +34,7 @@ export function CourseDetailPage({ identifier }: { identifier: string }) {
       })
       .catch((loadError: unknown) => {
         if (!active) return
-        setCourse(identifier === FEATURED_COURSE.slug ? FEATURED_COURSE : null)
+        setCourse(null)
         setError(loadError instanceof Error ? loadError.message : 'Không thể tải thông tin khóa học.')
       })
       .finally(() => {
@@ -82,13 +73,12 @@ export function CourseDetailPage({ identifier }: { identifier: string }) {
 
         {course && (() => {
           const discount = Math.max(0, course.originalPrice - course.price)
-          const isFeatured = course.slug === FEATURED_COURSE.slug
           const modules = course.modules
           return (
         <div className="course-detail-layout">
           <div className="course-detail-content">
             <header className="course-detail-hero">
-              <h1>{course.title}{isFeatured && <span>(Bứt Phá 4 Kỹ Năng)</span>}</h1>
+              <h1>{course.title}</h1>
               <p>{course.description}</p>
               <div className="course-detail-instructor">
                 <span className="course-instructor-avatar" aria-hidden="true"><UserRound size={25} /></span>
@@ -107,12 +97,12 @@ export function CourseDetailPage({ identifier }: { identifier: string }) {
                 <CircleCheck size={22} />
               </div>
               <div className="course-goals-grid">
-                {(isFeatured ? learningGoals : [
+                {[
                   [`Chủ đề: ${course.category}`, course.description],
                   [`Trình độ: ${course.level}`, `Lộ trình phù hợp với ${course.targetAudience.toLocaleLowerCase('vi')}.`],
                   [`${course.totalLessons} bài học`, 'Học theo tiến độ của bạn với nội dung được sắp xếp theo từng chủ đề.'],
                   ['Học trực tuyến', 'Truy cập nội dung khóa học sau khi đăng ký thành công.'],
-                ]).map(([title, description]) => (
+                ].map(([title, description]) => (
                   <article className="course-goal-card" key={title}>
                     <CheckCircle2 size={15} />
                     <div><h3>{title}</h3><p>{description}</p></div>
@@ -175,9 +165,7 @@ export function CourseDetailPage({ identifier }: { identifier: string }) {
               <Headphones size={14} /> Nhận Tư Vấn Lộ Trình Miễn Phí
             </button>
             <p className="course-purchase-guarantee">
-              {isFeatured
-                ? 'Cam kết hoàn tiền 100% nếu không đạt band sau lộ trình'
-                : 'Đội ngũ hỗ trợ đồng hành trong suốt quá trình học tập'}
+              Đội ngũ hỗ trợ đồng hành trong suốt quá trình học tập
             </p>
             <div className="course-includes">
               <strong>Khóa học này bao gồm:</strong>

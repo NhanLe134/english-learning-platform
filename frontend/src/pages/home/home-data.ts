@@ -65,51 +65,6 @@ export const featuredCourses: FeaturedCourse[] = [
   },
 ]
 
-/* ---------- Section: Workshop ---------- */
-
-export interface Workshop {
-  id: string
-  badge: string
-  eyebrow: string
-  title: string
-  description: string
-  highlights: string[]
-  schedule: string[]
-  host: string
-}
-
-export const workshops: Workshop[] = [
-  {
-    id: 'club-doc-bao',
-    badge: 'Sắp diễn ra • Chỉ 20 vé',
-    eyebrow: 'Đặc quyền học viên & Khách mời',
-    title: 'Câu lạc bộ đọc báo tiếng Anh',
-    description:
-      'Cùng điểm qua các đề mục quan trọng trong thời gian gần đây. Học những từ vựng và cấu trúc thiết yếu. Thực hành theo nhóm để chia sẻ quan điểm của bản thân.',
-    highlights: [
-      'Tiếp cận tiếng Anh bằng phương pháp so sánh với tiếng Việt',
-      'Chuyển hoá những thói quen vô thức của học viên Việt',
-      'Đưa tiếng nói của người Việt ra thế giới',
-    ],
-    schedule: [
-      '09:00 - 11:30 | Chủ Nhật, 26/05/2024',
-      '19:30 - 21:30 | Thứ Bảy, 18/05/2024',
-    ],
-    host: 'Host: Thầy David Miller (IELTS Examiner, 12 năm kinh nghiệm)',
-  },
-  {
-    id: 'english-entrepreneurs',
-    badge: 'Sắp diễn ra • Chỉ 20 vé',
-    eyebrow: 'Đặc quyền học viên & Khách mời',
-    title: 'English for Entrepreneurs',
-    description:
-      'Thực hành trình bày ý tưởng kinh doanh, giao tiếp với khách hàng tiềm năng và nhà đầu tư.',
-    highlights: ['Cam kết hiểu sâu và vận dụng được ngay'],
-    schedule: ['19:30 - 21:30 | Thứ Bảy, 18/05/2024'],
-    host: 'Speaker: Ms. Sarah Jenkin (Senior Communication Director)',
-  },
-]
-
 /* ---------- Section: Tủ Sách Tự Học ---------- */
 
 export const ebooks = [

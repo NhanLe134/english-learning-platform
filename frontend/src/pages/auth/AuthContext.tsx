@@ -1,13 +1,55 @@
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { authApi, getAuthApiErrorStatus, type AuthSession } from './auth-api'
 import { AuthContext } from './auth-context'
+
+const AUTH_SESSION_STORAGE_KEY = 'your-voice-auth-session'
 let refreshInFlight: Promise<AuthSession> | undefined
+
+function accessTokenIsUsable(token: string): boolean {
+  try {
+    const payload = token.split('.')[1]
+    if (!payload) return false
+    const unpadded = payload.replace(/-/g, '+').replace(/_/g, '/')
+    const base64 = unpadded + '='.repeat((4 - unpadded.length % 4) % 4)
+    const claims = JSON.parse(atob(base64)) as { exp?: unknown }
+    return typeof claims.exp === 'number' && claims.exp > Math.floor(Date.now() / 1000) + 15
+  } catch {
+    return false
+  }
+}
+
+function readStoredSession(): AuthSession | null {
+  try {
+    const value = localStorage.getItem(AUTH_SESSION_STORAGE_KEY)
+    if (!value) return null
+    const parsed = JSON.parse(value) as Partial<AuthSession>
+    const user = parsed.user
+    if (
+      typeof parsed.accessToken !== 'string' ||
+      !user || typeof user !== 'object' ||
+      typeof user.id !== 'string' || typeof user.email !== 'string' ||
+      typeof user.fullName !== 'string' ||
+      (user.phoneNumber !== null && typeof user.phoneNumber !== 'string') ||
+      (user.role !== 'STUDENT' && user.role !== 'TEACHER' && user.role !== 'ADMIN') ||
+      !accessTokenIsUsable(parsed.accessToken)
+    ) {
+      localStorage.removeItem(AUTH_SESSION_STORAGE_KEY)
+      return null
+    }
+    return parsed as AuthSession
+  } catch {
+    return null
+  }
+}
+
+function storeSession(session: AuthSession | null): void {
+  try {
+    if (session) localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(session))
+    else localStorage.removeItem(AUTH_SESSION_STORAGE_KEY)
+  } catch {
+    // The in-memory session remains available if browser storage is blocked.
+  }
+}
 
 function refreshSessionOnce(): Promise<AuthSession> {
   if (!refreshInFlight) {
@@ -19,65 +61,45 @@ function refreshSessionOnce(): Promise<AuthSession> {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [session, setCurrentSession] = useState<AuthSession | null>(null)
-  const [isInitializing, setIsInitializing] = useState(true)
+  const [session, setCurrentSession] = useState<AuthSession | null>(() => readStoredSession())
   const [initializationError, setInitializationError] = useState<string | null>(null)
-  const sessionRevision = useRef(0)
 
   useEffect(() => {
-    let active = true
-    const revisionAtStart = sessionRevision.current
-
-    refreshSessionOnce()
-      .then((refreshedSession) => {
-        if (active && revisionAtStart === sessionRevision.current) {
-          setCurrentSession(refreshedSession)
-        }
-      })
-      .catch((error: unknown) => {
-        if (active && getAuthApiErrorStatus(error) !== 401) {
-          setInitializationError(
-            error instanceof Error ? error.message : 'Không thể khôi phục phiên đăng nhập.'
-          )
-        }
-      })
-      .finally(() => {
-        if (active) setIsInitializing(false)
-      })
-
-    return () => {
-      active = false
+    const syncSessionAcrossTabs = (event: StorageEvent) => {
+      if (event.key !== AUTH_SESSION_STORAGE_KEY) return
+      setCurrentSession(event.newValue ? readStoredSession() : null)
     }
+    window.addEventListener('storage', syncSessionAcrossTabs)
+    return () => window.removeEventListener('storage', syncSessionAcrossTabs)
   }, [])
 
   const setSession = useCallback((nextSession: AuthSession) => {
-    sessionRevision.current += 1
     setCurrentSession(nextSession)
-    setIsInitializing(false)
+    storeSession(nextSession)
     setInitializationError(null)
   }, [])
 
+  // Refresh is only called by explicit authenticated recovery flows. Merely
+  // opening a public page or returning from payment never rotates tokens.
   const refreshSession = useCallback(async () => {
     try {
       const refreshedSession = await refreshSessionOnce()
-      sessionRevision.current += 1
       setCurrentSession(refreshedSession)
-      setIsInitializing(false)
+      storeSession(refreshedSession)
       setInitializationError(null)
       return refreshedSession
     } catch (error) {
       if (getAuthApiErrorStatus(error) === 401) {
-        sessionRevision.current += 1
         setCurrentSession(null)
-        setIsInitializing(false)
+        storeSession(null)
       }
       throw error
     }
   }, [])
 
   const clearSession = useCallback(() => {
-    sessionRevision.current += 1
     setCurrentSession(null)
+    storeSession(null)
   }, [])
 
   const reportError = useCallback((message: string) => {
@@ -90,8 +112,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       if (getAuthApiErrorStatus(error) !== 401) throw error
     }
-    sessionRevision.current += 1
     setCurrentSession(null)
+    storeSession(null)
     setInitializationError(null)
   }, [session])
 
@@ -100,7 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         accessToken: session?.accessToken ?? null,
         user: session?.user ?? null,
-        isInitializing,
+        isInitializing: false,
         initializationError,
         setSession,
         refreshSession,

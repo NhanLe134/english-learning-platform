@@ -18,3 +18,8 @@ export interface GoogleAuthInput {
   }
 }
 
+export interface GoogleRegistrationDetails extends GoogleUserInfo {
+  phoneNumber: string | null
+  dateOfBirth: string | null
+}
+

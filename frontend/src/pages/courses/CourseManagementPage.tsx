@@ -206,90 +206,43 @@ export function CourseManagementPage() {
       <Sidebar activeTab="khoa_hoc_bai_tap" onTabChange={navigateAdmin} />
       <div className="user-management-main-wrapper">
         <TopHeader currentPage="Quản lý khóa học" />
+
         <main className="user-management-content course-management-content">
-          <div className="course-page-heading">
-            <div>
-              <p className="course-eyebrow">DANH MỤC ĐÀO TẠO · QUẢN TRỊ</p>
-              <h1>Khám Phá Các Khóa Học <span>Tiếng Anh Chuẩn Quốc Tế</span></h1>
-              <p>Quản lý nội dung, giá và trạng thái các khóa học trên nền tảng.</p>
+          {/* Khối bọc Tiêu đề + Thanh tìm kiếm với nền màu loang (gradient) */}
+          <div className="course-hero-banner">
+            <div className="course-page-heading">
+              <div>
+                <p className="course-eyebrow">DANH MỤC ĐÀO TẠO · QUẢN TRỊ</p>
+                <h1>Khám Phá Các Khóa Học <span>Tiếng Anh Chuẩn Quốc Tế</span></h1>
+                <p>Quản lý nội dung, giá và trạng thái các khóa học trên nền tảng.</p>
+              </div>
+              <button type="button" className="course-button course-button-primary" onClick={() => setEditingCourse(null)}>
+                <Plus size={18} />
+                Thêm khóa học
+              </button>
             </div>
-            <button type="button" className="course-button course-button-primary" onClick={() => setEditingCourse(null)}>
-              <Plus size={18} />
-              Thêm khóa học
-            </button>
+
+            <section className="course-search-panel" aria-label="Tìm kiếm khóa học">
+              <label className="course-search">
+                <Search size={18} aria-hidden="true" />
+                <span className="course-visually-hidden">Tìm kiếm khóa học</span>
+                <input
+                  type="search"
+                  placeholder="Tìm khóa học IELTS, Giao tiếp, TOEIC, Ngữ pháp..."
+                  value={filters.search}
+                  onChange={(event) => updateFilters({ search: event.target.value, page: 1 })}
+                />
+              </label>
+              <button type="button" className="course-button course-button-secondary" onClick={resetFilters}>
+                <RotateCcw size={15} />
+                Đặt lại bộ lọc
+              </button>
+              <button type="button" className="course-button course-button-primary course-search-submit" onClick={() => void loadCourses()}>
+                Tìm kiếm
+                <Search size={15} />
+              </button>
+            </section>
           </div>
-
-          <section className="course-search-panel" aria-label="Tìm kiếm khóa học">
-            <label className="course-search">
-              <Search size={18} aria-hidden="true" />
-              <span className="course-visually-hidden">Tìm kiếm khóa học</span>
-              <input
-                type="search"
-                placeholder="Tìm khóa học IELTS, Giao tiếp, TOEIC, Ngữ pháp..."
-                value={filters.search}
-                onChange={(event) => updateFilters({ search: event.target.value, page: 1 })}
-              />
-            </label>
-            <button type="button" className="course-button course-button-secondary" onClick={resetFilters}>
-              <RotateCcw size={15} />
-              Đặt lại bộ lọc
-            </button>
-            <button type="button" className="course-button course-button-primary course-search-submit" onClick={() => void loadCourses()}>
-              Tìm kiếm
-              <Search size={15} />
-            </button>
-          </section>
-
-          <section className="course-filter-card" aria-label="Bộ lọc khóa học">
-            <label className="course-filter-field">
-              <span>Cấp độ học viên</span>
-              <select
-                value={filters.level}
-                onChange={(event) => updateFilters({ level: event.target.value as CourseFilters['level'], page: 1 })}
-              >
-                <option value="all">Tất cả cấp độ</option>
-                <option value="beginner">Cơ bản</option>
-                <option value="intermediate">Trung cấp</option>
-                <option value="advanced">Nâng cao</option>
-              </select>
-            </label>
-            <label className="course-filter-field">
-              <span>Danh mục</span>
-              <input
-                list="course-category-options"
-                value={filters.category}
-                onChange={(event) => updateFilters({ category: event.target.value, page: 1 })}
-                placeholder="Tất cả danh mục"
-              />
-              <datalist id="course-category-options">
-                {availableCategories.map((category) => <option key={category} value={category} />)}
-              </datalist>
-            </label>
-            <label className="course-filter-field">
-              <span>Trạng thái</span>
-              <select
-                value={filters.status}
-                onChange={(event) => updateFilters({ status: event.target.value as CourseFilters['status'], page: 1 })}
-              >
-                <option value="all">Tất cả trạng thái</option>
-                <option value="published">Đang hoạt động</option>
-                <option value="draft">Bản nháp</option>
-                <option value="archived">Đã lưu trữ</option>
-              </select>
-            </label>
-            <label className="course-filter-field">
-              <span>Sắp xếp</span>
-              <select
-                value={filters.sort}
-                onChange={(event) => updateFilters({ sort: event.target.value as CourseFilters['sort'], page: 1 })}
-              >
-                <option value="newest">Mới nhất</option>
-                <option value="price_asc">Giá thấp đến cao</option>
-                <option value="price_desc">Giá cao đến thấp</option>
-              </select>
-            </label>
-            <button type="button" className="course-reset-link" onClick={resetFilters}>Xóa tất cả</button>
-          </section>
 
           {pageError && (
             <div className="course-error-banner" role="alert">

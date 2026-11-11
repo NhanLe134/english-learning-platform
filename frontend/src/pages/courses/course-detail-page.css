@@ -78,7 +78,7 @@
 .course-detail-hero h1 {
   margin: 0;
   color: #1A1C1D;
-  font-size: clamp(26px, 3.2vw, 40px);
+  font-size: clamp(18px, 3.2vw, 24px);
   font-weight: 780;
   letter-spacing: -1.2px;
   line-height: 1.15;
@@ -221,14 +221,14 @@
 .course-goal-card h3 {
   margin: 0;
   color: #1A1C1D;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
 }
 
 .course-goal-card p {
   margin: 4px 0 0;
   color: #5F3E39;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -525,7 +525,7 @@
 .course-includes > strong {
   margin-bottom: 1px;
   color: #1A1C1D;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .course-includes > span {
@@ -533,7 +533,7 @@
   align-items: flex-start;
   gap: 6px;
   color: #5F3E39;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
