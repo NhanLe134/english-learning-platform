@@ -36,7 +36,7 @@ const defaultNavigationItems: SiteNavigationItem[] = [
   { label: 'Trang chủ', href: '/' },
   { label: 'Về chúng tôi', href: '/about' },
   { label: 'Các khóa học', href: '/courses' },
-  { label: 'Ebook', href: '/#ebook' },
+  { label: 'Ebook', href: '/ebooks' },
   { label: 'Workshop', href: '/#workshop' },
   { label: 'Liên hệ', href: '/#lien-he' },
 ]

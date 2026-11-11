@@ -1,5 +1,9 @@
 {
   "dependencies": {
+    "cors": "^2.8.6",
     "sepay-pg-node": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19"
   }
 }
