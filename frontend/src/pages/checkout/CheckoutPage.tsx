@@ -18,7 +18,8 @@ import {
   X,
 } from 'lucide-react'
 import { useAuth } from '../auth/auth-context'
-import { SiteFooter, SiteHeader } from '../auth/AuthShared'
+import { SiteHeader } from '../../components/layout/SiteHeader'
+import { SiteFooter } from '../../components/layout/SiteFooter'
 import { readCheckoutCourse } from '../courses/course-data'
 import {
   ENROLLMENT_STORAGE_KEY,

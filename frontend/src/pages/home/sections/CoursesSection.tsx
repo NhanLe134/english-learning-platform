@@ -3,7 +3,7 @@ import { featuredCourses } from '../home-data'
 
 export function CoursesSection() {
   return (
-    <section className="bg-white">
+    <section id="khoa-hoc" className="bg-white">
       <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -15,7 +15,7 @@ export function CoursesSection() {
             </h2>
           </div>
           <a
-            href="/courses"
+            href="/khoa-hoc"
             className="flex items-center gap-1.5 text-sm font-semibold text-brand-600 hover:text-brand-700"
           >
             Xem tất cả khóa học

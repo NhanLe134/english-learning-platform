@@ -14,7 +14,9 @@ import {
   Sparkles,
   UserRound,
 } from 'lucide-react'
-import { GoogleAuthButton, SiteFooter, SiteHeader } from './AuthShared'
+import { GoogleAuthButton } from './AuthShared'
+import { SiteHeader } from '../../components/layout/SiteHeader'
+import { SiteFooter } from '../../components/layout/SiteFooter'
 import { EmailOtpVerification } from './EmailOtpVerification'
 import { useAuth } from './auth-context'
 import { authApi, getErrorMessage } from './auth-api'

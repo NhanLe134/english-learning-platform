@@ -14,7 +14,8 @@ import {
   ShieldCheck,
   UserRound,
 } from 'lucide-react'
-import { SiteFooter, SiteHeader } from '../auth/AuthShared'
+import { SiteHeader } from '../../components/layout/SiteHeader'
+import { SiteFooter } from '../../components/layout/SiteFooter'
 import { readEnrollmentRecord } from './checkout-data'
 import './checkout-page.css'
 import './checkout-success-page.css'

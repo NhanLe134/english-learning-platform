@@ -5,7 +5,7 @@ const EBOOK_ICONS = [FileText, BookOpen]
 
 export function EbookSection() {
   return (
-    <section className="bg-gray-50/80">
+    <section id="ebook" className="bg-gray-50/80">
       <div className="mx-auto grid max-w-7xl items-center gap-10 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:gap-14 lg:px-8 lg:py-20">
         {/* Ảnh minh họa — thay bằng ảnh thật trong src/assets khi có */}
         <div className="relative">

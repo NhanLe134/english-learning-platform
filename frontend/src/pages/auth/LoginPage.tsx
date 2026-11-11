@@ -7,7 +7,9 @@ import {
   Mail,
   ShieldCheck,
 } from 'lucide-react'
-import { GoogleAuthButton, LoginVisual, SiteFooter, SiteHeader } from './AuthShared'
+import { GoogleAuthButton, LoginVisual } from './AuthShared'
+import { SiteHeader } from '../../components/layout/SiteHeader'
+import { SiteFooter } from '../../components/layout/SiteFooter'
 import { useAuth } from './auth-context'
 import { authApi, getErrorMessage } from './auth-api'
 import { initiateGoogleSignIn } from './google-auth'

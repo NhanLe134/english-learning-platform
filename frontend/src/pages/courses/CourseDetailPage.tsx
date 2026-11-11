@@ -12,7 +12,8 @@ import {
   ShieldCheck,
   UserRound,
 } from 'lucide-react'
-import { SiteFooter, SiteHeader } from '../auth/AuthShared'
+import { SiteHeader } from '../../components/layout/SiteHeader'
+import { SiteFooter } from '../../components/layout/SiteFooter'
 import { createRegistrationUrl, FEATURED_COURSE, type CourseReference } from './course-data'
 import { courseCatalogApi } from './services/courseCatalogApi'
 import './course-detail-page.css'
@@ -63,7 +64,7 @@ export function CourseDetailPage({ identifier }: { identifier: string }) {
 
   return (
     <div className="course-detail-page">
-      <SiteHeader />
+      <SiteHeader activeTab="courses" />
 
       <main className="course-detail-main">
         <nav className="course-detail-breadcrumb" aria-label="Điều hướng đường dẫn">
@@ -191,7 +192,7 @@ export function CourseDetailPage({ identifier }: { identifier: string }) {
         })()}
       </main>
 
-      <SiteFooter brandName="Your English Voice" />
+      <SiteFooter />
     </div>
   )
 }
