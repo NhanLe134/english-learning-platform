@@ -8,7 +8,6 @@ import {
   Clock3,
   GraduationCap,
   LoaderCircle,
-  MessageSquareText,
   Search,
   Users,
 } from 'lucide-react'

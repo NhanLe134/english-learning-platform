@@ -33,10 +33,18 @@ export class PaymentOrderRepository {
     return mapPaymentOrder(data as unknown as PaymentOrderRow)
   }
 
-  async findPublishedCourse(courseId: string): Promise<{ id: string; title: string; price: number; discounted_price: number | null } | null> {
+  async findPublishedCourse(courseId: string): Promise<{
+    id: string
+    title: string
+    slug: string
+    description: string | null
+    thumbnail_url: string | null
+    price: number
+    discounted_price: number | null
+  } | null> {
     const { data, error } = await createSupabaseClient()
       .from('courses')
-      .select('id,title,price,discounted_price')
+      .select('id,title,slug,description,thumbnail_url,price,discounted_price')
       .eq('id', courseId)
       .eq('status', 'published')
       .maybeSingle()
@@ -45,8 +53,27 @@ export class PaymentOrderRepository {
     return {
       id: String(data.id),
       title: String(data.title),
+      slug: String(data.slug),
+      description: typeof data.description === 'string' ? data.description : null,
+      thumbnail_url: typeof data.thumbnail_url === 'string' ? data.thumbnail_url : null,
       price: Number(data.price),
       discounted_price: data.discounted_price === null ? null : Number(data.discounted_price),
+    }
+  }
+
+  async findStudentSummary(studentId: string): Promise<{ id: string; fullName: string; email: string; phoneNumber: string | null } | null> {
+    const { data, error } = await createSupabaseClient()
+      .from('profiles')
+      .select('id,full_name,email,phone_number')
+      .eq('id', studentId)
+      .maybeSingle()
+    if (error) throw new Error(`Unable to retrieve student details: ${error.message}`, { cause: error })
+    if (!data) return null
+    return {
+      id: String(data.id),
+      fullName: String(data.full_name ?? ''),
+      email: String(data.email ?? ''),
+      phoneNumber: typeof data.phone_number === 'string' ? data.phone_number : null,
     }
   }
 
@@ -146,6 +173,41 @@ export class PaymentOrderRepository {
     }
 
     return { order: mapPaymentOrder(data as unknown as PaymentOrderRow), isNewlyPaid: true }
+  }
+
+  async markOrderPaidFromBankTransfer(
+    orderId: string,
+    transactionId: string,
+  ): Promise<{ order: PaymentOrder; isNewlyPaid: boolean }> {
+    const existing = await this.findOrderById(orderId)
+    if (!existing) throw new Error(`Course order ${orderId} not found`)
+    if (existing.status === 'paid') {
+      if (existing.provider_transaction_id === transactionId) return { order: existing, isNewlyPaid: false }
+      throw new Error('A different transaction has already paid this course order.')
+    }
+    if (existing.status !== 'pending') throw new Error('Course order is no longer payable.')
+
+    const paidAt = new Date().toISOString()
+    const { data, error } = await createSupabaseClient()
+      .from('course_orders')
+      .update({
+        status: 'paid',
+        provider_transaction_id: transactionId,
+        paid_at: paidAt,
+        updated_at: paidAt,
+      })
+      .eq('id', orderId)
+      .eq('status', 'pending')
+      .select(COURSE_ORDER_COLUMNS)
+      .maybeSingle()
+    if (error) throw new Error(`Unable to mark course order paid: ${error.message}`, { cause: error })
+    if (data) return { order: mapPaymentOrder(data as unknown as PaymentOrderRow), isNewlyPaid: true }
+
+    const refreshed = await this.findOrderById(orderId)
+    if (refreshed?.status === 'paid' && refreshed.provider_transaction_id === transactionId) {
+      return { order: refreshed, isNewlyPaid: false }
+    }
+    throw new Error('Course order was paid by another transaction or is no longer payable.')
   }
 
   async markOrderExpired(orderId: string): Promise<PaymentOrder | null> {

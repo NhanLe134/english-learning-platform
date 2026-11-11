@@ -811,6 +811,8 @@
   border-radius: 999px;
   background: #FEF1F2;
   color: #C8102E;
+  height: auto;
+  width: auto;
   font-size: 12px;
   font-weight: 700;
 }
@@ -818,6 +820,9 @@
 .payment-status-pill.paid {
   background: #EAF7EF;
   color: #16834A;
+  border-radius: 4px;
+  height:auto;
+  width: auto;
 }
 
 .payment-status-pill.failed {

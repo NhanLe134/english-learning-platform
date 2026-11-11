@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import {
   BookOpen,
   CheckCircle2,
@@ -50,34 +50,6 @@ export function RegisterPage() {
   const [submitting, setSubmitting] = useState(false)
   const { setSession } = useAuth()
 
-  useEffect(() => {
-    const storedProfile = sessionStorage.getItem('google-registration-profile')
-    if (!storedProfile) return
-
-    sessionStorage.removeItem('google-registration-profile')
-    try {
-      const profile: unknown = JSON.parse(storedProfile)
-      if (
-        !profile || typeof profile !== 'object' ||
-        !('email' in profile) || typeof profile.email !== 'string' ||
-        !('fullName' in profile) || typeof profile.fullName !== 'string'
-      ) {
-        throw new Error('Thông tin Google để điền biểu mẫu không hợp lệ.')
-      }
-      setEmail(profile.email)
-      setFullName(profile.fullName)
-      setInfoMessage('Đã điền tên và email từ Google. Vui lòng bổ sung ngày sinh, số điện thoại và mật khẩu.')
-      const currentUrl = new URL(window.location.href)
-      currentUrl.searchParams.delete('googleProfile')
-      window.history.replaceState(
-        null,
-        '',
-        `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`
-      )
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Không thể đọc thông tin Google.')
-    }
-  }, [])
 
   async function handleGoogleLogin() {
     setErrorMessage('')

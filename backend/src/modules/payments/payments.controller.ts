@@ -1,8 +1,11 @@
 import type { Request, Response, NextFunction } from 'express'
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import { env } from '../../config/env.js'
 import { PaymentWebhookError } from './payments.errors.js'
 import { paymentService } from './payments.service.js'
+import { subscribeToOrderStatus } from './order-status-realtime.service.js'
 import type { SePayWebhookEvent } from './payments.types.js'
+import type { SePayBankTransactionWebhook } from './payments.types.js'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 export class PaymentController {
@@ -29,7 +32,7 @@ export class PaymentController {
         return
       }
 
-      const { order, checkoutUrl, checkoutFields, course } = await paymentService.createOrder({
+      const { order, checkoutMode, checkoutUrl, checkoutFields, paymentInformation, customer, course } = await paymentService.createOrder({
         studentId,
         courseId,
       })
@@ -42,14 +45,85 @@ export class PaymentController {
           amount: order.amount,
           transferContent: order.transfer_content,
           expiredAt: order.expired_at,
+          checkoutMode,
           checkoutUrl,
           checkoutFields,
+          paymentInformation,
+          customer,
           course,
           createdAt: order.created_at,
         },
       })
     } catch (error) {
       next(error)
+    }
+  }
+
+  async sepayBankWebhook(
+    request: Request,
+    response: Response,
+  ): Promise<void> {
+    try {
+      if (env.sepayCheckoutMode !== 'direct_qr') {
+        response.status(503).json({ success: false, message: 'Direct bank QR payments are not enabled.' })
+        return
+      }
+      const secret = env.sepayBankWebhookSecret
+      const rawBody = (request as Request & { rawBody?: Buffer }).rawBody
+      const timestampHeader = request.header('X-SePay-Timestamp') ?? ''
+      const signature = request.header('X-SePay-Signature') ?? ''
+      const timestamp = Number(timestampHeader)
+      if (!secret || !rawBody || !/^\d+$/.test(timestampHeader) || !Number.isSafeInteger(timestamp) || Math.abs(Date.now() / 1000 - timestamp) > 300) {
+        response.status(401).json({ success: false, message: 'Invalid SePay webhook authentication.' })
+        return
+      }
+      const signatureMatch = /^sha256=([a-f0-9]{64})$/i.exec(signature)
+      if (!signatureMatch?.[1]) {
+        response.status(401).json({ success: false, message: 'Invalid SePay webhook authentication.' })
+        return
+      }
+      const expected = createHmac('sha256', secret)
+        .update(`${timestampHeader}.`)
+        .update(rawBody)
+        .digest()
+      const received = Buffer.from(signatureMatch[1], 'hex')
+      if (received.length !== expected.length || !timingSafeEqual(received, expected)) {
+        response.status(401).json({ success: false, message: 'Invalid SePay webhook authentication.' })
+        return
+      }
+      if (!request.is('application/json')) {
+        response.status(415).json({ success: false, message: 'Content-Type must be application/json.' })
+        return
+      }
+
+      const body = request.body as Partial<SePayBankTransactionWebhook> | null
+      if (!body || typeof body !== 'object' || typeof body.content !== 'string' ||
+        typeof body.accountNumber !== 'string' || typeof body.transferType !== 'string') {
+        throw new PaymentWebhookError('Invalid SePay bank transaction payload.', 400)
+      }
+      const event: SePayBankTransactionWebhook = {
+        id: Number(body.id),
+        gateway: String(body.gateway ?? ''),
+        transactionDate: String(body.transactionDate ?? ''),
+        accountNumber: body.accountNumber,
+        subAccount: typeof body.subAccount === 'string' ? body.subAccount : undefined,
+        code: typeof body.code === 'string' ? body.code : null,
+        content: body.content,
+        transferType: body.transferType,
+        transferAmount: body.transferAmount ?? 0,
+        referenceCode: typeof body.referenceCode === 'string' ? body.referenceCode : undefined,
+      }
+      const result = await paymentService.handleSePayBankWebhook(event)
+      response.status(200).json({
+        success: true,
+        message: 'Bank transfer notification processed.',
+        data: { orderId: result.orderId, status: result.status, isNewlyPaid: result.isNewlyPaid },
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Webhook processing failed'
+      console.error('[SePayBankWebhook] Error:', message)
+      const statusCode = error instanceof PaymentWebhookError ? error.statusCode : 500
+      response.status(statusCode).json({ success: false, message })
     }
   }
 
@@ -82,6 +156,7 @@ export class PaymentController {
         return
       }
 
+      response.setHeader('Cache-Control', 'private, no-store, max-age=0')
       response.status(200).json({
         success: true,
         data: {
@@ -90,6 +165,7 @@ export class PaymentController {
           courseTitle: await paymentService.getCourseTitle(order.course_id),
           status: order.status,
           amount: order.amount,
+          paymentMethod: order.provider === 'sepay' ? 'BANK_TRANSFER' : null,
           transferContent: order.transfer_content,
           providerTransactionId: order.provider_transaction_id,
           paidAt: order.paid_at,
@@ -97,6 +173,86 @@ export class PaymentController {
           createdAt: order.created_at,
         },
       })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  async streamOrderStatus(
+    request: Request,
+    response: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    const user = response.locals.authUser as { id?: string } | undefined
+    const studentId = String(user?.id ?? '')
+    const { orderId } = request.params as { orderId?: string }
+    if (!orderId || !UUID_PATTERN.test(orderId)) {
+      response.status(400).json({ success: false, message: 'Valid orderId is required.' })
+      return
+    }
+
+    try {
+      const order = await paymentService.getOrder(orderId)
+      if (!order) {
+        response.status(404).json({ success: false, message: 'Order not found.' })
+        return
+      }
+      if (order.student_id !== studentId) {
+        response.status(403).json({ success: false, message: 'Not allowed to view this order.' })
+        return
+      }
+
+      response.status(200)
+      response.set({
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      })
+      response.flushHeaders()
+      const send = (event: string, data: unknown) => {
+        if (!response.writableEnded) response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+      }
+      let lastStatus: string | undefined
+      const sendStatus = (status: string) => {
+        // Repeated UPDATE notifications are harmless and need not redraw the UI.
+        if (status === lastStatus) return
+        lastStatus = status
+        send('order', { orderId, status })
+      }
+
+      let unsubscribe: (() => void) | undefined
+      let heartbeat: ReturnType<typeof setInterval> | undefined
+      const close = () => {
+        if (heartbeat) clearInterval(heartbeat)
+        unsubscribe?.()
+      }
+      response.once('close', close)
+      send('connection', { status: 'connecting' })
+      heartbeat = setInterval(() => {
+        if (!response.writableEnded) response.write(': keep-alive\n\n')
+      }, 15_000)
+      heartbeat.unref()
+
+      try {
+        unsubscribe = subscribeToOrderStatus(orderId, sendStatus, (status) => {
+          send('connection', { status })
+          if (status !== 'subscribed') return
+          // Subscribe first, then read the row. This catches a paid transition
+          // that committed just before Realtime became ready.
+          void paymentService.getOrder(orderId)
+            .then((current) => {
+              if (!current || current.student_id !== studentId) {
+                send('connection', { status: 'unavailable' })
+                return
+              }
+              sendStatus(current.status)
+            })
+            .catch(() => send('connection', { status: 'unavailable' }))
+        })
+      } catch {
+        send('connection', { status: 'unavailable' })
+      }
     } catch (error) {
       next(error)
     }

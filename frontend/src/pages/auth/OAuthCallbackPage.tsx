@@ -38,17 +38,14 @@ export function OAuthCallbackPage() {
         }
 
         if (isRegistration) {
-          const profile = await authApi.googleIdentity({
+          await authApi.googleIdentity({
             supabaseToken: data.session.access_token,
           })
           if (!active) return
-          sessionStorage.setItem('google-registration-profile', JSON.stringify(profile))
-
           const requestedReturnTo = new URLSearchParams(window.location.search).get('returnTo')
           const returnUrl = requestedReturnTo?.startsWith('/register')
             ? new URL(requestedReturnTo, window.location.origin)
             : new URL('/register', window.location.origin)
-          returnUrl.searchParams.set('googleProfile', '1')
           window.location.replace(`${returnUrl.pathname}${returnUrl.search}${returnUrl.hash}`)
           return
         }

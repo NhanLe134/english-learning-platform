@@ -36,7 +36,12 @@ function AppRoutes() {
       if (isAdminRoute) {
         window.location.replace('/login')
       } else if (isAuthPage) {
-        window.location.replace(`/checkout${window.location.search}`)
+        const hasSelectedCourse = Boolean(new URLSearchParams(window.location.search).get('courseId'))
+        window.location.replace(
+          pathname === '/register' && !hasSelectedCourse
+            ? '/courses'
+            : `/checkout${window.location.search}`
+        )
       }
     } else {
       // Chưa đăng nhập mà truy cập route admin
@@ -44,10 +49,18 @@ function AppRoutes() {
         window.location.replace('/login')
       }
     }
-  }, [isAdminRoute, isAuthCallback, isAuthPage, isInitializing, user])
+  }, [isAdminRoute, isAuthCallback, isAuthPage, isInitializing, pathname, user])
 
   // Trạng thái đang xác minh quyền hoặc đang điều hướng
   if (!isAuthCallback) {
+    if (isInitializing && isAuthPage) {
+      return (
+        <main className="auth-route-status" role="status">
+          Đang khôi phục phiên đăng nhập…
+        </main>
+      )
+    }
+
     if (user?.role === 'ADMIN' && !isAdminRoute) {
       return (
         <main className="auth-route-status" role="status">

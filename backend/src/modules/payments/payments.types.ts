@@ -77,3 +77,16 @@ export interface SePayWebhookEvent {
   }
   raw: unknown
 }
+
+export interface SePayBankTransactionWebhook {
+  id: number
+  gateway: string
+  transactionDate: string
+  accountNumber: string
+  subAccount?: string
+  code?: string | null
+  content: string
+  transferType: string
+  transferAmount: number | string
+  referenceCode?: string
+}

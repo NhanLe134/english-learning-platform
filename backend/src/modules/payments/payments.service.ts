@@ -1,7 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { env } from '../../config/env.js'
-import { getSePayClient } from '../../config/sepay.js'
+import { buildSePayVietQrImageUrl, getSePayClient } from '../../config/sepay.js'
 import { PaymentWebhookError } from './payments.errors.js'
+import {
+  paymentConfirmationEmailService,
+  type PaymentConfirmationEmailService,
+} from './payment-confirmation-email.service.js'
 import {
   PaymentOrderRepository,
   paymentOrderRepository,
@@ -10,25 +14,51 @@ import type {
   PaymentOrder,
   PaymentOrderStatus,
   SePayWebhookEvent,
+  SePayBankTransactionWebhook,
   VerifyPaymentResult,
 } from './payments.types.js'
 
 const ORDER_HOLD_MINUTES = 15
 
 export class PaymentService {
-  constructor(private readonly repository: PaymentOrderRepository = paymentOrderRepository) {}
+  constructor(
+    private readonly repository: PaymentOrderRepository = paymentOrderRepository,
+    private readonly confirmationEmails: Pick<PaymentConfirmationEmailService, 'releaseAfterEnrollmentAndSend'> = paymentConfirmationEmailService,
+  ) {}
 
   async createOrder(input: { studentId: string; courseId: string }): Promise<{
     order: PaymentOrder
-    checkoutUrl: string
-    checkoutFields: Record<string, string | number>
-    course: { id: string; title: string; price: number }
+    checkoutMode: 'hosted' | 'direct_qr'
+    checkoutUrl: string | null
+    checkoutFields: Record<string, string | number> | null
+    paymentInformation: {
+      bankName: string
+      accountNumber: string
+      accountName: string
+      qrCodeUrl: string
+      amount: number
+      transferContent: string
+      expiresAt: string
+    } | null
+    customer: { id: string; fullName: string; email: string; phoneNumber: string | null }
+    course: {
+      id: string
+      title: string
+      slug: string
+      description: string | null
+      thumbnailUrl: string | null
+      price: number
+      originalPrice: number
+      quantity: 1
+    }
   }> {
     const course = await this.repository.findPublishedCourse(input.courseId)
     if (!course) throw new Error('Course not found or no longer available.')
+    const customer = await this.repository.findStudentSummary(input.studentId)
+    if (!customer) throw new Error('Student account was not found.')
     const amount = course.discounted_price ?? course.price
     if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error('Course price is invalid.')
-    const sepay = getSePayClient()
+    const sepay = env.sepayCheckoutMode === 'hosted' ? getSePayClient() : null
     const id = randomUUID()
     const transferContent = `DH${id}`
     const order = await this.repository.createOrder({
@@ -38,7 +68,7 @@ export class PaymentService {
       transferContent,
       expiredAt: new Date(Date.now() + ORDER_HOLD_MINUTES * 60 * 1000).toISOString(),
     })
-    const checkoutFields = sepay.checkout.initOneTimePaymentFields({
+    const checkoutFields = sepay?.checkout.initOneTimePaymentFields({
       operation: 'PURCHASE',
       payment_method: 'BANK_TRANSFER',
       order_invoice_number: transferContent,
@@ -50,11 +80,26 @@ export class PaymentService {
       error_url: `${env.frontendUrl}/checkout?payment=error&orderId=${encodeURIComponent(order.id)}`,
       cancel_url: `${env.frontendUrl}/checkout?payment=cancel&orderId=${encodeURIComponent(order.id)}`,
     })
+    const paymentInformation = env.sepayCheckoutMode === 'direct_qr'
+      ? createBankTransferInformation(order.amount, order.transfer_content, order.expired_at ?? '')
+      : null
     return {
       order,
-      checkoutUrl: sepay.checkout.initCheckoutUrl(),
-      checkoutFields,
-      course: { id: course.id, title: course.title, price: amount },
+      checkoutMode: env.sepayCheckoutMode,
+      checkoutUrl: sepay?.checkout.initCheckoutUrl() ?? null,
+      checkoutFields: checkoutFields ?? null,
+      paymentInformation,
+      customer,
+      course: {
+        id: course.id,
+        title: course.title,
+        slug: course.slug,
+        description: course.description,
+        thumbnailUrl: course.thumbnail_url,
+        price: amount,
+        originalPrice: course.price,
+        quantity: 1,
+      },
     }
   }
 
@@ -120,6 +165,51 @@ export class PaymentService {
 
     // Retry enrollment when payment was committed but an earlier IPN failed before enrollment.
     await this.repository.createEnrollment(order.student_id, order.course_id)
+    // The database creates the unique outbox row atomically with the paid transition.
+    // Release it only after enrollment succeeds; email errors never undo payment.
+    await this.confirmationEmails.releaseAfterEnrollmentAndSend(order.id)
+
+    return {
+      orderId: result.order.id,
+      status: result.order.status,
+      amount: result.order.amount,
+      transferContent: result.order.transfer_content,
+      providerTransactionId: result.order.provider_transaction_id,
+      isNewlyPaid: result.isNewlyPaid,
+    }
+  }
+
+  async handleSePayBankWebhook(event: SePayBankTransactionWebhook): Promise<VerifyPaymentResult> {
+    if (event.transferType !== 'in') throw new PaymentWebhookError('Only incoming bank transfers can pay an order.', 422)
+    if (!event.accountNumber || event.accountNumber !== env.sepayAccountNumber) {
+      throw new PaymentWebhookError('Bank account does not match the configured merchant account.', 422)
+    }
+    if (!Number.isSafeInteger(event.id) || event.id <= 0) {
+      throw new PaymentWebhookError('Invalid SePay bank transaction ID.', 400)
+    }
+    const amount = Number(event.transferAmount)
+    if (!Number.isSafeInteger(amount) || amount <= 0) {
+      throw new PaymentWebhookError('Invalid bank transfer amount.', 422)
+    }
+    const transferContent = event.content.trim()
+    if (!transferContent || transferContent.length > 200) {
+      throw new PaymentWebhookError('Invalid bank transfer description.', 422)
+    }
+
+    // The direct QR memo is generated server-side. Exact matching avoids
+    // accepting another order based on a partial or fuzzy description.
+    const order = await this.repository.findOrderByTransferContent(transferContent)
+    if (!order) throw new PaymentWebhookError('No course order matches the bank transfer description.', 404)
+    if (order.currency !== 'VND' || amount !== order.amount) {
+      throw new PaymentWebhookError('Bank transfer amount or currency does not match the order.', 422)
+    }
+    if (order.status === 'expired' || order.status === 'cancelled' || order.status === 'failed') {
+      throw new PaymentWebhookError('Order is no longer payable.', 422)
+    }
+
+    const result = await this.repository.markOrderPaidFromBankTransfer(order.id, String(event.id))
+    await this.repository.createEnrollment(order.student_id, order.course_id)
+    await this.confirmationEmails.releaseAfterEnrollmentAndSend(order.id)
 
     return {
       orderId: result.order.id,
@@ -133,6 +223,24 @@ export class PaymentService {
 }
 
 export const paymentService = new PaymentService()
+
+function createBankTransferInformation(amount: number, transferContent: string, expiresAt: string) {
+  return {
+    bankName: env.sepayBankName,
+    accountNumber: env.sepayAccountNumber,
+    accountName: env.sepayAccountName,
+    qrCodeUrl: buildSePayVietQrImageUrl({
+      bankCode: env.sepayBankCode,
+      accountNumber: env.sepayAccountNumber,
+      amount,
+      transferContent,
+      accountName: env.sepayAccountName,
+    }),
+    amount,
+    transferContent,
+    expiresAt,
+  }
+}
 
 /* Helper: expire orders past their expired_at using the service-role client */
 async function createSupabaseClientExpired(now: string): Promise<void> {

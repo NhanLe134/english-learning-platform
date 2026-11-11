@@ -38,10 +38,26 @@ export interface SePayWebhookPayload {
   [key: string]: unknown
 }
 
-/**
- * Build a VietQR image URL using SePay merchant account info.
- * Standard VietQR format: https://img.vietqr.io/image/{bankCode}-{accountNo}?amount={amount}&addInfo={content}&accountName={name}
- */
+export function buildSePayVietQrImageUrl(input: {
+  bankCode: string
+  accountNumber: string
+  amount: number
+  transferContent: string
+  accountName: string
+}): string {
+  const url = new URL('https://vietqr.app/img')
+  url.searchParams.set('acc', input.accountNumber)
+  url.searchParams.set('bank', input.bankCode)
+  url.searchParams.set('amount', String(input.amount))
+  url.searchParams.set('des', input.transferContent)
+  url.searchParams.set('template', 'compact')
+  url.searchParams.set('showinfo', 'true')
+  url.searchParams.set('fullacc', 'true')
+  url.searchParams.set('holder', input.accountName)
+  url.searchParams.set('store', 'Your Voice English')
+  return url.toString()
+}
+
 /**
  * Extract the order id from a SePay transfer content string.
  * Expected format: DH{order_id} (e.g. DH550e8400-e29b-41d4-a716-446655440000)

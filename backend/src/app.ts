@@ -1,5 +1,6 @@
 import cors from 'cors'
 import express from 'express'
+import type { Request } from 'express'
 import swaggerUi from 'swagger-ui-express'
 import { env } from './config/env.js'
 import { errorHandler } from './middlewares/errorHandler.js'
@@ -38,7 +39,14 @@ app.use(cors({
   },
   credentials: true,
 }))
-app.use(express.json({ limit: '16kb' }))
+app.use(express.json({
+  limit: '16kb',
+  verify: (request, _response, body) => {
+    if ((request as Request).originalUrl.startsWith('/api/payment/sepay-bank-webhook')) {
+      Object.assign(request, { rawBody: Buffer.from(body) })
+    }
+  },
+}))
 
 app.get('/api/health', (_request, response) => {
   response.status(200).json({ status: 'ok' })

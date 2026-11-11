@@ -13,9 +13,22 @@ const sepayEnv = process.env.SEPAY_ENV ?? 'sandbox'
 const sepayMerchantId = process.env.SEPAY_MERCHANT_ID ?? ''
 const sepaySecretKey = process.env.SEPAY_SECRET_KEY ?? ''
 const sepayIpnSecretKey = process.env.SEPAY_IPN_SECRET_KEY ?? ''
+const sepayCheckoutMode = process.env.SEPAY_CHECKOUT_MODE ?? 'hosted'
+const sepayBankWebhookSecret = process.env.SEPAY_BANK_WEBHOOK_SECRET ?? ''
+const sepayBankCode = process.env.SEPAY_BANK_CODE ?? ''
+const sepayBankName = process.env.SEPAY_BANK_NAME ?? ''
+const sepayAccountNumber = process.env.SEPAY_ACCOUNT_NUMBER ?? ''
+const sepayAccountName = process.env.SEPAY_ACCOUNT_NAME ?? ''
 
 if (!['sandbox', 'production'].includes(sepayEnv)) {
   throw new Error('SEPAY_ENV must be either sandbox or production')
+}
+if (!['hosted', 'direct_qr'].includes(sepayCheckoutMode)) {
+  throw new Error('SEPAY_CHECKOUT_MODE must be either hosted or direct_qr')
+}
+if (sepayCheckoutMode === 'direct_qr' &&
+  (!sepayBankWebhookSecret || !sepayBankCode || !sepayBankName || !sepayAccountNumber || !sepayAccountName)) {
+  throw new Error('SEPAY_CHECKOUT_MODE=direct_qr requires SEPAY_BANK_WEBHOOK_SECRET, SEPAY_BANK_CODE, SEPAY_BANK_NAME, SEPAY_ACCOUNT_NUMBER, and SEPAY_ACCOUNT_NAME')
 }
 if (nodeEnv === 'production' && sepayEnv === 'production' && (!sepayMerchantId || !sepaySecretKey || !sepayIpnSecretKey)) {
   throw new Error('Production SePay requires SEPAY_MERCHANT_ID, SEPAY_SECRET_KEY, and SEPAY_IPN_SECRET_KEY')
@@ -84,9 +97,13 @@ export const env = {
   sepayMerchantId,
   sepaySecretKey,
   sepayIpnSecretKey,
+  sepayCheckoutMode: sepayCheckoutMode as 'hosted' | 'direct_qr',
+  sepayBankWebhookSecret,
   sepayEnv: sepayEnv as 'sandbox' | 'production',
-  sepayBankCode: process.env.SEPAY_BANK_CODE ?? '',
-  sepayAccountNumber: process.env.SEPAY_ACCOUNT_NUMBER ?? '',
+  sepayBankCode,
+  sepayBankName,
+  sepayAccountNumber,
+  sepayAccountName,
   payosClientId: process.env.PAYOS_CLIENT_ID ?? '',
   payosApiKey: process.env.PAYOS_API_KEY ?? '',
   payosChecksumKey: process.env.PAYOS_CHECKSUM_KEY ?? '',

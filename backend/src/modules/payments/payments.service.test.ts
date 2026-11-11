@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import { env } from '../../config/env.js'
 import { PaymentService } from './payments.service.js'
 import type { PaymentOrder, SePayWebhookEvent } from './payments.types.js'
 
@@ -65,20 +66,45 @@ function createEvent(overrides: Partial<SePayWebhookEvent> = {}): SePayWebhookEv
   }
 }
 
+function createBankEvent(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 717171,
+    gateway: 'Vietcombank',
+    transactionDate: new Date().toISOString(),
+    accountNumber: '0012345678',
+    subAccount: '',
+    code: '',
+    content: `DH${ORDER_ID}`,
+    transferType: 'in',
+    transferAmount: 50000,
+    referenceCode: 'FT123',
+    ...overrides,
+  }
+}
+
 function setup(
   status: PaymentOrder['status'] = 'pending',
   lookup: 'found' | 'missing' | 'database-error' = 'found',
 ) {
   let order = createOrder(status)
   let enrollmentAttempts = 0
+  let emailQueueAttempts = 0
   const repository = {
-    findOrderByTransferContent: async () => {
+    findOrderByTransferContent: async (transferContent: string) => {
       if (lookup === 'database-error') throw new Error('database unavailable')
-      return lookup === 'missing' ? null : order
+      return lookup === 'missing' || transferContent !== order.transfer_content ? null : order
     },
     markOrderPaid: async (_orderId: string, providerOrderId: string) => {
       if (order.status === 'paid') return { order, isNewlyPaid: false }
       order = { ...order, status: 'paid', provider_order_id: providerOrderId, provider_transaction_id: 'sepay-tx-1' }
+      return { order, isNewlyPaid: true }
+    },
+    markOrderPaidFromBankTransfer: async (_orderId: string, transactionId: string) => {
+      if (order.status === 'paid') {
+        if (order.provider_transaction_id !== transactionId) throw new Error('A different transaction has already paid this course order.')
+        return { order, isNewlyPaid: false }
+      }
+      order = { ...order, status: 'paid', provider_transaction_id: transactionId, paid_at: new Date().toISOString() }
       return { order, isNewlyPaid: true }
     },
     createEnrollment: async () => {
@@ -87,9 +113,12 @@ function setup(
     },
   }
   return {
-    service: new PaymentService(repository as never),
+    service: new PaymentService(repository as never, {
+      releaseAfterEnrollmentAndSend: async () => { emailQueueAttempts += 1 },
+    }),
     getOrder: () => order,
     getEnrollmentAttempts: () => enrollmentAttempts,
+    getEmailQueueAttempts: () => emailQueueAttempts,
   }
 }
 
@@ -106,6 +135,7 @@ describe('SePay payment confirmation', () => {
     assert.equal(test.getOrder().status, 'paid')
     assert.equal(test.getOrder().provider_order_id, 'sepay-order-1')
     assert.equal(test.getEnrollmentAttempts(), 1)
+    assert.equal(test.getEmailQueueAttempts(), 1)
   })
 
   it('rejects a SePay order reference that differs from the stored reference', async () => {
@@ -128,6 +158,7 @@ describe('SePay payment confirmation', () => {
     assert.equal(result.status, 'paid')
     assert.equal(result.isNewlyPaid, false)
     assert.equal(test.getEnrollmentAttempts(), 2)
+    assert.equal(test.getEmailQueueAttempts(), 2)
   })
 
   it('keeps an already-paid order paid and retries idempotent enrollment', async () => {
@@ -183,5 +214,62 @@ describe('SePay payment confirmation', () => {
       transaction: { ...createEvent().transaction, transaction_status: 'DECLINED' },
     })
     await assert.rejects(stateTest.service.handleSePayWebhook(stateEvent), /approved payment/)
+  })
+})
+
+describe('SePay direct bank QR payment confirmation', () => {
+  it('verifies incoming account, exact memo and amount before enrolling', async () => {
+    const previousAccount = env.sepayAccountNumber
+    Object.assign(env, { sepayAccountNumber: '0012345678' })
+    try {
+      const test = setup()
+      const result = await test.service.handleSePayBankWebhook(createBankEvent())
+      assert.equal(result.status, 'paid')
+      assert.equal(result.providerTransactionId, '717171')
+      assert.equal(test.getOrder().status, 'paid')
+      assert.equal(test.getEnrollmentAttempts(), 1)
+      assert.equal(test.getEmailQueueAttempts(), 1)
+    } finally {
+      Object.assign(env, { sepayAccountNumber: previousAccount })
+    }
+  })
+
+  it('rejects wrong accounts, amounts, outgoing transfers and unknown descriptions', async () => {
+    const previousAccount = env.sepayAccountNumber
+    Object.assign(env, { sepayAccountNumber: '0012345678' })
+    try {
+      await assert.rejects(setup().service.handleSePayBankWebhook(createBankEvent({ accountNumber: 'wrong' })), /account does not match/)
+      await assert.rejects(setup().service.handleSePayBankWebhook(createBankEvent({ transferAmount: 49999 })), /amount or currency/)
+      await assert.rejects(setup().service.handleSePayBankWebhook(createBankEvent({ transferType: 'out' })), /incoming bank transfers/)
+      await assert.rejects(setup().service.handleSePayBankWebhook(createBankEvent({ content: 'unrelated memo' })), /No course order matches/)
+    } finally {
+      Object.assign(env, { sepayAccountNumber: previousAccount })
+    }
+  })
+
+  it('handles repeated delivery idempotently for the same bank transaction', async () => {
+    const previousAccount = env.sepayAccountNumber
+    Object.assign(env, { sepayAccountNumber: '0012345678' })
+    try {
+      const test = setup()
+      await test.service.handleSePayBankWebhook(createBankEvent())
+      const duplicate = await test.service.handleSePayBankWebhook(createBankEvent())
+      assert.equal(duplicate.isNewlyPaid, false)
+      assert.equal(test.getEnrollmentAttempts(), 2)
+      assert.equal(test.getEmailQueueAttempts(), 2)
+    } finally {
+      Object.assign(env, { sepayAccountNumber: previousAccount })
+    }
+  })
+
+  it('rejects expired orders and a different transaction for an already-paid order', async () => {
+    const previousAccount = env.sepayAccountNumber
+    Object.assign(env, { sepayAccountNumber: '0012345678' })
+    try {
+      await assert.rejects(setup('expired').service.handleSePayBankWebhook(createBankEvent()), /no longer payable/)
+      await assert.rejects(setup('paid').service.handleSePayBankWebhook(createBankEvent()), /different transaction/)
+    } finally {
+      Object.assign(env, { sepayAccountNumber: previousAccount })
+    }
   })
 })
