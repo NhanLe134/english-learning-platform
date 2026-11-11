@@ -12,6 +12,8 @@ import { CourseDetailPage } from './pages/courses/CourseDetailPage'
 import { CourseListPage } from './pages/courses/CourseListPage'
 import { CheckoutPage } from './pages/checkout/CheckoutPage'
 import { CheckoutSuccessPage } from './pages/checkout/CheckoutSuccessPage'
+import { WorkshopsPage } from './pages/workshops/WorkshopsPage'
+import { ContactPage } from './pages/contact/ContactPage'
 import { AuthProvider } from './pages/auth/AuthContext'
 import { useAuth } from './pages/auth/auth-context'
 
@@ -122,6 +124,14 @@ function AppRoutes() {
       break
     case '/about':
       page = <AboutPage />
+      break
+    case '/workshops':
+    case '/workshop':
+      page = <WorkshopsPage />
+      break
+    case '/contact':
+    case '/lien-he':
+      page = <ContactPage />
       break
     case '/home':
       page = <HomePage />
