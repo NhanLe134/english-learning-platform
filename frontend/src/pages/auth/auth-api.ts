@@ -25,6 +25,8 @@ export interface GoogleIdentity {
   email: string
   fullName: string
   avatarUrl: string | null
+  phoneNumber: string | null
+  dateOfBirth: string | null
 }
 
 export interface ForgotPasswordResponse {
@@ -152,6 +154,10 @@ export const authApi = {
     return tokenSession(await request<unknown>('/google', payload))
   },
 
+  async completeGoogleLogin(): Promise<AuthSession> {
+    return tokenSession(await request<unknown>('/google/session', {}))
+  },
+
   async googleIdentity(payload: {
     credential?: string
     idToken?: string
@@ -166,7 +172,11 @@ export const authApi = {
       !('email' in result.data) || typeof result.data.email !== 'string' ||
       !('fullName' in result.data) || typeof result.data.fullName !== 'string' ||
       !('avatarUrl' in result.data) ||
-      (result.data.avatarUrl !== null && typeof result.data.avatarUrl !== 'string')
+      (result.data.avatarUrl !== null && typeof result.data.avatarUrl !== 'string') ||
+      !('phoneNumber' in result.data) ||
+      (result.data.phoneNumber !== null && typeof result.data.phoneNumber !== 'string') ||
+      !('dateOfBirth' in result.data) ||
+      (result.data.dateOfBirth !== null && typeof result.data.dateOfBirth !== 'string')
     ) {
       throw new AuthApiError('Thông tin tài khoản Google trả về không hợp lệ.', 502)
     }
@@ -175,6 +185,8 @@ export const authApi = {
       email: result.data.email,
       fullName: result.data.fullName,
       avatarUrl: result.data.avatarUrl,
+      phoneNumber: result.data.phoneNumber,
+      dateOfBirth: result.data.dateOfBirth,
     }
   },
 
@@ -185,7 +197,8 @@ export const authApi = {
     phoneNumber: string,
     password: string,
     confirmPassword: string,
-    selectedCourseIds?: string[]
+    selectedCourseIds?: string[],
+    googleAccessToken?: string
   ): Promise<RegistrationResult> {
     const result = await request<unknown>('/register', {
       fullName,
@@ -194,6 +207,7 @@ export const authApi = {
       phoneNumber,
       password,
       confirmPassword,
+      ...(googleAccessToken ? { googleAccessToken } : {}),
       ...(selectedCourseIds && selectedCourseIds.length > 0 ? { selectedCourseIds } : {}),
     })
     if (
@@ -241,8 +255,15 @@ export const authApi = {
     }
   },
 
-  async verifyRegistrationOtp(email: string, otp: string): Promise<AuthSession> {
-    return tokenSession(await request<unknown>('/register/verification/verify', { email, otp }))
+  async verifyRegistrationOtp(email: string, otp: string): Promise<void> {
+    const result = await request<unknown>('/register/verification/verify', { email, otp })
+    if (
+      !result || typeof result !== 'object' || !('success' in result) || result.success !== true ||
+      !('data' in result) || !result.data || typeof result.data !== 'object' ||
+      !('verified' in result.data) || result.data.verified !== true
+    ) {
+      throw new AuthApiError('Registration verification response is invalid.', 502)
+    }
   },
 
   async refresh(): Promise<AuthSession> {

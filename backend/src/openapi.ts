@@ -371,12 +371,12 @@ export const openApiDocument = {
         tags: ['Authentication'],
         summary: 'Verify a registration email',
         description:
-          'Consumes a valid, unexpired six-digit code, marks the account verified, and only then creates a session and sets the HttpOnly refresh cookie. All unsuccessful verification states return the same generic 400 response.',
+          'Consumes a valid, unexpired six-digit code and marks the account verified. Verification does not authenticate the user or issue tokens; the user must log in afterward. All unsuccessful verification states return the same generic 400 response.',
         operationId: 'verifyRegistrationOtp',
         requestBody: jsonBody('RegistrationOtpVerifyRequest'),
         responses: {
-          '200': jsonResponse('Email verified; authenticated access token returned and refresh cookie set', {
-            $ref: '#/components/schemas/TokenResponse',
+          '200': jsonResponse('Email verified; no authentication tokens issued', {
+            $ref: '#/components/schemas/RegistrationVerificationResponse',
           }),
           ...errorResponses,
         },
@@ -428,10 +428,25 @@ export const openApiDocument = {
         tags: ['Authentication'],
         summary: 'Complete Google OAuth login or signup',
         description:
-          'Exchanges the authorization code, creates a student profile if needed, sets the refresh token as an HttpOnly cookie, then redirects to the frontend callback.',
+          'Exchanges the authorization code, verifies the Google identity, creates a student profile if needed, issues the login session, and sets HttpOnly session cookies. A short-lived, one-time handoff lets the frontend retrieve the already-issued access token after redirect.',
         operationId: 'completeGoogleOAuth',
         responses: {
-          '302': { description: 'Redirect to the frontend with an authenticated session cookie' },
+          '302': { description: 'Redirect to the frontend with the authenticated session established' },
+          ...errorResponses,
+        },
+      },
+    },
+    '/api/auth/google/session': {
+      post: {
+        tags: ['Authentication'],
+        summary: 'Complete Google login session handoff',
+        description:
+          'Consumes a short-lived, one-time HttpOnly handoff cookie created by the successful Google OAuth callback and returns its existing access token. This endpoint does not issue or rotate tokens.',
+        operationId: 'consumeGoogleLoginHandoff',
+        responses: {
+          '200': jsonResponse('Existing Google login access token and user returned', {
+            $ref: '#/components/schemas/TokenResponse',
+          }),
           ...errorResponses,
         },
       },
@@ -457,7 +472,7 @@ export const openApiDocument = {
         tags: ['Authentication'],
         summary: 'Rotate the refresh token',
         description:
-          'Verifies the HMAC-SHA256-signed seven-day token expiration and active server-side session before rotating the HttpOnly refresh cookie and returning a new access token. Reuse of an old refresh token revokes the session.',
+          'Only an explicit refresh request may rotate an existing session. The endpoint verifies the presented HttpOnly refresh cookie, its expiration, and active server-side session before rotating the cookie and returning a new access token. Reuse of an old refresh token revokes the session. This is session renewal, not login.',
         operationId: 'refresh',
         security: [{ refreshCookie: [] }],
         responses: {
@@ -519,7 +534,7 @@ export const openApiDocument = {
         type: 'http',
         scheme: 'bearer',
         bearerFormat: 'JWT',
-        description: 'Use the accessToken returned by registration verification, login, or refresh.',
+        description: 'Use the accessToken returned by successful login or explicit refresh.',
       },
       refreshCookie: {
         type: 'apiKey',
@@ -645,6 +660,10 @@ export const openApiDocument = {
             description: 'Phone number containing 7–15 digits.',
             example: '+84 912 345 678',
           },
+          googleAccessToken: {
+            type: 'string',
+            description: 'Optional short-lived Google token for registration only. The server validates it and retrieves allowed People API fields.',
+          },
           password: {
             type: 'string',
             minLength: 8,
@@ -757,11 +776,13 @@ export const openApiDocument = {
           success: { type: 'boolean', example: true },
           data: {
             type: 'object',
-            required: ['email', 'fullName', 'avatarUrl'],
+            required: ['email', 'fullName', 'avatarUrl', 'phoneNumber', 'dateOfBirth'],
             properties: {
               email: { type: 'string', format: 'email' },
               fullName: { type: 'string' },
               avatarUrl: { type: 'string', format: 'uri', nullable: true },
+              phoneNumber: { type: 'string', nullable: true },
+              dateOfBirth: { type: 'string', format: 'date', nullable: true },
             },
           },
         },
@@ -868,6 +889,16 @@ export const openApiDocument = {
               accessToken: { type: 'string', description: '30-minute bearer access JWT.' },
               user: { $ref: '#/components/schemas/PublicUser' },
             },
+          },
+        },
+      },
+      RegistrationVerificationResponse: {
+        type: 'object',
+        properties: {
+          success: { type: 'boolean', example: true },
+          data: {
+            type: 'object',
+            properties: { verified: { type: 'boolean', example: true } },
           },
         },
       },

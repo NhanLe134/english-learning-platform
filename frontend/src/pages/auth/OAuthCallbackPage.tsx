@@ -7,7 +7,7 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || ''
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
 
 export function OAuthCallbackPage() {
-  const { setSession, refreshSession } = useAuth()
+  const { setSession } = useAuth()
   const [error, setError] = useState<string | null>(null)
   const isRegistration = new URLSearchParams(window.location.search).get('flow') === 'register'
 
@@ -18,8 +18,9 @@ export function OAuthCallbackPage() {
       try {
         const provider = new URLSearchParams(window.location.search).get('provider')
         if (provider === 'google') {
-          const appSession = await refreshSession()
+          const appSession = await authApi.completeGoogleLogin()
           if (!active) return
+          setSession(appSession)
           window.location.replace(
             appSession.user.role === 'ADMIN' ? '/admin/users' : `/checkout${window.location.search}`
           )
@@ -72,7 +73,7 @@ export function OAuthCallbackPage() {
     return () => {
       active = false
     }
-  }, [isRegistration, refreshSession, setSession])
+  }, [isRegistration, setSession])
 
   if (error) {
     return (

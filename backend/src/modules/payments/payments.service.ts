@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { env } from '../../config/env.js'
 import { buildSePayVietQrImageUrl, getSePayClient } from '../../config/sepay.js'
 import { PaymentWebhookError } from './payments.errors.js'
+import { courseService } from '../courses/course.service.js'
 import {
   paymentConfirmationEmailService,
   type PaymentConfirmationEmailService,
@@ -113,6 +114,10 @@ export class PaymentService {
 
   async getCourseTitle(courseId: string): Promise<string | null> {
     return this.repository.findCourseTitle(courseId)
+  }
+
+  async getCourseDetails(courseId: string) {
+    return courseService.getCourseForPaidOrder(courseId)
   }
 
   async expireStaleOrders(): Promise<void> {

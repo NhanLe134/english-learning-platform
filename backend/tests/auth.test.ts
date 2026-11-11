@@ -168,6 +168,11 @@ class FakeUsers {
   async findByEmail(email: string): Promise<UserProfile | null> {
     return [...this.users.values()].find((user) => user.email === email) ?? null
   }
+
+  async rollbackStudentAccount(userId: string): Promise<void> {
+    this.users.delete(userId)
+    this.registrationDetails.delete(userId)
+  }
 }
 
 class FakeCourses {
@@ -555,7 +560,7 @@ describe('authentication service', () => {
     assert.equal(store.sessions.size, 0)
   })
 
-  it('verifies once and creates a session only after a correct OTP', async () => {
+  it('verifies OTP without creating a session; login creates the session afterward', async () => {
     let emailHtml = ''
     const { service, store, users } = setup(
       undefined,
@@ -570,9 +575,12 @@ describe('authentication service', () => {
     await service.requestRegistrationOtp(user.email)
     const code = emailHtml.match(/font-size:32px[^>]*>(\d{6})</)?.[1]
     assert.ok(code)
-    const tokens = await service.verifyRegistrationOtp(user.email, code)
-    assert.equal(tokens.user.id, user.id)
+    await service.verifyRegistrationOtp(user.email, code)
     assert.equal(user.is_verified, true)
+    assert.equal(store.sessions.size, 0)
+
+    const tokens = await service.login(user.email, 'A-long-password-123')
+    assert.equal(tokens.user.id, user.id)
     assert.equal(store.sessions.size, 1)
     assert.equal(verifyAccessToken(tokens.accessToken)?.sub, user.id)
 
@@ -580,7 +588,7 @@ describe('authentication service', () => {
     assert.equal(store.sessions.size, 1)
   })
 
-  it('serializes concurrent verification so only one session is issued', async () => {
+  it('serializes concurrent verification without issuing a session', async () => {
     let emailHtml = ''
     const { service, store } = setup(
       undefined,
@@ -598,7 +606,7 @@ describe('authentication service', () => {
     ])
     assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1)
     assert.equal(results.filter((result) => result.status === 'rejected').length, 1)
-    assert.equal(store.sessions.size, 1)
+    assert.equal(store.sessions.size, 0)
   })
 
   it('reports Resend failures, keeps registration recoverable, and does not log the OTP', async () => {
@@ -664,8 +672,8 @@ describe('authentication service', () => {
       )
       assert.ok(user)
       assert.equal(store.registrationOtps.has(user.id), true)
-      const tokens = await service.verifyRegistrationOtp(user.email, developmentOtp)
-      assert.equal(tokens.user.email, user.email)
+      await service.verifyRegistrationOtp(user.email, developmentOtp)
+      assert.equal(store.sessions.size, 0)
     } finally {
       Object.assign(env, {
         nodeEnv: originalNodeEnv,
@@ -903,7 +911,7 @@ describe('authentication service', () => {
 
   it('rejects login for an inactive account', async () => {
     const { service, users, store } = setup()
-    users.users.set(sampleUser.id, { ...sampleUser, status: 'inactive' })
+    users.users.set(sampleUser.id, { ...sampleUser, status: 'locked' })
 
     await expectAuthError(
       () => service.login(sampleUser.email, 'Correct-Horse-Password!'),

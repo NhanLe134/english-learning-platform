@@ -6,7 +6,7 @@ const API_BASE_URL = (
   'http://localhost:5000/api'
 ).replace(/\/+$/, '')
 
-interface CourseCatalogRecord {
+export interface CourseCatalogRecord {
   id: string
   title: string
   slug: string
@@ -18,7 +18,7 @@ interface CourseCatalogRecord {
   discounted_price: number | null
   total_lessons: number
   thumbnail_url: string | null
-  teacher: { full_name: string } | null
+  teacher: { full_name: string; avatar_url: string | null } | null
   topics: {
     id: string
     title: string
@@ -39,7 +39,7 @@ function inferIconType(slug: string): CourseReference['iconType'] {
   return 'award'
 }
 
-function mapCourse(course: CourseCatalogRecord): CourseReference {
+export function mapCourseCatalogRecord(course: CourseCatalogRecord): CourseReference {
   const price = course.discounted_price ?? course.price
   const modules = course.topics.map((topic) => ({
     id: topic.id,
@@ -64,13 +64,14 @@ function mapCourse(course: CourseCatalogRecord): CourseReference {
       course.level,
     ].filter(Boolean).join(' · '),
     thumbnailUrl: course.thumbnail_url,
-    instructor: course.teacher?.full_name || 'Đội ngũ giảng viên',
+    instructor: course.teacher?.full_name || '',
+    instructorAvatarUrl: course.teacher?.avatar_url ?? null,
     price,
     originalPrice: Math.max(price, course.price),
-    description: course.description || 'Khóa học được thiết kế theo lộ trình học tập cá nhân hóa.',
+    description: course.description ?? '',
     category: course.category,
     level: course.level,
-    targetAudience: course.target_audience,
+    targetAudience: course.target_audience ?? '',
     totalLessons: course.total_lessons,
     modules,
     highlights,
@@ -106,7 +107,7 @@ export const courseCatalogApi = {
     if (!Array.isArray(data) || data.length === 0) {
       return []
     }
-    return data.map(mapCourse)
+    return data.map(mapCourseCatalogRecord)
   },
 
   async get(identifier: string): Promise<CourseReference> {
@@ -114,6 +115,6 @@ export const courseCatalogApi = {
     if (!data || typeof data !== 'object' || !data.id || !data.title) {
       throw new Error('Thông tin khóa học không hợp lệ.')
     }
-    return mapCourse(data)
+    return mapCourseCatalogRecord(data)
   },
 }

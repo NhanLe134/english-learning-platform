@@ -156,6 +156,17 @@ export class PaymentController {
         return
       }
 
+      let courseDetails: Awaited<ReturnType<typeof paymentService.getCourseDetails>> = null
+      let courseDetailsUnavailable = false
+      if (order.status === 'paid') {
+        try {
+          courseDetails = await paymentService.getCourseDetails(order.course_id)
+          if (!courseDetails) courseDetailsUnavailable = true
+        } catch {
+          courseDetailsUnavailable = true
+        }
+      }
+
       response.setHeader('Cache-Control', 'private, no-store, max-age=0')
       response.status(200).json({
         success: true,
@@ -163,6 +174,8 @@ export class PaymentController {
           orderId: order.id,
           courseId: order.course_id,
           courseTitle: await paymentService.getCourseTitle(order.course_id),
+          courseDetails,
+          courseDetailsUnavailable,
           status: order.status,
           amount: order.amount,
           paymentMethod: order.provider === 'sepay' ? 'BANK_TRANSFER' : null,

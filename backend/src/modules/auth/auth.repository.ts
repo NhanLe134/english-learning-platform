@@ -257,9 +257,10 @@ export class AuthRepository {
     email: string,
     password: string,
     fullName: string,
-    dateOfBirth: string,
+    dateOfBirth: string | null,
     phoneNumber: string,
-    selectedCourseIds: string[]
+    selectedCourseIds: string[],
+    googleDetails?: { phoneNumber: string | null; dateOfBirth: string | null; avatarUrl: string | null; googleId: string }
   ): Promise<UserProfile> {
     const passwordHash = await bcrypt.hash(password, 12)
     const client = await getDatabasePool().connect()
@@ -271,17 +272,17 @@ export class AuthRepository {
            status, is_verified, created_at, updated_at)
          VALUES
           (gen_random_uuid(), $1, $2, NULL, $3, 'STUDENT',
-           NULL, 'active', false, now(), now())
+           $4, 'active', false, now(), now())
          RETURNING ${USER_COLUMNS}`,
-        [email, fullName, phoneNumber]
+        [email, fullName, phoneNumber || googleDetails?.phoneNumber || null, googleDetails?.avatarUrl ?? null]
       )
       const row = rows[0] as Record<string, unknown> | undefined
       if (!row) throw new Error('Database did not return the created user profile')
       await client.query(
         `INSERT INTO public.auth_registration_details
-          (user_id, date_of_birth, selected_course_ids)
-         VALUES ($1, $2, $3::UUID[])`,
-        [row.id, dateOfBirth, selectedCourseIds]
+          (user_id, date_of_birth, selected_course_ids, google_id)
+         VALUES ($1, $2, $3::UUID[], $4)`,
+        [row.id, dateOfBirth ?? googleDetails?.dateOfBirth ?? null, selectedCourseIds, googleDetails?.googleId ?? null]
       )
       await client.query(
         `INSERT INTO public.auth_credentials (user_id, password_hash)

@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react'
-import { ArrowRight, Check, CheckCircle2, Clock3, FileCheck2, Loader2, XCircle } from 'lucide-react'
+import { ArrowRight, BadgeCheck, BookOpen, Check, CheckCircle2, Clock3, FileCheck2, GraduationCap, Loader2, Tag, UserRound, XCircle } from 'lucide-react'
 import { SiteFooter, SiteHeader } from '../auth/AuthShared'
 import { useAuth } from '../auth/auth-context'
-import { courseCatalogApi } from '../courses/services/courseCatalogApi'
-import type { CourseReference } from '../courses/course-data'
 import { sepayApi } from './sepayApi'
 import './checkout-page.css'
 import './checkout-success-page.css'
@@ -23,7 +21,6 @@ export function CheckoutSuccessPage() {
   const [order, setOrder] = useState<Awaited<ReturnType<typeof sepayApi.getOrderStatus>> | null>(null)
   const [orderStatus, setOrderStatus] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [course, setCourse] = useState<CourseReference | null>(null)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
   const missingOrderInfo = !accessToken || !orderId
@@ -106,13 +103,14 @@ export function CheckoutSuccessPage() {
   }, [accessToken, orderId, missingOrderInfo])
 
   useEffect(() => {
-    if (!order?.courseId) return
-    let active = true
-    void courseCatalogApi.get(order.courseId)
-      .then((record) => { if (active) setCourse(record) })
-      .catch(() => { if (active) setCourse(null) })
-    return () => { active = false }
-  }, [order?.courseId])
+    const purchasedCourse = order?.status === 'paid' && !order.courseDetailsUnavailable
+      ? order.courseDetails
+      : null
+    if (!purchasedCourse?.slug) return
+    window.location.replace(`/courses/${encodeURIComponent(purchasedCourse.slug)}`)
+  }, [order?.status, order?.courseDetails, order?.courseDetailsUnavailable])
+
+  const course = order?.status === 'paid' ? order.courseDetails : null
 
   async function copyTransferDescription() {
     if (!order?.transferContent) return
@@ -131,6 +129,7 @@ export function CheckoutSuccessPage() {
   const cancelled = orderStatus === 'cancelled'
   const terminalError = expired || failed || cancelled
   const pending = orderStatus === 'pending'
+  const awaitingPayment = !loading && pending && !error
   const statusLabel = paid
     ? 'Đã thanh toán'
     : pending
@@ -152,27 +151,27 @@ export function CheckoutSuccessPage() {
           ? 'Bạn đã hủy thanh toán'
             : error || missingOrderInfo
             ? 'Chưa thể xác nhận thanh toán'
-            : 'Đang chờ xác nhận thanh toán'
+            : 'Đơn hàng đang chờ thanh toán'
 
   return (
     <div className="login-page checkout-page success-page">
       <SiteHeader brandName="Your English Voice" />
       <main className="checkout-success-main checkout-success-missing">
-        {loading && !missingOrderInfo ? (
+        {(loading && !missingOrderInfo) || awaitingPayment ? (
           <section className="payment-success-empty" role="status" aria-live="polite">
             <span className="payment-success-state-icon"><Loader2 className="sepay-loader" size={28} /></span>
-            <h1>Đang tải thông tin đơn hàng...</h1>
+            <h1>Đang tải thông tin khóa học...</h1>
           </section>
         ) : (
         <section className={`payment-success-empty${paid ? ' is-paid' : ''}${terminalError || error || missingOrderInfo ? ' has-error' : ''}`} aria-live="polite">
           <span className="payment-success-state-icon">
             {paid ? <CheckCircle2 size={32} /> : terminalError || error ? <XCircle size={32} /> : <Clock3 size={32} />}
           </span>
-          <span className={`payment-status-pill${paid ? ' paid' : terminalError ? ' failed' : ''}`}>
+          <span className={`payment-success-status-pill${paid ? ' paid' : terminalError ? ' failed' : ''}`}>
             {paid ? 'Đã xác nhận' : pending ? 'Đang chờ thanh toán' : terminalError ? 'Chưa hoàn tất' : 'Đang kiểm tra'}
           </span>
-          <h1>{title}</h1>
-          <p>
+          {!missingOrderInfo && <h1>{title}</h1>}
+          {!missingOrderInfo && <p>
             {paid
               ? `Cảm ơn${user?.fullName ? ` ${user.fullName}` : ''} đã chọn Your English Voice. SePay đã xác nhận thanh toán và đăng ký ${order?.courseTitle ?? 'khóa học'} của bạn đã hoàn tất.`
               : expired || failed || cancelled
@@ -180,15 +179,9 @@ export function CheckoutSuccessPage() {
                 : error || (missingOrderInfo
                   ? 'Không tìm thấy thông tin đơn hàng. Vui lòng đăng nhập lại hoặc quay lại thanh toán.'
                   : 'Nếu bạn đã thanh toán, vui lòng chờ IPN từ SePay. Trạng thái sẽ tự cập nhật; bạn không cần thanh toán lần nữa.')}
-          </p>
+          </p>}
           {order && (
             <div className="payment-success-details">
-              <div className="payment-success-course">
-                {course?.thumbnailUrl
-                  ? <img src={course.thumbnailUrl} alt="" />
-                  : <span className="payment-success-course-fallback"><FileCheck2 size={22} /></span>}
-                <div><small>Khóa học</small><strong>{order.courseTitle ?? course?.title ?? order.courseId}</strong></div>
-              </div>
               <dl className="payment-success-metadata">
                 {user?.fullName && <div><dt>Học viên</dt><dd>{user.fullName}</dd></div>}
                 <div><dt>Mã đơn hàng</dt><dd title={order.orderId}>{order.orderId}</dd></div>
@@ -203,6 +196,55 @@ export function CheckoutSuccessPage() {
                 </dd></div>
               </dl>
             </div>
+          )}
+          {order?.status === 'paid' && (
+            <section className="payment-success-course-full" aria-labelledby="purchased-course-heading">
+              <div className="payment-success-course-heading">
+                <div>
+                  <span>KHÓA HỌC ĐÃ THANH TOÁN</span>
+                  <h2 id="purchased-course-heading">Thông tin khóa học</h2>
+                </div>
+                <BookOpen size={22} aria-hidden="true" />
+              </div>
+              {order.courseDetailsUnavailable && <p className="payment-success-course-state is-error" role="alert">Không thể tải thông tin khóa học lúc này. Bạn có thể thử tải lại trang.</p>}
+              {!order.courseDetailsUnavailable && course && (
+                <>
+                  <div className="payment-success-course-overview">
+                    {course.thumbnailUrl && <img src={course.thumbnailUrl} alt={`Ảnh bìa khóa học ${course.title}`} />}
+                    <div>
+                      <h3>{course.title}</h3>
+                      {course.description && <p>{course.description}</p>}
+                      <div className="payment-success-course-tags">
+                        {course.category && <span><Tag size={14} />{course.category}</span>}
+                        {course.level && <span><GraduationCap size={15} />{course.level}</span>}
+                        {course.totalLessons > 0 && <span><BookOpen size={14} />{course.totalLessons} bài học</span>}
+                      </div>
+                      {course.instructor && <div className="payment-success-instructor">
+                        {course.instructorAvatarUrl
+                          ? <img src={course.instructorAvatarUrl} alt="" />
+                          : <span><UserRound size={17} /></span>}
+                        <div><small>Giảng viên</small><strong>{course.instructor}</strong></div>
+                      </div>}
+                    </div>
+                  </div>
+                  {course.targetAudience && <div className="payment-success-learning-audience"><strong>Đối tượng phù hợp</strong><p>{course.targetAudience}</p></div>}
+                  <div className="payment-success-price-summary">
+                    {course.originalPrice > 0 && <div><span>Giá niêm yết</span><strong>{formatCurrency(course.originalPrice)}</strong></div>}
+                    {course.originalPrice > order.amount && <div><span>Ưu đãi áp dụng</span><strong className="discount">-{formatCurrency(course.originalPrice - order.amount)}</strong></div>}
+                    <div className="paid-total"><span>Đã thanh toán</span><strong>{formatCurrency(order.amount)}</strong></div>
+                  </div>
+                  {course.modules.length > 0 && <div className="payment-success-curriculum">
+                    <h3><BookOpen size={17} /> Nội dung chương trình</h3>
+                    {course.modules.map((module, index) => <details key={module.id}>
+                      <summary><span>{String(index + 1).padStart(2, '0')}</span><strong>{module.title}</strong>{module.lessons.length > 0 && <small>{module.lessons.length} bài học</small>}</summary>
+                      {module.description && <p>{module.description}</p>}
+                      {module.lessons.length > 0 && <ul>{module.lessons.map((lesson, lessonIndex) => <li key={`${module.id}-${lessonIndex}`}>{lesson}</li>)}</ul>}
+                    </details>)}
+                  </div>}
+                  <p className="payment-success-access"><BadgeCheck size={16} /> Thanh toán đã được xác nhận cho khóa học này.</p>
+                </>
+              )}
+            </section>
           )}
           <a className="checkout-primary-button" href={paid && course?.slug ? `/courses/${encodeURIComponent(course.slug)}` : '/courses'}>
             {paid ? 'Vào học ngay' : terminalError ? 'Chọn khóa học khác' : 'Quay lại khóa học'} <ArrowRight size={16} />

@@ -120,6 +120,26 @@ describe('authentication HTTP endpoints', () => {
     assert.equal(verify.headers.get('set-cookie'), null)
   })
 
+  it('returns verification success without access token or refresh cookie', async () => {
+    const originalVerifyOtp = authService.verifyRegistrationOtp
+    authService.verifyRegistrationOtp = async () => undefined
+    try {
+      const response = await fetch(`${baseUrl}/api/auth/register/verification/verify`, {
+        method: 'POST',
+        headers: {
+          Origin: frontendOrigin,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: 'learner@example.test', otp: '123456' }),
+      })
+      assert.equal(response.status, 200)
+      assert.deepEqual(await response.json(), { success: true, data: { verified: true } })
+      assert.equal(response.headers.get('set-cookie'), null)
+    } finally {
+      authService.verifyRegistrationOtp = originalVerifyOtp
+    }
+  })
+
   it('returns verified Google identity details without creating an authenticated session', async () => {
     const originalGetGoogleIdentity = authService.getGoogleIdentity
     authService.getGoogleIdentity = async (input) => {
@@ -133,6 +153,8 @@ describe('authentication HTTP endpoints', () => {
         email: 'google-registration@example.test',
         fullName: 'Google Registration',
         avatarUrl: null,
+        phoneNumber: null,
+        dateOfBirth: null,
       }
     }
 

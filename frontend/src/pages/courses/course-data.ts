@@ -5,6 +5,7 @@ export interface CourseReference {
   details: string
   thumbnailUrl: string | null
   instructor: string
+  instructorAvatarUrl?: string | null
   price: number
   originalPrice: number
   description: string

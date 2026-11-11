@@ -1,3 +1,6 @@
+import type { CourseReference } from '../courses/course-data'
+import { mapCourseCatalogRecord, type CourseCatalogRecord } from '../courses/services/courseCatalogApi'
+
 const API_BASE_URL = (
   import.meta.env.VITE_API_URL ||
   import.meta.env.VITE_API_BASE_URL ||
@@ -46,7 +49,7 @@ export interface CreateOrderResponse {
   createdAt: string
 }
 
-interface OrderStatusResponse {
+interface RawOrderStatusResponse {
   orderId: string
   courseId: string
   courseTitle: string | null
@@ -58,6 +61,12 @@ interface OrderStatusResponse {
   paidAt: string | null
   expiredAt: string | null
   createdAt: string
+  courseDetails: CourseCatalogRecord | null
+  courseDetailsUnavailable: boolean
+}
+
+export interface OrderStatusResponse extends Omit<RawOrderStatusResponse, 'courseDetails'> {
+  courseDetails: CourseReference | null
 }
 
 type OrderStreamMessage =
@@ -109,13 +118,18 @@ export const sepayApi = {
     orderId: string,
     accessToken: string | null,
   ): Promise<OrderStatusResponse> {
-    const response = await request<OrderStatusResponse>(
+    const response = await request<RawOrderStatusResponse>(
       `/orders/${encodeURIComponent(orderId)}`,
       { method: 'GET', cache: 'no-store' },
       accessToken,
     )
     if (!response.data) throw new Error('Máy chủ không trả về trạng thái đơn hàng.')
-    return response.data
+    return {
+      ...response.data,
+      courseDetails: response.data.courseDetails
+        ? mapCourseCatalogRecord(response.data.courseDetails)
+        : null,
+    }
   },
 
   watchOrderStatus(

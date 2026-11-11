@@ -12,6 +12,7 @@ import {
 const REFRESH_COOKIE = 'english_learning_platform_refresh'
 const REMEMBER_COOKIE = 'english_learning_platform_remember'
 const GOOGLE_STATE_COOKIE = 'english_learning_platform_google_state'
+const GOOGLE_ACCESS_HANDOFF_COOKIE = 'english_learning_platform_google_access_handoff'
 
 function appendGoogleStateCookie(response: Response, state: string): void {
   const secure = env.nodeEnv === 'production' ? '; Secure' : ''
@@ -29,6 +30,22 @@ function clearGoogleStateCookie(response: Response): void {
   )
 }
 
+function setGoogleAccessHandoffCookie(response: Response, accessToken: string): void {
+  const secure = env.nodeEnv === 'production' ? '; Secure' : ''
+  response.append(
+    'Set-Cookie',
+    `${GOOGLE_ACCESS_HANDOFF_COOKIE}=${encodeURIComponent(accessToken)}; Path=/api/auth/google/session; HttpOnly; SameSite=Lax; Max-Age=60${secure}`
+  )
+}
+
+function clearGoogleAccessHandoffCookie(response: Response): void {
+  const secure = env.nodeEnv === 'production' ? '; Secure' : ''
+  response.append(
+    'Set-Cookie',
+    `${GOOGLE_ACCESS_HANDOFF_COOKIE}=; Path=/api/auth/google/session; HttpOnly; SameSite=Lax; Max-Age=0${secure}`
+  )
+}
+
 function googleStateCookie(request: Request): string | undefined {
   const cookieHeader = request.get('cookie')
   if (!cookieHeader) return undefined
@@ -37,6 +54,23 @@ function googleStateCookie(request: Request): string | undefined {
     const separator = cookie.indexOf('=')
     if (separator < 0 || cookie.slice(0, separator).trim() !== GOOGLE_STATE_COOKIE) continue
     return cookie.slice(separator + 1).trim() || undefined
+  }
+  return undefined
+}
+
+function googleAccessHandoffCookie(request: Request): string | undefined {
+  const cookieHeader = request.get('cookie')
+  if (!cookieHeader) return undefined
+  for (const cookie of cookieHeader.split(';')) {
+    const separator = cookie.indexOf('=')
+    if (separator < 0 || cookie.slice(0, separator).trim() !== GOOGLE_ACCESS_HANDOFF_COOKIE) continue
+    const value = cookie.slice(separator + 1).trim()
+    if (!value) return undefined
+    try {
+      return decodeURIComponent(value)
+    } catch {
+      return undefined
+    }
   }
   return undefined
 }
@@ -152,6 +186,7 @@ export class AuthController {
       const accessToken = await exchangeGoogleAuthorizationCode(code)
       const tokens = await authService.loginWithGoogle({ accessToken })
       setRefreshCookie(response, tokens.refreshToken, true)
+      setGoogleAccessHandoffCookie(response, tokens.accessToken)
       response.redirect(
         302,
         new URL('/auth/callback?provider=google', env.frontendUrl).toString()
@@ -165,12 +200,13 @@ export class AuthController {
     try {
       const registration = await authService.register({
         fullName: requireString(request.body?.fullName, 'fullName'),
-        dateOfBirth: requireString(request.body?.dateOfBirth, 'dateOfBirth'),
+        dateOfBirth: typeof request.body?.dateOfBirth === 'string' ? request.body.dateOfBirth : '',
         email: requireString(request.body?.email, 'email'),
         phoneNumber: requireString(request.body?.phoneNumber, 'phoneNumber'),
         password: requireString(request.body?.password, 'password'),
         confirmPassword: requireString(request.body?.confirmPassword, 'confirmPassword'),
         selectedCourseIds: request.body?.selectedCourseIds,
+        googleAccessToken: typeof request.body?.googleAccessToken === 'string' ? request.body.googleAccessToken : undefined,
       })
       response.status(202).json({
         success: true,
@@ -201,8 +237,8 @@ export class AuthController {
     try {
       const email = requireString(request.body?.email, 'email')
       const otp = requireString(request.body?.otp, 'otp')
-      const tokens = await authService.verifyRegistrationOtp(email, otp)
-      respondWithTokens(response, tokens)
+      await authService.verifyRegistrationOtp(email, otp)
+      response.status(200).json({ success: true, data: { verified: true } })
     } catch (error) {
       next(error)
     }
@@ -227,6 +263,30 @@ export class AuthController {
     try {
       const tokens = await authService.loginWithGoogle(request.body ?? {})
       respondWithTokens(response, tokens, true)
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  async consumeGoogleLogin(request: Request, response: Response, next: NextFunction): Promise<void> {
+    const accessToken = googleAccessHandoffCookie(request)
+    clearGoogleAccessHandoffCookie(response)
+    try {
+      if (!accessToken) throw new AuthError('Google login handoff is missing or expired.', 401)
+      const user = await authService.authenticateAccessToken(accessToken)
+      response.status(200).json({
+        success: true,
+        data: {
+          accessToken,
+          user: {
+            id: user.id,
+            email: user.email,
+            full_name: user.full_name,
+            phone_number: user.phone_number,
+            role: user.role,
+          },
+        },
+      })
     } catch (error) {
       next(error)
     }

@@ -32,16 +32,17 @@ import {
   verifyRefreshToken,
 } from './auth.tokens.js'
 import type { GoogleAuthInput } from './google.types.js'
-import { verifyGoogleAuthInput } from './google.verifier.js'
+import { getGoogleRegistrationDetails, verifyGoogleAuthInput } from './google.verifier.js'
 
 interface UserService {
   createStudentAccount(
     email: string,
     password: string,
     fullName: string,
-    dateOfBirth: string,
+    dateOfBirth: string | null,
     phoneNumber: string,
-    selectedCourseIds: string[]
+    selectedCourseIds: string[],
+    googleDetails?: { phoneNumber: string | null; dateOfBirth: string | null; avatarUrl: string | null; googleId: string }
   ): Promise<UserProfile>
   createGoogleAccount(email: string, fullName: string, avatarUrl: string | null): Promise<UserProfile>
   rollbackStudentAccount(userId: string): Promise<void>
@@ -103,6 +104,7 @@ export interface RegistrationInput {
   password: string
   confirmPassword: string
   selectedCourseIds?: string[]
+  googleAccessToken?: string
 }
 
 export interface RegistrationResult {
@@ -229,17 +231,30 @@ export class AuthService {
     if (!fullName || fullName.length > 120) {
       throw new AuthError('Full name is required and must be at most 120 characters.', 400)
     }
-    const dateOfBirth = validateDateOfBirth(input.dateOfBirth)
+    let googleDetails: Awaited<ReturnType<typeof getGoogleRegistrationDetails>> | null = null
+    if (input.googleAccessToken) {
+      googleDetails = await getGoogleRegistrationDetails(input.googleAccessToken)
+      if (googleDetails.email !== input.email.trim().toLowerCase()) {
+        throw new AuthError('The Google account does not match the registration email.', 400)
+      }
+    }
+    const dateOfBirth = input.dateOfBirth ? validateDateOfBirth(input.dateOfBirth) : null
+    if (!dateOfBirth && !input.googleAccessToken) {
+      throw new AuthError('Date of birth is required.', 400)
+    }
     const normalizedEmail = input.email.trim().toLowerCase()
     if (!isValidEmail(normalizedEmail)) throw new AuthError('Invalid email address', 400)
     const phoneNumber = input.phoneNumber.trim()
     const phoneDigits = phoneNumber.replace(/\D/g, '').length
-    if (
+    if (!phoneNumber && !input.googleAccessToken) {
+      throw new AuthError('Please enter a valid phone number.', 400)
+    }
+    if (phoneNumber && (
       phoneNumber.length > 32 ||
       !/^\+?[\d\s().-]+$/.test(phoneNumber) ||
       phoneDigits < 7 ||
       phoneDigits > 15
-    ) {
+    )) {
       throw new AuthError('Please enter a valid phone number.', 400)
     }
     if (input.password !== input.confirmPassword) {
@@ -269,9 +284,15 @@ export class AuthService {
         normalizedEmail,
         input.password,
         fullName,
-        dateOfBirth,
-        phoneNumber,
-        selectedCourseIds
+        dateOfBirth ?? googleDetails?.dateOfBirth ?? null,
+        phoneNumber || googleDetails?.phoneNumber || '',
+        selectedCourseIds,
+        googleDetails ? {
+          phoneNumber: googleDetails.phoneNumber,
+          dateOfBirth: googleDetails.dateOfBirth,
+          avatarUrl: googleDetails.avatarUrl,
+          googleId: googleDetails.googleId,
+        } : undefined
       )
       return {
         verificationRequired: true,
@@ -374,8 +395,7 @@ export class AuthService {
     }
   }
 
-  async verifyRegistrationOtp(email: string, otp: string): Promise<TokenPair> {
-    this.assertSigningSecretConfigured()
+  async verifyRegistrationOtp(email: string, otp: string): Promise<void> {
     const normalizedEmail = email.trim().toLowerCase()
     if (!isValidEmail(normalizedEmail)) throw new AuthError('Invalid email address', 400)
     if (!/^\d{6}$/.test(otp)) {
@@ -403,18 +423,9 @@ export class AuthService {
       case 'attempts_exhausted':
         throw new AuthError('Mã xác minh không hợp lệ hoặc đã hết hạn.', 400)
       case 'verified':
-        try {
-          return await this.createSession(result.user)
-        } catch (error) {
-          throw new AuthError(
-            'Tài khoản đã xác minh nhưng chưa thể tạo phiên đăng nhập. Vui lòng đăng nhập.',
-            503,
-            error
-          )
-        }
+        return
     }
   }
-
   async login(email: string, password: string): Promise<TokenPair> {
     this.assertSigningSecretConfigured()
     if (
@@ -589,8 +600,12 @@ export class AuthService {
     email: string
     fullName: string
     avatarUrl: string | null
+    phoneNumber: string | null
+    dateOfBirth: string | null
   }> {
-    const userInfo = await verifyGoogleAuthInput(input, env.googleClientId)
+    const userInfo = input.accessToken
+      ? await getGoogleRegistrationDetails(input.accessToken)
+      : { ...(await verifyGoogleAuthInput(input, env.googleClientId)), phoneNumber: null, dateOfBirth: null }
     if (!userInfo.emailVerified) {
       throw new AuthError('Địa chỉ email Google chưa được xác minh.', 400)
     }
@@ -598,6 +613,8 @@ export class AuthService {
       email: userInfo.email,
       fullName: userInfo.name,
       avatarUrl: userInfo.avatarUrl,
+      phoneNumber: userInfo.phoneNumber,
+      dateOfBirth: userInfo.dateOfBirth,
     }
   }
 

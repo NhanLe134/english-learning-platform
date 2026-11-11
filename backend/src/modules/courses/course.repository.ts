@@ -160,6 +160,16 @@ export class CourseRepository {
     )
   }
 
+  async findCourseById(courseId: string): Promise<CourseCatalogEntry | null> {
+    const { data, error } = await createSupabaseClient()
+      .from('courses')
+      .select(PUBLIC_COURSE_COLUMNS)
+      .eq('id', courseId)
+      .maybeSingle()
+    if (error) throw new Error(`Unable to retrieve purchased course details: ${error.message}`, { cause: error })
+    return data ? mapCatalogCourse(data as unknown as CourseCatalogRow) : null
+  }
+
   async findPublishedByIds(ids: string[]): Promise<Course[]> {
     const { data, error } = await createSupabaseClient()
       .from('courses')
