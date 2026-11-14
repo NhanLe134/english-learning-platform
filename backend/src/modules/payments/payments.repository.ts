@@ -12,6 +12,26 @@ function mapPaymentOrder(row: PaymentOrderRow): PaymentOrder {
 }
 
 export class PaymentOrderRepository {
+  constructor(private readonly clientFactory: typeof createSupabaseClient = createSupabaseClient) {}
+
+  async findVerifiedStudentByEmail(email: string): Promise<{ id: string; fullName: string; email: string; phoneNumber: string | null } | null> {
+    const { data, error } = await createSupabaseClient()
+      .from('profiles')
+      .select('id,email,full_name,phone_number,status,is_verified')
+      .eq('email', email.trim().toLowerCase())
+      .eq('is_verified', true)
+      .in('status', ['pending', 'active'])
+      .maybeSingle()
+    if (error) throw new Error(`Unable to retrieve verified student details: ${error.message}`, { cause: error })
+    if (!data) return null
+    return {
+      id: String(data.id),
+      fullName: String(data.full_name ?? ''),
+      email: String(data.email ?? ''),
+      phoneNumber: typeof data.phone_number === 'string' ? data.phone_number : null,
+    }
+  }
+
   async createOrder(input: CreatePaymentOrderInput): Promise<PaymentOrder> {
     const { data, error } = await createSupabaseClient()
       .from('course_orders')
@@ -30,6 +50,24 @@ export class PaymentOrderRepository {
       .single()
 
     if (error) throw new Error(`Unable to create course order: ${error.message}`, { cause: error })
+    return mapPaymentOrder(data as unknown as PaymentOrderRow)
+  }
+
+  async findPendingOrderForStudentCourse(studentId: string, courseId: string): Promise<PaymentOrder | null> {
+    const { data, error } = await this.clientFactory()
+      .from('course_orders')
+      .select(COURSE_ORDER_COLUMNS)
+      .eq('student_id', studentId)
+      .eq('course_id', courseId)
+      .eq('provider', 'sepay')
+      .eq('status', 'pending')
+      .gt('expired_at', new Date().toISOString())
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (error) throw new Error(`Unable to find an existing pending course order: ${error.message}`, { cause: error })
+    if (!data) return null
     return mapPaymentOrder(data as unknown as PaymentOrderRow)
   }
 
@@ -87,6 +125,18 @@ export class PaymentOrderRepository {
     return data ? String(data.title) : null
   }
 
+  async hasActiveEnrollment(studentId: string, courseId: string): Promise<boolean> {
+    const { data, error } = await this.clientFactory()
+      .from('course_enrollments')
+      .select('id')
+      .eq('student_id', studentId)
+      .eq('course_id', courseId)
+      .in('status', ['active', 'completed'])
+      .maybeSingle()
+    if (error) throw new Error(`Unable to verify course enrollment: ${error.message}`, { cause: error })
+    return Boolean(data)
+  }
+
   async findOrderById(orderId: string): Promise<PaymentOrder | null> {
     const { data, error } = await createSupabaseClient()
       .from('course_orders')
@@ -113,101 +163,33 @@ export class PaymentOrderRepository {
     return mapPaymentOrder(data as unknown as PaymentOrderRow)
   }
 
-  async markOrderPaid(
+  async confirmVerifiedPayment(
     orderId: string,
-    providerOrderId: string,
-    providerTransactionId: string | null,
+    providerOrderId: string | null,
+    providerTransactionId: string,
     amount: number,
   ): Promise<{ order: PaymentOrder; isNewlyPaid: boolean }> {
-    const existing = await this.findOrderById(orderId)
-    if (!existing) {
-      throw new Error(`Course order ${orderId} not found`)
-    }
-    if (existing.provider_order_id && existing.provider_order_id !== providerOrderId) {
-      throw new Error('SePay order reference does not match the stored payment reference.')
-    }
-    if (existing.status === 'paid') {
-      if (existing.provider_order_id) return { order: existing, isNewlyPaid: false }
-
-      // Older paid rows may predate persistence of SePay's generated reference.
-      // Bind the authenticated repeat notification once, then require it on future retries.
-      const { error: bindError } = await createSupabaseClient()
-        .from('course_orders')
-        .update({ provider_order_id: providerOrderId })
-        .eq('id', orderId)
-        .eq('status', 'paid')
-        .is('provider_order_id', null)
-      if (bindError) throw new Error(`Unable to persist SePay order reference: ${bindError.message}`, { cause: bindError })
-      const refreshed = await this.findOrderById(orderId)
-      if (!refreshed) throw new Error(`Course order ${orderId} not found after reference update`)
-      if (refreshed.provider_order_id !== providerOrderId) {
-        throw new Error('SePay order reference does not match the stored payment reference.')
-      }
-      return { order: refreshed, isNewlyPaid: false }
-    }
-
-    const { data, error } = await createSupabaseClient()
-      .from('course_orders')
-      .update({
-        status: 'paid',
-        provider_order_id: providerOrderId,
-        provider_transaction_id: providerTransactionId ?? existing.provider_transaction_id,
-        paid_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+    console.info('[Payment] confirming verified payment atomically', {
+      orderId: maskDiagnosticValue(orderId),
+    })
+    const { data, error } = await this.clientFactory().rpc('confirm_course_order_payment', {
+      p_order_id: orderId,
+      p_provider_order_id: providerOrderId,
+      p_provider_transaction_id: providerTransactionId,
+      p_amount: amount,
+    })
+    if (error) {
+      console.error('[Payment] atomic confirmation RPC failed', {
+        orderId: maskDiagnosticValue(orderId),
+        databaseErrorCode: error.code,
       })
-      .eq('id', orderId)
-      .eq('status', 'pending') // only transition from pending
-      .select(COURSE_ORDER_COLUMNS)
-      .maybeSingle()
-
-    if (error) throw new Error(`Unable to mark course order paid: ${error.message}`, { cause: error })
-
-    if (!data) {
-      // Order may have been updated concurrently; re-fetch
-      const refreshed = await this.findOrderById(orderId)
-      if (!refreshed) throw new Error(`Course order ${orderId} not found after update`)
-      if (refreshed.provider_order_id !== providerOrderId) {
-        throw new Error('SePay order reference does not match the stored payment reference.')
-      }
-      return { order: refreshed, isNewlyPaid: refreshed.status === 'paid' }
+      throw new Error(`Unable to confirm paid course order and enrollment: ${error.message}`, { cause: error })
     }
-
-    return { order: mapPaymentOrder(data as unknown as PaymentOrderRow), isNewlyPaid: true }
-  }
-
-  async markOrderPaidFromBankTransfer(
-    orderId: string,
-    transactionId: string,
-  ): Promise<{ order: PaymentOrder; isNewlyPaid: boolean }> {
-    const existing = await this.findOrderById(orderId)
-    if (!existing) throw new Error(`Course order ${orderId} not found`)
-    if (existing.status === 'paid') {
-      if (existing.provider_transaction_id === transactionId) return { order: existing, isNewlyPaid: false }
-      throw new Error('A different transaction has already paid this course order.')
+    const result = data as { order?: PaymentOrderRow; isNewlyPaid?: boolean } | null
+    if (!result?.order || result.order.status !== 'paid') {
+      throw new Error('Payment confirmation RPC did not return a paid order.')
     }
-    if (existing.status !== 'pending') throw new Error('Course order is no longer payable.')
-
-    const paidAt = new Date().toISOString()
-    const { data, error } = await createSupabaseClient()
-      .from('course_orders')
-      .update({
-        status: 'paid',
-        provider_transaction_id: transactionId,
-        paid_at: paidAt,
-        updated_at: paidAt,
-      })
-      .eq('id', orderId)
-      .eq('status', 'pending')
-      .select(COURSE_ORDER_COLUMNS)
-      .maybeSingle()
-    if (error) throw new Error(`Unable to mark course order paid: ${error.message}`, { cause: error })
-    if (data) return { order: mapPaymentOrder(data as unknown as PaymentOrderRow), isNewlyPaid: true }
-
-    const refreshed = await this.findOrderById(orderId)
-    if (refreshed?.status === 'paid' && refreshed.provider_transaction_id === transactionId) {
-      return { order: refreshed, isNewlyPaid: false }
-    }
-    throw new Error('Course order was paid by another transaction or is no longer payable.')
+    return { order: mapPaymentOrder(result.order), isNewlyPaid: result.isNewlyPaid === true }
   }
 
   async markOrderExpired(orderId: string): Promise<PaymentOrder | null> {
@@ -224,23 +206,11 @@ export class PaymentOrderRepository {
     return mapPaymentOrder(data as unknown as PaymentOrderRow)
   }
 
-  async createEnrollment(studentId: string, courseId: string): Promise<{ created: boolean }> {
-    const { data, error } = await createSupabaseClient()
-      .from('course_enrollments')
-      .insert({ student_id: studentId, course_id: courseId, status: 'active' })
-      .select('id')
-      .maybeSingle()
+}
 
-    if (error) {
-      // Duplicate enrollment (unique constraint) is not an error — access already granted
-      if (String(error.code) === '23505') {
-        return { created: false }
-      }
-      throw new Error(`Unable to create course enrollment: ${error.message}`, { cause: error })
-    }
-
-    return { created: data !== null }
-  }
+function maskDiagnosticValue(value: string): string {
+  if (value.length <= 8) return `${value.slice(0, 2)}***`
+  return `${value.slice(0, 4)}***${value.slice(-4)}`
 }
 
 export const paymentOrderRepository = new PaymentOrderRepository()

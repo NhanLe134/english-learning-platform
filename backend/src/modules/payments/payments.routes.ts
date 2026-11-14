@@ -1,5 +1,7 @@
 import { Router } from 'express'
-import { authenticate } from '../auth/auth.middleware.js'
+import { env } from '../../config/env.js'
+import { authenticate, requireTrustedOrigin } from '../auth/auth.middleware.js'
+import { authRateLimit } from '../auth/auth.rate-limit.js'
 import { paymentController } from './payments.controller.js'
 
 export const paymentsRouter = Router()
@@ -14,6 +16,17 @@ paymentsRouter.post(
 // separate from the existing Merchant Gateway IPN route above.
 paymentsRouter.post('/sepay-bank-webhook', (request, response) =>
   paymentController.sepayBankWebhook(request, response),
+)
+
+// Verified, pre-login registration users can pay without receiving an auth token.
+paymentsRouter.post(
+  '/orders/guest',
+  requireTrustedOrigin,
+  authRateLimit(env.authLoginRateLimit),
+  (request, response, next) => paymentController.createGuestOrder(request, response, next),
+)
+paymentsRouter.get('/orders/:orderId/public', (request, response, next) =>
+  paymentController.getPublicOrderStatus(request, response, next),
 )
 
 // Student order endpoints require authentication

@@ -11,6 +11,7 @@ import { GoogleAuthButton, LoginVisual, SiteFooter, SiteHeader } from './AuthSha
 import { useAuth } from './auth-context'
 import { authApi, getErrorMessage } from './auth-api'
 import { initiateGoogleSignIn } from './google-auth'
+import { sepayApi } from '../checkout/sepayApi'
 import './login-page.css'
 
 export function LoginPage() {
@@ -25,13 +26,30 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false)
   const { setSession } = useAuth()
 
-  function handleAuthSuccess(session: import('./auth-api').AuthSession) {
+  async function handleAuthSuccess(session: import('./auth-api').AuthSession) {
     setSession(session)
     if (session.user.role === 'ADMIN') {
       window.location.assign('/admin/users')
-    } else {
-      window.location.assign(`/checkout${window.location.search}`)
+      return
     }
+    const paymentOrderId = new URLSearchParams(window.location.search).get('paymentOrderId')
+    if (paymentOrderId) {
+      try {
+        const order = await sepayApi.getOrderStatus(paymentOrderId, session.accessToken)
+        if (order.status !== 'paid' || !order.courseDetails?.slug) {
+          throw new Error('Chưa tìm thấy giao dịch thanh toán thành công cho tài khoản này.')
+        }
+        if (order.enrollmentExists !== true) {
+          window.location.assign(`/checkout/success?orderId=${encodeURIComponent(paymentOrderId)}`)
+          return
+        }
+        window.location.assign(`/courses/${encodeURIComponent(order.courseDetails.slug)}`)
+      } catch (error) {
+        setErrorMessage(getErrorMessage(error))
+      }
+      return
+    }
+    window.location.assign('/courses')
   }
 
   async function handleGoogleLogin() {

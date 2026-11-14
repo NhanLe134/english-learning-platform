@@ -446,6 +446,31 @@
 }
 .payment-success-empty > a.checkout-primary-button:hover { background: #A30D26; }
 
+.payment-result-api-error,
+.payment-result-enrollment-pending {
+  width: 100%;
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border: 1px solid #f4c987;
+  border-radius: 12px;
+  background: #fff8eb;
+  color: #81520c;
+  font-size: 14px;
+}
+.payment-result-support { width: 100%; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 14px; border-radius: 12px; background: #f5f8fc; color: #3d4c61; font-size: 13px; }
+.payment-result-support a { color: #1766bf; font-weight: 700; }
+.payment-result-retry { margin-top: 14px; }
+.payment-result-checkout-info { display: grid; justify-items: center; gap: 10px; width: 100%; margin-top: 20px; padding: 18px; border: 1px solid #e5ebf2; border-radius: 16px; background: #fff; }
+.payment-result-checkout-info h2 { margin: 0; font-size: 17px; }
+.payment-result-checkout-info img { width: min(260px, 75vw); height: auto; border-radius: 8px; }
+.payment-result-checkout-info p { margin: 0; color: #526174; font-size: 13px; }
+.payment-result-hosted-form { width: 100%; margin-top: 18px; }
+.payment-result-hosted-form button { width: 100%; }
+.payment-result-course-summary { display: flex; align-items: center; gap: 14px; width: 100%; margin: 14px 0 0; padding: 12px; border: 1px solid #e5ebf2; border-radius: 12px; text-align: left; }
+.payment-result-course-summary img { width: 72px; height: 58px; border-radius: 8px; object-fit: cover; }
+.payment-result-course-summary span { display: grid; gap: 4px; }
+.payment-result-course-summary small { color: #66758a; }
+
 @media (max-width: 820px) {
   .checkout-success-main { width: calc(100% - 38px); }
   .payment-success-course-overview { grid-template-columns: minmax(140px, .75fr) minmax(0, 1.4fr); gap: 15px; }
@@ -479,4 +504,18 @@
   .payment-success-price-summary > .paid-total { grid-column: auto; }
   .payment-success-curriculum summary { gap: 7px; }
   .payment-success-curriculum summary > small { font-size: 10px; }
+}
+
+.sepay-loader {
+  animation: sepay-spin 1s linear infinite;
+  transform-origin: center;
+}
+
+@keyframes sepay-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }

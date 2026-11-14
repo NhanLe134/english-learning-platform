@@ -20,6 +20,8 @@ import { courseCatalogApi } from '../courses/services/courseCatalogApi'
 import { readCheckoutCourse, type CourseReference } from '../courses/course-data'
 import { type CreateOrderResponse } from './sepayApi'
 import SePayVietQR from './SePayVietQR'
+import { CheckoutSuccessPage } from './CheckoutSuccessPage'
+import { paymentSupportPhone, savePaymentInstructions } from './payment-config'
 import './checkout-page.css'
 
 interface StudentDetails {
@@ -64,11 +66,16 @@ function OrderHoldTimer({ onExpire, expiresAt }: { onExpire: () => void; expires
 }
 
 function initialStudentDetails(): StudentDetails {
-  return {
-    fullName: '',
-    email: '',
-    phone: '',
-  }
+  try {
+    const saved = sessionStorage.getItem('your-voice-pending-checkout-student')
+    if (saved) {
+      const parsed = JSON.parse(saved) as Partial<StudentDetails>
+      if (typeof parsed.fullName === 'string' && typeof parsed.email === 'string' && typeof parsed.phone === 'string') {
+        return { fullName: parsed.fullName, email: parsed.email, phone: parsed.phone }
+      }
+    }
+  } catch { /* Checkout can collect these fields directly. */ }
+  return { fullName: '', email: '', phone: '' }
 }
 
 function EditStudentDialog({
@@ -216,7 +223,11 @@ export function CheckoutPage() {
     setShowQr(false)
   }, [])
   const handleQrOrderReady = useCallback((order: CreateOrderResponse) => {
-    setPaymentOrder(order)
+    savePaymentInstructions(order.orderId, order.paymentInformation)
+    if (order.checkoutMode === 'direct_qr') {
+      setPaymentOrder(order)
+      window.history.replaceState(null, '', `/checkout/success?orderId=${encodeURIComponent(order.orderId)}`)
+    }
     setProcessing(false)
   }, [])
   const handleQrOrderStatusChange = useCallback((status: string) => {
@@ -243,7 +254,10 @@ export function CheckoutPage() {
     setShowQr(false)
   }
 
-  return (
+  const checkoutOrder = paymentOrder as CreateOrderResponse | null
+  return paymentOrder || (showPaymentReturnNotice && returnOrderId)
+    ? <CheckoutSuccessPage initialOrder={paymentOrder ?? undefined} />
+    : (
     <div className="login-page checkout-page">
       <SiteHeader />
 
@@ -256,7 +270,7 @@ export function CheckoutPage() {
             <ChevronRight size={13} />
             <span>Thanh toán an toàn</span>
           </nav>
-          {paymentOrder?.checkoutMode === 'hosted' && paymentOrder.expiredAt && <OrderHoldTimer onExpire={expireOrder} expiresAt={paymentOrder.expiredAt} />}
+          {checkoutOrder?.checkoutMode === 'hosted' && checkoutOrder.expiredAt && <OrderHoldTimer onExpire={expireOrder} expiresAt={checkoutOrder.expiredAt} />}
         </div>
 
         {showPaymentReturnNotice && (
@@ -273,7 +287,7 @@ export function CheckoutPage() {
           </section>
         )}
 
-        <div className={`checkout-layout${paymentOrder?.checkoutMode === 'direct_qr' ? ' is-direct-qr' : ''}`}>
+        <div className={`checkout-layout${checkoutOrder?.checkoutMode === 'direct_qr' ? ' is-direct-qr' : ''}`}>
           <div className="checkout-main-column">
             <section className="checkout-card checkout-student-card" aria-labelledby="student-info-title">
               <header className="checkout-section-heading">
@@ -316,9 +330,10 @@ export function CheckoutPage() {
             </div>
 
             </section>
-            {showQr && (!expired || paymentOrder?.checkoutMode === 'direct_qr') && (
+            {showQr && (!expired || checkoutOrder?.checkoutMode === 'direct_qr') && (
               <SePayVietQR
                 courseId={course.id}
+                studentEmail={currentStudent.email}
                 onPaymentError={handleQrPaymentError}
                 onOrderReady={handleQrOrderReady}
                 onOrderStatusChange={handleQrOrderStatusChange}
@@ -329,13 +344,7 @@ export function CheckoutPage() {
           <aside className="checkout-sidebar" aria-label="Tóm tắt đơn hàng">
             <section className="checkout-card checkout-summary-card" id="course-summary">
               <h2 className="checkout-summary-title"><BookOpen size={20} /> Tóm tắt đơn hàng</h2>
-              <div className="checkout-summary-customer">
-                <strong>Thông tin học viên</strong>
-                <span>{paymentOrder?.customer.fullName || user?.fullName || 'Chưa cập nhật'}</span>
-                <span>{paymentOrder?.customer.email || user?.email || 'Chưa cập nhật'}</span>
-                {(paymentOrder?.customer.phoneNumber || user?.phoneNumber) && <span>{paymentOrder?.customer.phoneNumber || user?.phoneNumber}</span>}
-                {paymentOrder?.orderId && <small>Mã đơn hàng: <b>{paymentOrder.orderId}</b></small>}
-              </div>
+
               <div className="checkout-course-mini-card">
                 {summaryCourse.thumbnailUrl
                   ? <img className="checkout-course-thumb-image" src={summaryCourse.thumbnailUrl} alt="" />
@@ -389,11 +398,11 @@ export function CheckoutPage() {
               </ul>
             </section>
 
-            <a className="checkout-support-card" href="tel:18006889">
+            {paymentSupportPhone && <a className="checkout-support-card" href={`tel:${paymentSupportPhone}`}>
               <Headset size={18} />
               <span><strong>Cần trợ giúp kích hoạt?</strong><small>Hotline hỗ trợ học viên 24/7</small></span>
-              <b>1800 6889</b>
-            </a>
+              <b>{paymentSupportPhone}</b>
+            </a>}
           </aside>
         </div>
       </main>

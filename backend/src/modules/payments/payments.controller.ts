@@ -9,6 +9,44 @@ import type { SePayBankTransactionWebhook } from './payments.types.js'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 export class PaymentController {
+  async createGuestOrder(request: Request, response: Response, next: NextFunction): Promise<void> {
+    try {
+      const { courseId, email } = request.body as { courseId?: unknown; email?: unknown }
+      if (typeof courseId !== 'string' || !UUID_PATTERN.test(courseId)) {
+        response.status(400).json({ success: false, message: 'Valid courseId is required.' })
+        return
+      }
+      if (typeof email !== 'string' || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+        response.status(400).json({ success: false, message: 'A valid verified registration email is required.' })
+        return
+      }
+      const result = await paymentService.createGuestOrder({ courseId, email: email.trim() })
+      response.status(201).json({
+        success: true,
+        data: {
+          orderId: result.order.id,
+          status: result.order.status,
+          amount: result.order.amount,
+          transferContent: result.order.transfer_content,
+          expiredAt: result.order.expired_at,
+          checkoutMode: result.checkoutMode,
+          checkoutUrl: result.checkoutUrl,
+          checkoutFields: result.checkoutFields,
+          paymentInformation: result.paymentInformation,
+          customer: result.customer,
+          course: result.course,
+          createdAt: result.order.created_at,
+        },
+      })
+    } catch (error) {
+      if (error instanceof PaymentWebhookError) {
+        response.status(error.statusCode).json({ success: false, message: error.message })
+      } else {
+        next(error)
+      }
+    }
+  }
+
   async createOrder(
     request: Request,
     response: Response,
@@ -158,12 +196,18 @@ export class PaymentController {
 
       let courseDetails: Awaited<ReturnType<typeof paymentService.getCourseDetails>> = null
       let courseDetailsUnavailable = false
+      let enrollmentExists = false
       if (order.status === 'paid') {
         try {
           courseDetails = await paymentService.getCourseDetails(order.course_id)
           if (!courseDetails) courseDetailsUnavailable = true
         } catch {
           courseDetailsUnavailable = true
+        }
+        try {
+          enrollmentExists = await paymentService.hasActiveEnrollment(order.student_id, order.course_id)
+        } catch {
+          enrollmentExists = false
         }
       }
 
@@ -176,11 +220,60 @@ export class PaymentController {
           courseTitle: await paymentService.getCourseTitle(order.course_id),
           courseDetails,
           courseDetailsUnavailable,
+          enrollmentExists,
           status: order.status,
           amount: order.amount,
           paymentMethod: order.provider === 'sepay' ? 'BANK_TRANSFER' : null,
           transferContent: order.transfer_content,
           providerTransactionId: order.provider_transaction_id,
+          paidAt: order.paid_at,
+          expiredAt: order.expired_at,
+          createdAt: order.created_at,
+        },
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  async getPublicOrderStatus(request: Request, response: Response, next: NextFunction): Promise<void> {
+    try {
+      const { orderId } = request.params as { orderId?: string }
+      if (!orderId || !UUID_PATTERN.test(orderId)) {
+        response.status(400).json({ success: false, message: 'Valid orderId is required.' })
+        return
+      }
+      const order = await paymentService.getOrder(orderId)
+      if (!order) {
+        response.status(404).json({ success: false, message: 'Order not found.' })
+        return
+      }
+      let courseDetails: Awaited<ReturnType<typeof paymentService.getCourseDetails>> = null
+      let courseDetailsUnavailable = false
+      if (order.status === 'paid') {
+        try {
+          courseDetails = await paymentService.getCourseDetails(order.course_id)
+          if (!courseDetails) courseDetailsUnavailable = true
+        } catch {
+          courseDetailsUnavailable = true
+        }
+      }
+      response.setHeader('Cache-Control', 'no-store, max-age=0')
+      response.status(200).json({
+        success: true,
+        data: {
+          orderId: order.id,
+          courseId: order.course_id,
+          courseTitle: await paymentService.getCourseTitle(order.course_id),
+          courseDetails,
+          courseDetailsUnavailable,
+          // An anonymous order ID is a bearer lookup key; keep owner enrollment private.
+          enrollmentExists: null,
+          status: order.status,
+          amount: order.amount,
+          paymentMethod: order.provider === 'sepay' ? 'BANK_TRANSFER' : null,
+          transferContent: order.transfer_content,
+          providerTransactionId: null,
           paidAt: order.paid_at,
           expiredAt: order.expired_at,
           createdAt: order.created_at,
@@ -279,9 +372,13 @@ export class PaymentController {
     try {
       const expectedSecret = env.sepayIpnSecretKey
       if (!expectedSecret || request.header('X-Secret-Key') !== expectedSecret) {
+        console.warn('[SePayWebhook] rejected authentication', { configured: Boolean(expectedSecret), headerPresent: Boolean(request.header('X-Secret-Key')) })
         response.status(401).json({ success: false, message: 'Invalid IPN secret key.' })
         return
       }
+
+      const supabaseHost = env.supabaseUrl ? new URL(env.supabaseUrl).host : 'not-configured'
+      console.info('[SePayWebhook] accepted request', { databaseProjectHost: supabaseHost })
 
       const rawBody = request.body as unknown
       if (!request.is('application/json')) {
@@ -299,7 +396,26 @@ export class PaymentController {
 
       const event = this.parseSePayWebhook(rawBody)
 
+      console.info('[SePayWebhook] verified payload', {
+        notificationType: event.notification_type,
+        gatewayOrderId: maskDiagnosticValue(event.order.id),
+        providerOrderReference: maskDiagnosticValue(event.order.order_id),
+        merchantInvoice: maskDiagnosticValue(event.order.order_invoice_number),
+        orderStatus: event.order.order_status,
+        transactionStatus: event.transaction.transaction_status,
+        transactionType: event.transaction.transaction_type,
+        paymentMethod: event.transaction.payment_method,
+        amount: Number(event.transaction.transaction_amount),
+        currency: event.transaction.transaction_currency,
+      })
+
       const result = await paymentService.handleSePayWebhook(event)
+
+      console.info('[SePayWebhook] processing complete', {
+        orderId: maskDiagnosticValue(result.orderId),
+        status: result.status,
+        newlyPaid: result.isNewlyPaid,
+      })
 
       // 2. Acknowledge receipt to SePay so they stop retrying
       // Must return HTTP 200 with {"success": true}
@@ -314,7 +430,12 @@ export class PaymentController {
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Webhook processing failed'
-      console.error('[SePayWebhook] Error:', message)
+      console.error('[SePayWebhook] processing failed', {
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+        databaseErrorCode: typeof error === 'object' && error !== null && 'code' in error
+          ? String((error as { code?: unknown }).code ?? '')
+          : undefined,
+      })
       const statusCode = error instanceof PaymentWebhookError ? error.statusCode : 500
       response.status(statusCode).json({
         success: false,
@@ -417,6 +538,11 @@ export class PaymentController {
       raw: record,
     }
   }
+}
+
+function maskDiagnosticValue(value: string): string {
+  if (value.length <= 8) return `${value.slice(0, 2)}***`
+  return `${value.slice(0, 4)}***${value.slice(-4)}`
 }
 
 export const paymentController = new PaymentController()

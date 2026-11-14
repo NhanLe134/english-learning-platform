@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { authApi } from './auth-api'
 import { useAuth } from './auth-context'
+import { sepayApi } from '../checkout/sepayApi'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || ''
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
@@ -21,8 +22,25 @@ export function OAuthCallbackPage() {
           const appSession = await authApi.completeGoogleLogin()
           if (!active) return
           setSession(appSession)
+          let paymentOrderId = new URLSearchParams(window.location.search).get('paymentOrderId')
+          if (!paymentOrderId) {
+            try { paymentOrderId = sessionStorage.getItem('your-voice-pending-payment-order-id') } catch { /* Optional redirect context. */ }
+          }
+          try { sessionStorage.removeItem('your-voice-pending-payment-order-id') } catch { /* Optional redirect context. */ }
+          if (paymentOrderId && appSession.user.role !== 'ADMIN') {
+            const order = await sepayApi.getOrderStatus(paymentOrderId, appSession.accessToken)
+            if (order.status !== 'paid' || !order.courseDetails?.slug) {
+              throw new Error('Không tìm thấy giao dịch thanh toán thành công cho tài khoản này.')
+            }
+            if (order.enrollmentExists !== true) {
+              window.location.replace(`/checkout/success?orderId=${encodeURIComponent(paymentOrderId)}`)
+              return
+            }
+            window.location.replace(`/courses/${encodeURIComponent(order.courseDetails.slug)}`)
+            return
+          }
           window.location.replace(
-            appSession.user.role === 'ADMIN' ? '/admin/users' : `/checkout${window.location.search}`
+            appSession.user.role === 'ADMIN' ? '/admin/users' : '/courses'
           )
           return
         }

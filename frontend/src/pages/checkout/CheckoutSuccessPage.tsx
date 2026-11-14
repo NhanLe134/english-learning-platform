@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react'
-import { ArrowRight, BadgeCheck, BookOpen, Check, CheckCircle2, Clock3, FileCheck2, GraduationCap, Loader2, Tag, UserRound, XCircle } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { AlertTriangle, ArrowRight, BadgeCheck, BookOpen, Check, CheckCircle2, Clock3, FileCheck2, GraduationCap, Loader2, Tag, UserRound, XCircle } from 'lucide-react'
 import { SiteFooter, SiteHeader } from '../auth/AuthShared'
 import { useAuth } from '../auth/auth-context'
 import { sepayApi } from './sepayApi'
+import { paymentConfirmationTimeoutMs, paymentPollingIntervalMs, paymentSupportPhone, readPaymentInstructions } from './payment-config'
+import type { CreateOrderResponse } from './sepayApi'
 import './checkout-page.css'
 import './checkout-success-page.css'
 
@@ -15,107 +17,131 @@ const formatDateTime = (value: string) => {
     : new Intl.DateTimeFormat('vi-VN', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
 }
 
-export function CheckoutSuccessPage() {
+export function CheckoutSuccessPage({ initialOrder }: { initialOrder?: CreateOrderResponse }) {
+  const orderId = initialOrder?.orderId ?? (typeof window === 'undefined' ? '' : new URLSearchParams(window.location.search).get('orderId') ?? '')
+  return <CheckoutSuccessView key={orderId || 'missing-order'} initialOrder={initialOrder} />
+}
+
+function CheckoutSuccessView({ initialOrder }: { initialOrder?: CreateOrderResponse }) {
   const { accessToken, user } = useAuth()
-  const orderId = new URLSearchParams(window.location.search).get('orderId') ?? ''
-  const [order, setOrder] = useState<Awaited<ReturnType<typeof sepayApi.getOrderStatus>> | null>(null)
-  const [orderStatus, setOrderStatus] = useState<string | null>(null)
+  const orderId = initialOrder?.orderId ?? new URLSearchParams(window.location.search).get('orderId') ?? ''
+  const [savedInstructions] = useState(() => initialOrder?.paymentInformation ?? readPaymentInstructions(orderId))
+  const [order, setOrder] = useState<Awaited<ReturnType<typeof sepayApi.getOrderStatus>> | null>(() => initialOrder ? {
+    orderId: initialOrder.orderId,
+    courseId: initialOrder.course.id,
+    courseTitle: initialOrder.course.title,
+    status: initialOrder.status,
+    amount: initialOrder.amount,
+    paymentMethod: 'BANK_TRANSFER',
+    transferContent: initialOrder.transferContent,
+    providerTransactionId: null,
+    paidAt: null,
+    expiredAt: initialOrder.expiredAt,
+    createdAt: initialOrder.createdAt,
+    courseDetails: null,
+    courseDetailsUnavailable: false,
+    enrollmentExists: false,
+  } : null)
+  const [orderStatus, setOrderStatus] = useState<string | null>(initialOrder?.status ?? null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
-  const missingOrderInfo = !accessToken || !orderId
+  const [timedOut, setTimedOut] = useState(false)
+  const [checking, setChecking] = useState(false)
+  const startedAt = useRef(0)
+  const inFlight = useRef(false)
+  const currentStatus = useRef<string | null>(initialOrder?.status ?? null)
+  const missingOrderInfo = !orderId
 
   useEffect(() => {
     if (missingOrderInfo) return
+    startedAt.current = Date.now()
     let active = true
     let timer: ReturnType<typeof setTimeout> | undefined
     let stopWatching: (() => void) | undefined
-    let requestInFlight = false
-    let refreshRequested = false
-    let terminal = false
-    let latestStatus: string | undefined
-    const scheduleFallback = () => {
-      if (!active || terminal || timer) return
-      timer = setTimeout(() => {
-        timer = undefined
-        void refresh()
-      }, 1500)
-    }
-    const refresh = async () => {
-      if (!active || terminal) return
-      if (requestInFlight) {
-        refreshRequested = true
-        return
-      }
-      requestInFlight = true
+    const refresh = async (manual = false) => {
+      if (!active || inFlight.current) return
+      inFlight.current = true
+      if (manual) setChecking(true)
       try {
         const current = await sepayApi.getOrderStatus(orderId, accessToken)
         if (!active) return
-        if (latestStatus === 'paid' && current.status !== 'paid') return
-        latestStatus = current.status
         setOrder(current)
         setOrderStatus(current.status)
+        currentStatus.current = current.status
+        if (['paid', 'expired', 'failed', 'cancelled'].includes(current.status)) stopWatching?.()
         setError('')
         setLoading(false)
-        terminal = current.status === 'paid' || ['expired', 'failed', 'cancelled'].includes(current.status)
+        setTimedOut(Date.now() - startedAt.current >= paymentConfirmationTimeoutMs && current.status === 'pending')
       } catch (cause) {
         if (!active) return
         setError(cause instanceof Error ? cause.message : 'Không thể kiểm tra trạng thái đơn hàng.')
         setLoading(false)
       } finally {
-        requestInFlight = false
-        if (refreshRequested && active && !terminal) {
-          refreshRequested = false
-          queueMicrotask(() => void refresh())
-        } else {
-          scheduleFallback()
-        }
+        inFlight.current = false
+        if (manual) setChecking(false)
       }
     }
-    // Start the authorized snapshot and stream together. When Realtime reports
-    // ready it triggers another snapshot, closing the subscribe/read race.
-    void refresh()
-    stopWatching = sepayApi.watchOrderStatus(orderId, accessToken, (message) => {
+    const poll = () => {
       if (!active) return
-      if (message.kind === 'connection') {
-        if (message.status === 'subscribed') void refresh()
-        scheduleFallback()
+      const terminalNow = ['paid', 'expired', 'failed', 'cancelled'].includes(currentStatus.current ?? '')
+      if (terminalNow) return
+      if (Date.now() - startedAt.current >= paymentConfirmationTimeoutMs) {
+        setTimedOut(true)
         return
       }
-      if (message.status === 'paid') {
-        // This authenticated backend event follows the verified webhook's
-        // database update. Keep paid monotonic if an older snapshot is in flight.
-        latestStatus = 'paid'
-        setOrderStatus('paid')
-        setError('')
-        setLoading(false)
-        void refresh()
-      } else if (['expired', 'failed', 'cancelled'].includes(message.status)) {
+      timer = setTimeout(() => {
+        timer = undefined
+        if (['paid', 'expired', 'failed', 'cancelled'].includes(currentStatus.current ?? '')) return
+        void refresh().finally(poll)
+      }, paymentPollingIntervalMs)
+    }
+    const timeoutTimer = setTimeout(() => {
+      if (!['paid', 'expired', 'failed', 'cancelled'].includes(currentStatus.current ?? '')) setTimedOut(true)
+    }, paymentConfirmationTimeoutMs)
+    stopWatching = accessToken ? sepayApi.watchOrderStatus(orderId, accessToken, (message) => {
+      if (!active) return
+      if ((message.kind === 'order' && ['paid', 'expired', 'failed', 'cancelled'].includes(message.status)) || (message.kind === 'connection' && message.status === 'subscribed')) {
+        // Events only wake the status API; the API response remains authoritative.
         void refresh()
       }
-    })
-    scheduleFallback()
+    }) : undefined
+    // Polling starts after the immediate status request settles.
+    void refresh().finally(poll)
     return () => {
       active = false
       if (timer) clearTimeout(timer)
+      clearTimeout(timeoutTimer)
       stopWatching?.()
     }
   }, [accessToken, orderId, missingOrderInfo])
 
-  useEffect(() => {
-    const purchasedCourse = order?.status === 'paid' && !order.courseDetailsUnavailable
-      ? order.courseDetails
-      : null
-    if (!purchasedCourse?.slug) return
-    window.location.replace(`/courses/${encodeURIComponent(purchasedCourse.slug)}`)
-  }, [order?.status, order?.courseDetails, order?.courseDetailsUnavailable])
+  async function checkPaymentStatus() {
+    if (!orderId || inFlight.current) return
+    inFlight.current = true
+    setChecking(true)
+    try {
+      const current = await sepayApi.getOrderStatus(orderId, accessToken)
+      setOrder(current)
+      setOrderStatus(current.status)
+      currentStatus.current = current.status
+      setError('')
+      setTimedOut(Date.now() - startedAt.current >= paymentConfirmationTimeoutMs && current.status === 'pending')
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Khong the kiem tra trang thai don hang.')
+    } finally {
+      inFlight.current = false
+      setChecking(false)
+    }
+  }
 
   const course = order?.status === 'paid' ? order.courseDetails : null
+  const paymentInstructions = initialOrder?.paymentInformation ?? savedInstructions
 
-  async function copyTransferDescription() {
-    if (!order?.transferContent) return
+  async function copyPaymentDetails(value: string) {
+    if (!value) return
     try {
-      await navigator.clipboard.writeText(order.transferContent)
+      await navigator.clipboard.writeText(value)
       setCopied(true)
       window.setTimeout(() => setCopied(false), 2500)
     } catch {
@@ -129,7 +155,13 @@ export function CheckoutSuccessPage() {
   const cancelled = orderStatus === 'cancelled'
   const terminalError = expired || failed || cancelled
   const pending = orderStatus === 'pending'
-  const awaitingPayment = !loading && pending && !error
+  const courseAccessHref = paid
+    ? user
+      ? order?.enrollmentExists === true && course?.slug
+        ? `/courses/${encodeURIComponent(course.slug)}`
+        : undefined
+      : `/login?paymentOrderId=${encodeURIComponent(orderId)}`
+    : undefined
   const statusLabel = paid
     ? 'Đã thanh toán'
     : pending
@@ -157,24 +189,20 @@ export function CheckoutSuccessPage() {
     <div className="login-page checkout-page success-page">
       <SiteHeader brandName="Your English Voice" />
       <main className="checkout-success-main checkout-success-missing">
-        {(loading && !missingOrderInfo) || awaitingPayment ? (
-          <section className="payment-success-empty" role="status" aria-live="polite">
-            <span className="payment-success-state-icon"><Loader2 className="sepay-loader" size={28} /></span>
-            <h1>Đang tải thông tin khóa học...</h1>
-          </section>
-        ) : (
         <section className={`payment-success-empty${paid ? ' is-paid' : ''}${terminalError || error || missingOrderInfo ? ' has-error' : ''}`} aria-live="polite">
           <span className="payment-success-state-icon">
-            {paid ? <CheckCircle2 size={32} /> : terminalError || error ? <XCircle size={32} /> : <Clock3 size={32} />}
+            {paid ? <CheckCircle2 size={32} /> : terminalError ? <XCircle size={32} /> : timedOut || error ? <AlertTriangle size={32} /> : loading || pending ? <Loader2 className="sepay-loader" size={30} /> : <Clock3 size={32} />}
           </span>
           <span className={`payment-success-status-pill${paid ? ' paid' : terminalError ? ' failed' : ''}`}>
             {paid ? 'Đã xác nhận' : pending ? 'Đang chờ thanh toán' : terminalError ? 'Chưa hoàn tất' : 'Đang kiểm tra'}
           </span>
-          {!missingOrderInfo && <h1>{title}</h1>}
+          {!missingOrderInfo && <h1>{timedOut ? 'Chưa xác nhận được thanh toán' : loading || pending ? 'Đang xác nhận thanh toán' : title}</h1>}
           {!missingOrderInfo && <p>
             {paid
               ? `Cảm ơn${user?.fullName ? ` ${user.fullName}` : ''} đã chọn Your English Voice. SePay đã xác nhận thanh toán và đăng ký ${order?.courseTitle ?? 'khóa học'} của bạn đã hoàn tất.`
-              : expired || failed || cancelled
+              : timedOut
+                ? 'Hệ thống chưa nhận được xác nhận thanh toán. Nếu bạn đã chuyển khoản, vui lòng liên hệ bộ phận hỗ trợ để được kiểm tra.'
+                : expired || failed || cancelled
                 ? `${expired ? 'Đơn hàng đã hết hạn.' : failed ? 'SePay chưa xác nhận thanh toán thành công.' : 'Thanh toán đã bị hủy.'} Bạn có thể quay lại khóa học để tạo đơn mới.`
                 : error || (missingOrderInfo
                   ? 'Không tìm thấy thông tin đơn hàng. Vui lòng đăng nhập lại hoặc quay lại thanh toán.'
@@ -190,13 +218,28 @@ export function CheckoutSuccessPage() {
                 <div><dt>Tổng tiền</dt><dd className="amount">{formatCurrency(order.amount)}</dd></div>
                 <div><dt>Phương thức</dt><dd>{order.paymentMethod === 'BANK_TRANSFER' ? 'Chuyển khoản ngân hàng qua SePay' : order.paymentMethod ?? 'Không có thông tin'}</dd></div>
                 <div className="payment-success-reference"><dt>Nội dung chuyển khoản</dt><dd><code>{order.transferContent}</code>
-                  <button type="button" onClick={() => void copyTransferDescription()} aria-label="Sao chép nội dung chuyển khoản">
+                  <button type="button" onClick={() => void copyPaymentDetails(order.transferContent)} aria-label="Sao chép nội dung chuyển khoản">
                     {copied ? <Check size={15} /> : <FileCheck2 size={15} />}{copied ? 'Đã sao chép' : 'Sao chép'}
                   </button>
                 </dd></div>
+                {paid && order.providerTransactionId && <div><dt>Mã giao dịch SePay</dt><dd>{order.providerTransactionId}</dd></div>}
               </dl>
             </div>
           )}
+          {!order && <div className="payment-success-details">
+            <dl className="payment-success-metadata">
+              <div><dt>Order ID</dt><dd>{orderId}</dd></div>
+              {savedInstructions && <>
+                <div><dt>Payment method</dt><dd>Bank transfer via SePay</dd></div>
+                <div><dt>Amount</dt><dd className="amount">{formatCurrency(savedInstructions.amount)}</dd></div>
+                <div className="payment-success-reference"><dt>Transfer content</dt><dd><code>{savedInstructions.transferContent}</code><button type="button" onClick={() => void copyPaymentDetails(savedInstructions.transferContent)}>{copied ? 'Copied' : 'Copy'}</button></dd></div>
+              </>}
+            </dl>
+          </div>}
+          {initialOrder && !course && <div className="payment-result-course-summary">
+            {initialOrder.course.thumbnailUrl && <img src={initialOrder.course.thumbnailUrl} alt="" />}
+            <span><small>Khóa học</small><strong>{initialOrder.course.title}</strong></span>
+          </div>}
           {order?.status === 'paid' && (
             <section className="payment-success-course-full" aria-labelledby="purchased-course-heading">
               <div className="payment-success-course-heading">
@@ -246,11 +289,45 @@ export function CheckoutSuccessPage() {
               )}
             </section>
           )}
-          <a className="checkout-primary-button" href={paid && course?.slug ? `/courses/${encodeURIComponent(course.slug)}` : '/courses'}>
-            {paid ? 'Vào học ngay' : terminalError ? 'Chọn khóa học khác' : 'Quay lại khóa học'} <ArrowRight size={16} />
+          {error && <p role="alert" className="payment-result-api-error">Không thể cập nhật trạng thái lúc này. Thông tin đơn hàng vẫn được giữ nguyên.</p>}
+          {initialOrder?.checkoutMode === 'direct_qr' && initialOrder.paymentInformation && !paid && (
+            <section className="payment-result-checkout-info"><h2>Quét mã để thanh toán</h2><img src={initialOrder.paymentInformation.qrCodeUrl} alt="Mã QR chuyển khoản SePay" /><p>{initialOrder.paymentInformation.bankName} · {initialOrder.paymentInformation.accountNumber}</p></section>
+          )}
+          {initialOrder?.checkoutMode === 'direct_qr' && initialOrder.paymentInformation && !paid && <div className="payment-result-bank-details">
+            <p><strong>Bank:</strong> {initialOrder.paymentInformation.bankName}</p>
+            <p><strong>Account number:</strong> {initialOrder.paymentInformation.accountNumber}</p>
+            <p><strong>Account name:</strong> {initialOrder.paymentInformation.accountName}</p>
+            <p><strong>Amount:</strong> {formatCurrency(initialOrder.paymentInformation.amount)}</p>
+            <button type="button" className="checkout-secondary-button" onClick={() => void copyPaymentDetails(`Bank: ${initialOrder.paymentInformation!.bankName}\nAccount number: ${initialOrder.paymentInformation!.accountNumber}\nAccount name: ${initialOrder.paymentInformation!.accountName}`)}>Copy bank details</button>
+          </div>}
+          {!initialOrder && paymentInstructions && !paid && <>
+            <section className="payment-result-checkout-info">
+              <h2>Payment instructions</h2>
+              <img src={paymentInstructions.qrCodeUrl} alt="SePay bank transfer QR code" />
+              <p>{paymentInstructions.bankName} · {paymentInstructions.accountNumber}</p>
+            </section>
+            <div className="payment-result-bank-details">
+              <p><strong>Bank:</strong> {paymentInstructions.bankName}</p>
+              <p><strong>Account number:</strong> {paymentInstructions.accountNumber}</p>
+              <p><strong>Account name:</strong> {paymentInstructions.accountName}</p>
+              <p><strong>Amount:</strong> {formatCurrency(paymentInstructions.amount)}</p>
+              <button type="button" className="checkout-secondary-button" onClick={() => void copyPaymentDetails(`Bank: ${paymentInstructions.bankName}\nAccount number: ${paymentInstructions.accountNumber}\nAccount name: ${paymentInstructions.accountName}`)}>Copy bank details</button>
+            </div>
+          </>}
+          {initialOrder?.checkoutMode === 'hosted' && initialOrder.checkoutUrl && initialOrder.checkoutFields && !paid && !terminalError && (
+            <form action={initialOrder.checkoutUrl} method="POST" className="payment-result-hosted-form">
+              {Object.entries(initialOrder.checkoutFields).map(([name, value]) => <input key={name} type="hidden" name={name} value={String(value)} />)}
+              <button type="submit" className="checkout-primary-button">Tiếp tục tới SePay <ArrowRight size={16} /></button>
+            </form>
+          )}
+          {paid && order?.enrollmentExists === null && <p className="payment-result-enrollment-pending" role="status">Payment is confirmed. Sign in to verify your course access. <a href={`/login?paymentOrderId=${encodeURIComponent(orderId)}`}>Sign in</a></p>}
+          {paid && order?.enrollmentExists === false && <p className="payment-result-enrollment-pending" role="status">Payment is confirmed, but course access is not available yet. Check again or contact support.</p>}
+          {(timedOut || terminalError || error) && paymentSupportPhone && <div className="payment-result-support"><span>Mã đơn để được hỗ trợ: <strong>{orderId}</strong></span><a href={`tel:${paymentSupportPhone}`}>Gọi hỗ trợ {paymentSupportPhone}</a></div>}
+          {(timedOut || terminalError || error || (pending && !loading) || (paid && order?.enrollmentExists === false)) && <button type="button" className="checkout-secondary-button payment-result-retry" onClick={() => void checkPaymentStatus()} disabled={checking}>{checking ? 'Đang kiểm tra...' : 'Kiểm tra lại thanh toán'}</button>}
+          <a className="checkout-primary-button" href={paid ? courseAccessHref : '/courses'} aria-disabled={paid && !courseAccessHref} tabIndex={paid && !courseAccessHref ? -1 : undefined}>
+            {paid ? user ? 'Vào học ngay' : 'Đăng nhập để vào học' : terminalError ? 'Chọn khóa học khác' : 'Quay lại khóa học'} <ArrowRight size={16} />
           </a>
         </section>
-        )}
       </main>
       <SiteFooter brandName="Your English Voice" />
     </div>

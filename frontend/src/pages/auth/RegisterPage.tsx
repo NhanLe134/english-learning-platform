@@ -140,8 +140,17 @@ export function RegisterPage() {
     try {
       await authApi.verifyRegistrationOtp(email, otp)
       setVerified(true)
-      setSuccessMessage('Xác minh thành công. Vui lòng đăng nhập để tiếp tục.')
-      window.location.assign(`/login${window.location.search}`)
+      try {
+        sessionStorage.setItem('your-voice-pending-checkout-student', JSON.stringify({
+          fullName,
+          email,
+          phone: phoneNumber,
+        }))
+      } catch {
+        // Checkout can still collect the required student details if storage is unavailable.
+      }
+      setSuccessMessage('Xác minh thành công. Đang chuyển đến thanh toán.')
+      window.location.assign(`/checkout${window.location.search}`)
     } catch (error) {
       setErrorMessage(getErrorMessage(error))
     } finally {

@@ -123,11 +123,10 @@ describe('payment confirmation email', () => {
     }
     const paymentRepository = {
       findOrderByTransferContent: async () => order,
-      markOrderPaid: async (_orderId: string, providerOrderId: string, transactionId: string) => {
+      confirmVerifiedPayment: async (_orderId: string, providerOrderId: string, transactionId: string) => {
         order = { ...order, status: 'paid', provider_order_id: providerOrderId, provider_transaction_id: transactionId, paid_at: new Date().toISOString() }
         return { order, isNewlyPaid: true }
       },
-      createEnrollment: async () => ({ created: true }),
     }
     const emailRepository = makeRepository()
     const emailService = new PaymentConfirmationEmailService(emailRepository.repository as never, async () => ({ accepted: false }))
