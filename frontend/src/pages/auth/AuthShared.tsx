@@ -1,17 +1,12 @@
-import { useState } from 'react'
 import {
   AudioLines,
   Check,
   Flame,
   GraduationCap,
   Layers3,
-  Menu,
   Play,
-  UserRound,
-  X,
   Zap,
 } from 'lucide-react'
-import { useAuth } from './auth-context'
 import './auth-shared.css'
 
 export function BrandMark({ small = false }: { small?: boolean }) {
@@ -27,85 +22,8 @@ export interface SiteNavigationItem {
   href: string
 }
 
-interface SiteHeaderProps {
-  brandName?: string
-  navigationItems?: SiteNavigationItem[]
-}
-
-const defaultNavigationItems: SiteNavigationItem[] = [
-  { label: 'Trang chủ', href: '/' },
-  { label: 'Về chúng tôi', href: '/about' },
-  { label: 'Các khóa học', href: '/courses' },
-  { label: 'Ebook', href: '/#ebook' },
-  { label: 'Workshop', href: '/#workshop' },
-  { label: 'Liên hệ', href: '/#lien-he' },
-]
-
-export function SiteHeader({
-  brandName = 'Your English Voice',
-  navigationItems = defaultNavigationItems,
-}: SiteHeaderProps) {
-  const { user, logout, reportError } = useAuth()
-  const [loggingOut, setLoggingOut] = useState(false)
-  const [menuOpen, setMenuOpen] = useState(false)
-
-  async function handleAccountClick() {
-    if (!user) {
-      window.location.assign('/login')
-      return
-    }
-
-    setLoggingOut(true)
-    try {
-      await logout()
-      window.location.assign('/login')
-    } catch (error) {
-      reportError(error instanceof Error ? error.message : 'Đăng xuất không thành công.')
-    } finally {
-      setLoggingOut(false)
-    }
-  }
-
-  return (
-    <header className="site-header">
-      <div className="header-inner">
-        <a className="brand" href="/" aria-label={`${brandName} - Trang chủ`}>
-          <BrandMark />
-          <span>{brandName}</span>
-        </a>
-
-        <nav id="site-navigation" className={`header-nav${menuOpen ? ' is-open' : ''}`} aria-label="Điều hướng chính">
-          {navigationItems.map((item) => (
-            <a href={item.href} key={item.label}>{item.label}</a>
-          ))}
-          {!user && <a className="header-mobile-register" href="/register">Đăng ký</a>}
-        </nav>
-
-        {!user && <a className="header-register-link" href="/register">Đăng ký</a>}
-        <button
-          type="button"
-          className="avatar-button"
-          aria-label={user ? 'Đăng xuất' : 'Tài khoản'}
-          title={user ? `Đăng xuất ${user.email}` : 'Tài khoản'}
-          onClick={() => void handleAccountClick()}
-          disabled={loggingOut}
-        >
-          <UserRound size={16} />
-        </button>
-        <button
-          type="button"
-          className="header-menu-button"
-          aria-label={menuOpen ? 'Đóng menu điều hướng' : 'Mở menu điều hướng'}
-          aria-expanded={menuOpen}
-          aria-controls="site-navigation"
-          onClick={() => setMenuOpen((open) => !open)}
-        >
-          {menuOpen ? <X size={20} /> : <Menu size={20} />}
-        </button>
-      </div>
-    </header>
-  )
-}
+export { SiteHeader, type SiteHeaderProps } from '../../components/layout/SiteHeader'
+export { SiteFooter } from '../../components/layout/SiteFooter'
 
 export function GoogleAuthButton({
   onClick,
@@ -155,39 +73,6 @@ export function LoginVisual() {
         </div>
       </div>
     </section>
-  )
-}
-
-export function SiteFooter({ brandName = 'Your English Voice' }: { brandName?: string }) {
-  return (
-    <footer className="auth-site-footer">
-      <div className="auth-footer-inner">
-        <div className="auth-footer-brand">
-          <a className="brand" href="/" aria-label={`${brandName} - Trang chủ`}>
-            <BrandMark small />
-            <span>{brandName}</span>
-          </a>
-          <p>Đưa tiếng nói của người Việt ra thế giới.</p>
-        </div>
-        <div>
-          <h2>Thông tin liên hệ</h2>
-          <a href="#lien-he">Liên hệ với chúng tôi</a>
-          <a href="#ho-tro">Hỗ trợ học viên</a>
-        </div>
-        <div>
-          <h2>Chương trình</h2>
-          <a href="#phat-am">Phát âm tiếng Anh</a>
-          <a href="#tu-vung">Từ vựng tiếng Anh</a>
-          <a href="#ngu-phap">Ngữ pháp tiếng Anh</a>
-        </div>
-        <div>
-          <h2>Hỗ trợ &amp; Pháp lý</h2>
-          <a href="/about">Về chúng tôi</a>
-          <a href="#chinh-sach-bao-mat">Chính sách bảo mật</a>
-          <a href="#dieu-khoan">Điều khoản sử dụng</a>
-        </div>
-      </div>
-    </footer>
   )
 }
 

@@ -12,6 +12,8 @@ import { CourseDetailPage } from './pages/courses/CourseDetailPage'
 import { CourseListPage } from './pages/courses/CourseListPage'
 import { CheckoutPage } from './pages/checkout/CheckoutPage'
 import { CheckoutSuccessPage } from './pages/checkout/CheckoutSuccessPage'
+import { WorkshopsPage } from './pages/workshops/WorkshopsPage'
+import { ContactPage } from './pages/contact/ContactPage'
 import { AuthProvider } from './pages/auth/AuthContext'
 import { useAuth } from './pages/auth/auth-context'
 
@@ -94,13 +96,26 @@ function AppRoutes() {
     case '/admin/courses':
       page = <CourseManagementPage />
       break
+    case '/about':
+    case '/ve-chung-toi':
+      page = <AboutPage />
+      break
     case '/courses':
     case '/khoa-hoc':
       page = <CourseListPage />
       break
     case '/ebooks':
+    case '/ebook':
     case '/sach-dien-tu':
       page = <EbooksPage />
+      break
+    case '/workshops':
+    case '/workshop':
+      page = <WorkshopsPage />
+      break
+    case '/contact':
+    case '/lien-he':
+      page = <ContactPage />
       break
     case '/register':
       page = <RegisterPage />
@@ -120,12 +135,7 @@ function AppRoutes() {
     case '/thanh-toan/thanh-cong':
       page = <CheckoutSuccessPage />
       break
-    case '/about':
-      page = <AboutPage />
-      break
     case '/home':
-      page = <HomePage />
-      break
     case '/':
       page = <HomePage />
       break

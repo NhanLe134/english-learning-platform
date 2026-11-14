@@ -1,6 +1,20 @@
-import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, ArrowRight, BadgeCheck, BookOpen, Check, CheckCircle2, Clock3, FileCheck2, GraduationCap, Loader2, Tag, UserRound, XCircle } from 'lucide-react'
-import { SiteFooter, SiteHeader } from '../auth/AuthShared'
+import { useEffect, useState } from 'react'
+import {
+  ArrowRight,
+  BadgeCheck,
+  BookOpen,
+  Check,
+  CheckCircle2,
+  Clock3,
+  FileCheck2,
+  GraduationCap,
+  Loader2,
+  Tag,
+  UserRound,
+  XCircle,
+} from 'lucide-react'
+import { SiteHeader } from '../../components/layout/SiteHeader'
+import { SiteFooter } from '../../components/layout/SiteFooter'
 import { useAuth } from '../auth/auth-context'
 import { sepayApi } from './sepayApi'
 import { paymentConfirmationTimeoutMs, paymentPollingIntervalMs, paymentSupportPhone, readPaymentInstructions } from './payment-config'

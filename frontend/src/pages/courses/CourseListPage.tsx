@@ -11,7 +11,8 @@ import {
   Search,
   Users,
 } from 'lucide-react'
-import { SiteFooter, SiteHeader } from '../auth/AuthShared'
+import { SiteHeader } from '../../components/layout/SiteHeader'
+import { SiteFooter } from '../../components/layout/SiteFooter'
 import { courseCatalogApi } from './services/courseCatalogApi'
 import { type CourseReference } from './course-data'
 import './course-list-page.css'
@@ -153,7 +154,7 @@ export function CourseListPage() {
 
   return (
     <div className="public-course-page">
-      <SiteHeader />
+      <SiteHeader activeTab="courses" />
       <main className="public-course-main">
         <section className="public-course-hero">
           <div className="public-course-container">
@@ -212,7 +213,7 @@ export function CourseListPage() {
           ) : null}
         </section>
       </main>
-      <SiteFooter brandName="Your English Voice" />
+      <SiteFooter />
     </div>
   )
 }

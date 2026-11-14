@@ -19,9 +19,9 @@ const FOOTER_COLUMNS = [
   },
 ]
 
-export function SiteFooter() {
+export function SiteFooter({ brandName = 'Your English Voice' }: { brandName?: string } = {}) {
   return (
-    <footer className="border-t border-gray-100 bg-[#fafafa]">
+    <footer id="lien-he" className="border-t border-gray-100 bg-[#fafafa]">
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-2 lg:grid-cols-4 lg:px-8">
         {/* Brand */}
         <div>
@@ -30,7 +30,7 @@ export function SiteFooter() {
               <Layers className="size-5" strokeWidth={2.5} />
             </span>
             <span className="text-lg font-extrabold tracking-tight text-ink-900">
-              Your English Voice
+              {brandName}
             </span>
           </a>
           <p className="mt-4 text-sm text-ink-500">

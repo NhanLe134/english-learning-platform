@@ -7,6 +7,7 @@ import {
   FileText,
   Mail,
   Search,
+  Sparkles,
   Star,
 } from 'lucide-react'
 import { SiteHeader } from '../../components/layout/SiteHeader'
@@ -22,7 +23,13 @@ import {
 /* Thẻ ebook                                                           */
 /* ------------------------------------------------------------------ */
 
-function EbookCard({ ebook }: { ebook: Ebook }) {
+function EbookCard({
+  ebook,
+  onDownload,
+}: {
+  ebook: Ebook
+  onDownload: (ebook: Ebook) => void
+}) {
   return (
     <article className="group flex overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition-shadow hover:shadow-lg">
       {/* Ảnh bìa — cột trái, khung dọc chuẩn bìa sách, ảnh hiện đầy đủ không crop */}
@@ -100,6 +107,7 @@ function EbookCard({ ebook }: { ebook: Ebook }) {
           </div>
           <button
             type="button"
+            onClick={() => onDownload(ebook)}
             className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium text-white transition-colors ${
               ebook.price === 0
                 ? 'bg-ink-900 hover:bg-ink-700'
@@ -125,71 +133,106 @@ function EbookCard({ ebook }: { ebook: Ebook }) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Trang                                                               */
+/* Trang Ebooks                                                        */
 /* ------------------------------------------------------------------ */
 
 export function EbooksPage() {
-  const [category, setCategory] = useState(EBOOK_CATEGORIES[0])
+  const [category, setCategory] = useState<string>('Tất cả')
   const [searchInput, setSearchInput] = useState('')
-  const [appliedQuery, setAppliedQuery] = useState('')
+  const [activeQuery, setActiveQuery] = useState('')
+  const [downloadModal, setDownloadModal] = useState<Ebook | null>(null)
+  const [emailInput, setEmailInput] = useState('')
+  const [downloadSuccess, setDownloadSuccess] = useState(false)
 
   const ebookList = useMemo(() => {
-    const keyword = appliedQuery.trim().toLowerCase()
-    return ebooks.filter((ebook) => {
-      const matchesCategory = category === EBOOK_CATEGORIES[0] || ebook.category === category
-      const matchesKeyword =
-        !keyword ||
-        ebook.title.toLowerCase().includes(keyword) ||
-        ebook.author.toLowerCase().includes(keyword) ||
-        ebook.description.toLowerCase().includes(keyword)
-      return matchesCategory && matchesKeyword
+    return ebooks.filter((item) => {
+      const matchCategory =
+        category === 'Tất cả' ||
+        item.category.toLowerCase() === category.toLowerCase()
+      const query = activeQuery.trim().toLowerCase()
+      const matchQuery =
+        !query ||
+        item.title.toLowerCase().includes(query) ||
+        item.author.toLowerCase().includes(query) ||
+        item.description.toLowerCase().includes(query)
+      return matchCategory && matchQuery
     })
-  }, [category, appliedQuery])
+  }, [category, activeQuery])
 
-  const applySearch = () => setAppliedQuery(searchInput)
+  function applySearch() {
+    setActiveQuery(searchInput)
+  }
+
+  function handleOpenDownload(ebook: Ebook) {
+    setDownloadModal(ebook)
+    setDownloadSuccess(false)
+    setEmailInput('')
+  }
+
+  function handleDownloadSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!emailInput) return
+    setDownloadSuccess(true)
+    setTimeout(() => {
+      setDownloadSuccess(false)
+      setDownloadModal(null)
+      setEmailInput('')
+    }, 2000)
+  }
 
   return (
     <div className="min-h-screen bg-white">
-      <SiteHeader />
+      <SiteHeader activeTab="ebook" />
 
       <main>
-        {/* Hero + tìm kiếm */}
+        {/* Hero Section */}
         <section className="bg-gradient-to-b from-brand-50 via-[#fdf5f6] to-white">
-          <div className="mx-auto max-w-7xl px-4 pb-8 pt-10 text-center sm:px-6 lg:px-8 lg:pb-10 lg:pt-14">
-            <h1 className="mx-auto max-w-3xl text-3xl font-black leading-tight tracking-tight text-ink-900 sm:text-4xl lg:text-5xl">
-              Kho Ebook <span className="whitespace-nowrap text-brand-600">Chuẩn Quốc Tế</span>
-            </h1>
-            <p className="mx-auto mt-4 max-w-2xl text-sm leading-relaxed text-ink-700 sm:text-base">
-              Tài liệu được biên soạn trực tiếp bởi đội ngũ giảng viên của trung tâm —
-              cô đọng, thực chiến và cập nhật theo đề thi mới nhất. Nhiều ebook hoàn
-              toàn miễn phí để bạn tải về bắt đầu hành trình chinh phục tiếng Anh ngay
-              hôm nay, không cần đăng ký.
-            </p>
+          <div className="mx-auto max-w-7xl px-4 pb-12 pt-14 sm:px-6 lg:px-8 lg:pb-16 lg:pt-20">
+            <div className="mx-auto max-w-3xl text-center">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-3.5 py-1 text-xs font-bold text-brand-600 ring-1 ring-brand-200">
+                <Sparkles className="size-3.5" />
+                Kho Tài Liệu Độc Quyền Miễn Phí
+              </span>
 
-            <div className="mx-auto mt-6 max-w-xl">
-              <form
-                className="flex items-center gap-3 rounded-2xl bg-white p-2.5 shadow-[0_8px_30px_rgba(200,16,46,0.08)] ring-1 ring-gray-100"
-                onSubmit={(event) => {
-                  event.preventDefault()
-                  applySearch()
-                }}
-              >
-                <Search className="ml-2 size-5 shrink-0 text-ink-500" />
-                <input
-                  type="search"
-                  value={searchInput}
-                  onChange={(event) => setSearchInput(event.target.value)}
-                  placeholder="Tìm ebook theo tên, tác giả, chủ đề..."
-                  className="w-full min-w-0 flex-1 bg-transparent py-2 text-sm text-ink-900 outline-none placeholder:text-ink-500"
-                />
-                <button
-                  type="submit"
-                  className="flex shrink-0 items-center justify-center gap-2 rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-brand-700"
+              <h1 className="mt-4 text-3xl font-black leading-tight tracking-tight text-ink-900 sm:text-4xl lg:text-5xl">
+                Tủ Sách Ebook <span className="text-brand-600">Your English Voice</span>
+              </h1>
+
+              <p className="mt-4 text-base leading-relaxed text-ink-700 sm:text-lg">
+                Hệ thống tài liệu ôn thi độc quyền được biên soạn bởi đội ngũ giảng viên của trung tâm —
+                cô đọng, thực chiến và cập nhật theo đề thi mới nhất. Nhiều ebook hoàn toàn miễn phí
+                để bạn tải về bắt đầu hành trình chinh phục tiếng Anh ngay hôm nay.
+              </p>
+
+              {/* Ô tìm kiếm */}
+              <div className="mx-auto mt-6 max-w-xl">
+                <form
+                  className="flex items-center gap-3 rounded-2xl bg-white p-2.5 shadow-[0_8px_30px_rgba(200,16,46,0.08)] ring-1 ring-gray-100"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    applySearch()
+                  }}
                 >
-                  Tìm Kiếm
-                  <ArrowRight className="size-4" />
-                </button>
-              </form>
+                  <Search className="ml-2 size-5 shrink-0 text-ink-500" />
+                  <input
+                    type="search"
+                    value={searchInput}
+                    onChange={(event) => {
+                      setSearchInput(event.target.value)
+                      if (!event.target.value) setActiveQuery('')
+                    }}
+                    placeholder="Tìm ebook theo tên, tác giả, chủ đề..."
+                    className="w-full min-w-0 flex-1 bg-transparent py-2 text-sm text-ink-900 outline-none placeholder:text-ink-500"
+                  />
+                  <button
+                    type="submit"
+                    className="flex shrink-0 items-center justify-center gap-2 rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-brand-700"
+                  >
+                    Tìm Kiếm
+                    <ArrowRight className="size-4" />
+                  </button>
+                </form>
+              </div>
             </div>
           </div>
         </section>
@@ -218,13 +261,30 @@ export function EbooksPage() {
           </div>
 
           {ebookList.length === 0 ? (
-            <p className="mt-10 rounded-2xl border border-dashed border-gray-200 bg-gray-50 py-16 text-center text-sm text-ink-500">
-              Không tìm thấy ebook phù hợp. Thử từ khóa hoặc danh mục khác nhé!
-            </p>
+            <div className="mt-10 rounded-2xl border border-dashed border-gray-200 bg-gray-50 py-16 text-center">
+              <BookOpen className="mx-auto size-12 text-ink-400" />
+              <h3 className="mt-4 text-base font-bold text-ink-900">Không tìm thấy tài liệu phù hợp</h3>
+              <p className="mt-1 text-sm text-ink-500">Vui lòng thử từ khóa hoặc danh mục khác nhé!</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setCategory('Tất cả')
+                  setSearchInput('')
+                  setActiveQuery('')
+                }}
+                className="mt-4 rounded-xl bg-brand-600 px-5 py-2 text-xs font-bold text-white hover:bg-brand-700"
+              >
+                Xem tất cả tài liệu
+              </button>
+            </div>
           ) : (
             <div className="mt-8 grid gap-6 md:grid-cols-2">
               {ebookList.map((ebook) => (
-                <EbookCard key={ebook.id} ebook={ebook} />
+                <EbookCard
+                  key={ebook.id}
+                  ebook={ebook}
+                  onDownload={handleOpenDownload}
+                />
               ))}
             </div>
           )}
@@ -245,7 +305,10 @@ export function EbooksPage() {
             </p>
             <form
               className="mx-auto mt-7 flex max-w-md flex-col gap-3 sm:flex-row"
-              onSubmit={(event) => event.preventDefault()}
+              onSubmit={(event) => {
+                event.preventDefault()
+                alert('Đăng ký nhận tài liệu định kỳ thành công!')
+              }}
             >
               <input
                 type="email"
@@ -263,6 +326,55 @@ export function EbooksPage() {
             </form>
           </div>
         </section>
+
+        {/* Modal Tải Ebook */}
+        {downloadModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+              <h3 className="text-lg font-bold text-ink-900">
+                {downloadModal.price === 0 ? 'Tải Tài Liệu Miễn Phí' : 'Đăng Ký Nhận Ebook'}
+              </h3>
+              <p className="mt-1 text-xs font-semibold text-brand-600">{downloadModal.title}</p>
+              <p className="mt-3 text-xs leading-relaxed text-ink-500">
+                {downloadModal.price === 0
+                  ? `Nhập email của bạn để hệ thống tự động gửi link tải tài liệu định dạng ${downloadModal.format}.`
+                  : `Ebook này có giá ${formatPrice(downloadModal.price)}. Nhập email để chuyên viên gửi thông tin hướng dẫn thanh toán & nhận sách.`}
+              </p>
+
+              {downloadSuccess ? (
+                <div className="mt-4 rounded-xl bg-emerald-50 p-4 text-center text-sm font-bold text-emerald-700">
+                  ✓ Link tải tài liệu đã được gửi tới email của bạn!
+                </div>
+              ) : (
+                <form onSubmit={handleDownloadSubmit} className="mt-4 space-y-3">
+                  <input
+                    type="email"
+                    required
+                    value={emailInput}
+                    onChange={(e) => setEmailInput(e.target.value)}
+                    placeholder="Địa chỉ email nhận tài liệu..."
+                    className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-ink-900 outline-none focus:ring-2 focus:ring-brand-200"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setDownloadModal(null)}
+                      className="flex-1 rounded-xl border border-gray-200 py-2.5 text-xs font-bold text-ink-700 hover:bg-gray-50"
+                    >
+                      Đóng
+                    </button>
+                    <button
+                      type="submit"
+                      className="flex-1 rounded-xl bg-brand-600 py-2.5 text-xs font-bold text-white hover:bg-brand-700"
+                    >
+                      Xác Nhận Tải
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+        )}
       </main>
 
       <SiteFooter />

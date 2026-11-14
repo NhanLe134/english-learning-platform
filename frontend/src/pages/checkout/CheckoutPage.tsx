@@ -15,7 +15,8 @@ import {
   X,
 } from 'lucide-react'
 import { useAuth } from '../auth/auth-context'
-import { SiteFooter, SiteHeader } from '../auth/AuthShared'
+import { SiteHeader } from '../../components/layout/SiteHeader'
+import { SiteFooter } from '../../components/layout/SiteFooter'
 import { courseCatalogApi } from '../courses/services/courseCatalogApi'
 import { readCheckoutCourse, type CourseReference } from '../courses/course-data'
 import { type CreateOrderResponse } from './sepayApi'
