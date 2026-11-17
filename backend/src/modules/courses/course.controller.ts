@@ -15,6 +15,24 @@ export class CourseController {
     }
   }
 
+  async getMyEnrolledCourses(
+    _request: Request,
+    response: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      const user = response.locals.authUser as { id?: string } | undefined
+      if (!user?.id) {
+        response.status(401).json({ success: false, message: 'Unauthorized' })
+        return
+      }
+      const courses = await courseService.getEnrolledCourses(user.id)
+      response.status(200).json({ success: true, data: courses })
+    } catch (error) {
+      this.handleError(error, response, next)
+    }
+  }
+
   async getPublishedCourse(
     request: Request,
     response: Response,

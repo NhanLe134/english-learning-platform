@@ -228,6 +228,7 @@ export const QuanLyNguoiDungPage: React.FC = () => {
   const navigateAdmin = (tab: string) => {
     if (tab === 'quan_ly_nguoi_dung') window.location.assign('/admin/users')
     if (tab === 'khoa_hoc_bai_tap') window.location.assign('/admin/courses')
+    if (tab === 'thanh_toan') window.location.assign('/admin/payments')
   }
 
   return (

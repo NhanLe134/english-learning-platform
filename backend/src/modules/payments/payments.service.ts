@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { env } from '../../config/env.js'
+import { createSupabaseClient } from '../../config/supabase.js'
 import { buildSePayVietQrImageUrl, getSePayClient } from '../../config/sepay.js'
 import { PaymentWebhookError } from './payments.errors.js'
 import { courseService } from '../courses/course.service.js'
@@ -12,8 +13,12 @@ import {
   paymentOrderRepository,
 } from './payments.repository.js'
 import type {
+  AdminOrderDetail,
+  AdminOrderListItem,
+  AdminOrderQueryParams,
   PaymentOrder,
   PaymentOrderStatus,
+  PaymentStatistics,
   SePayWebhookEvent,
   SePayBankTransactionWebhook,
   VerifyPaymentResult,
@@ -251,6 +256,109 @@ export class PaymentService {
       isNewlyPaid: result.isNewlyPaid,
     }
   }
+
+  /* ============================================================
+     Admin Payment Management service methods
+     ============================================================ */
+
+  async getAdminOrders(params: AdminOrderQueryParams): Promise<{
+    items: AdminOrderListItem[]
+    total: number
+    page: number
+    limit: number
+    totalPages: number
+  }> {
+    return this.repository.findAdminOrders(params)
+  }
+
+  async getAdminOrderDetail(orderId: string): Promise<AdminOrderDetail | null> {
+    return this.repository.findAdminOrderById(orderId)
+  }
+
+  async getPaymentStatistics(): Promise<PaymentStatistics> {
+    return this.repository.getPaymentStatistics()
+  }
+
+  /**
+   * Reconcile a paid order that is missing a course enrollment.
+   * Only acts when the order is already 'paid' and no active enrollment exists.
+   * Creates the enrollment and logs the admin action.
+   * Does NOT re-verify the payment with SePay — the order must already be paid.
+   */
+  async recordAdminView(orderId: string, adminId: string): Promise<void> {
+    await this.repository.logAdminPaymentAction(adminId, orderId, 'view', null)
+  }
+
+  async reconcileOrder(orderId: string, adminId: string): Promise<{
+    orderId: string
+    status: string
+    enrollmentCreated: boolean
+    enrollmentId: string | null
+    enrollmentStatus: string | null
+    message: string
+  }> {
+    const order = await this.repository.findAdminOrderById(orderId)
+    if (!order) {
+      throw new Error('Không tìm thấy đơn hàng.')
+    }
+
+    const alreadyHasEnrollment = Boolean(order.enrollmentId && order.enrollmentStatus)
+    if (alreadyHasEnrollment) {
+      await this.repository.logAdminPaymentAction(adminId, orderId, 'reconcile_enrollment', {
+        skipped: true,
+        reason: 'Enrollment already exists',
+        existingEnrollmentId: order.enrollmentId,
+        existingEnrollmentStatus: order.enrollmentStatus,
+      })
+      return {
+        orderId: order.orderId,
+        status: order.status,
+        enrollmentCreated: false,
+        enrollmentId: order.enrollmentId,
+        enrollmentStatus: order.enrollmentStatus,
+        message: 'Đơn hàng đã có đăng ký khóa học rồi.',
+      }
+    }
+
+    if (order.status !== 'paid') {
+      await this.repository.logAdminPaymentAction(adminId, orderId, 'reconcile_enrollment', {
+        skipped: true,
+        reason: 'Order is not paid',
+        currentStatus: order.status,
+      })
+      throw new Error('Chỉ có thể khôi phục đăng ký cho đơn hàng đã thanh toán (status = paid).')
+    }
+
+    // Create the enrollment
+    const enrollment = await this.repository.createEnrollment(order.studentId, order.courseId)
+
+    // Activate profile if pending
+    await createSupabaseClient()
+      .from('profiles')
+      .update({ status: 'active' })
+      .eq('id', order.studentId)
+      .eq('status', 'pending')
+
+    await this.repository.logAdminPaymentAction(adminId, orderId, 'reconcile_enrollment', {
+      skipped: false,
+      studentId: order.studentId,
+      courseId: order.courseId,
+      newEnrollmentId: enrollment.id,
+      newEnrollmentStatus: enrollment.status,
+    })
+
+    return {
+      orderId: order.orderId,
+      status: order.status,
+      enrollmentCreated: true,
+      enrollmentId: enrollment.id,
+      enrollmentStatus: enrollment.status,
+      message: 'Đã khôi phục đăng ký khóa học cho đơn hàng đã thanh toán.',
+    }
+  }
+
+  /* ============================================================ */
+
 }
 
 function maskDiagnosticValue(value: string): string {

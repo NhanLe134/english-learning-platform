@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { env } from '../../config/env.js'
 import { authenticate, requireTrustedOrigin } from '../auth/auth.middleware.js'
+import { authorize } from '../../middlewares/authorize.js'
 import { authRateLimit } from '../auth/auth.rate-limit.js'
 import { paymentController } from './payments.controller.js'
 
@@ -42,4 +43,27 @@ paymentsRouter.get('/orders/:orderId', (request, response, next) =>
 
 paymentsRouter.get('/orders/:orderId/events', (request, response, next) =>
   paymentController.streamOrderStatus(request, response, next),
+)
+
+// Admin payment management endpoints — require ADMIN role
+paymentsRouter.use(authenticate, authorize('ADMIN'))
+
+paymentsRouter.get(
+  '/admin/statistics',
+  (request, response, next) => paymentController.getAdminStatistics(request, response, next),
+)
+
+paymentsRouter.get(
+  '/admin/orders',
+  (request, response, next) => paymentController.getAdminOrders(request, response, next),
+)
+
+paymentsRouter.get(
+  '/admin/orders/:orderId',
+  (request, response, next) => paymentController.getAdminOrderDetail(request, response, next),
+)
+
+paymentsRouter.post(
+  '/admin/orders/:orderId/reconcile',
+  (request, response, next) => paymentController.reconcileOrder(request, response, next),
 )

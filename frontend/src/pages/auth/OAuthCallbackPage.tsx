@@ -40,7 +40,7 @@ export function OAuthCallbackPage() {
             return
           }
           window.location.replace(
-            appSession.user.role === 'ADMIN' ? '/admin/users' : '/courses'
+            appSession.user.role === 'ADMIN' ? '/admin/users' : '/my-courses'
           )
           return
         }
@@ -79,7 +79,7 @@ export function OAuthCallbackPage() {
         if (appSession.user.role === 'ADMIN') {
           window.location.replace('/admin/users')
         } else {
-          window.location.replace(`/checkout${window.location.search}`)
+          window.location.replace('/my-courses')
         }
       } catch (err) {
         if (!active) return

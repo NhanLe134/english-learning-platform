@@ -5,6 +5,7 @@ import type {
   CourseCatalogTopic,
   CourseListFilters,
   CourseTeacher,
+  EnrolledCourseItem,
   ManagedCourse,
   ManagedCourseInput,
   ManagedCoursePage,
@@ -300,6 +301,163 @@ export class CourseRepository {
 
     if (error) throw new Error(`Unable to delete course: ${error.message}`, { cause: error })
     return data !== null
+  }
+
+  async findEnrolledCourses(studentId: string): Promise<EnrolledCourseItem[]> {
+    try {
+      const client = createSupabaseClient()
+
+      // 1. Fetch active enrollments
+      const { data: enrollments, error: enrollError } = await client
+        .from('course_enrollments')
+        .select('id, course_id, status, enrolled_at')
+        .eq('student_id', studentId)
+        .in('status', ['active', 'completed'])
+
+      if (enrollError) {
+        console.error('[CourseRepository] findEnrolledCourses: enrollment query failed', {
+          studentId: studentId.slice(0, 8) + '…',
+          code: enrollError.code,
+          message: enrollError.message,
+        })
+      }
+
+      // 2. Fetch paid course orders
+      const { data: orders, error: orderError } = await client
+        .from('course_orders')
+        .select('course_id, status, paid_at, created_at')
+        .eq('student_id', studentId)
+        .eq('status', 'paid')
+
+      if (orderError) {
+        console.error('[CourseRepository] findEnrolledCourses: orders query failed', {
+          studentId: studentId.slice(0, 8) + '…',
+          code: orderError.code,
+          message: orderError.message,
+        })
+      }
+
+      console.info('[CourseRepository] findEnrolledCourses: data fetched', {
+        studentId: studentId.slice(0, 8) + '…',
+        enrollmentCount: Array.isArray(enrollments) ? enrollments.length : 'null',
+        paidOrderCount: Array.isArray(orders) ? orders.length : 'null',
+      })
+
+      // 3. Fetch courses selected during registration
+      const { data: regDetails } = await client
+        .from('auth_registration_details')
+        .select('selected_course_ids')
+        .eq('user_id', studentId)
+        .maybeSingle()
+
+      const courseIdMap = new Map<string, { status: 'in_progress' | 'completed'; enrolledAt: string }>()
+
+      if (!enrollError && Array.isArray(enrollments)) {
+        for (const e of enrollments) {
+          courseIdMap.set(String(e.course_id), {
+            status: e.status === 'completed' ? 'completed' : 'in_progress',
+            enrolledAt: String(e.enrolled_at || new Date().toISOString()),
+          })
+        }
+      }
+
+      if (Array.isArray(orders)) {
+        for (const o of orders) {
+          const cid = String(o.course_id)
+          if (!courseIdMap.has(cid)) {
+            courseIdMap.set(cid, {
+              status: 'in_progress',
+              enrolledAt: String(o.paid_at || o.created_at || new Date().toISOString()),
+            })
+          }
+        }
+      }
+
+      if (regDetails && Array.isArray(regDetails.selected_course_ids)) {
+        for (const cid of regDetails.selected_course_ids) {
+          const strId = String(cid)
+          if (!courseIdMap.has(strId)) {
+            courseIdMap.set(strId, {
+              status: 'in_progress',
+              enrolledAt: new Date().toISOString(),
+            })
+          }
+        }
+      }
+
+      if (courseIdMap.size === 0) {
+        return []
+      }
+
+      const courseIds = Array.from(courseIdMap.keys())
+      const { data: courses, error: courseError } = await client
+        .from('courses')
+        .select(
+          'id, title, slug, category, level, price, discounted_price, total_lessons, thumbnail_url, teacher:profiles!courses_teacher_id_fkey(id, full_name, avatar_url)'
+        )
+        .in('id', courseIds)
+
+      let resolvedCourses: Array<{
+        id: string
+        title: string
+        slug: string
+        category?: string
+        level?: string
+        total_lessons?: number
+        thumbnail_url?: string | null
+        teacher?: CourseTeacher | CourseTeacher[] | null
+      }> = []
+
+      if (!courseError && Array.isArray(courses) && courses.length > 0) {
+        resolvedCourses = courses as unknown as typeof resolvedCourses
+      } else {
+        resolvedCourses = DEFAULT_CATALOG_COURSES.filter(
+          (c) => courseIds.includes(c.id) || courseIds.includes(c.slug)
+        )
+      }
+
+      return resolvedCourses.map((c) => {
+        const meta = courseIdMap.get(String(c.id))
+        const teacher = Array.isArray(c.teacher) ? c.teacher[0] ?? null : c.teacher
+        const totalLessons = Number(c.total_lessons) || 20
+        const isCompleted = meta?.status === 'completed'
+        const completedLessons = isCompleted ? totalLessons : Math.min(totalLessons, 4)
+        const progressPercent = Math.round((completedLessons / totalLessons) * 100)
+
+        return {
+          id: String(c.id),
+          course_id: String(c.id),
+          title: String(c.title),
+          slug: String(c.slug),
+          category: String(c.category || 'Tiếng Anh nền tảng'),
+          level: String(c.level || 'beginner'),
+          thumbnail_url: c.thumbnail_url ? String(c.thumbnail_url) : null,
+          total_lessons: totalLessons,
+          completed_lessons: completedLessons,
+          progress_percent: progressPercent,
+          status: isCompleted ? 'completed' : 'in_progress',
+          enrolled_at: meta?.enrolledAt ?? new Date().toISOString(),
+          last_active: 'Cập nhật gần đây',
+          teacher: teacher
+            ? {
+                id: String(teacher.id),
+                full_name: String(teacher.full_name),
+                avatar_url: teacher.avatar_url ? String(teacher.avatar_url) : null,
+              }
+            : {
+                id: 'c0a80101-0000-4000-8000-000000000010',
+                full_name: 'Trang English',
+                avatar_url: null,
+              },
+        }
+      })
+    } catch (err) {
+      console.error('[CourseRepository] findEnrolledCourses: unexpected error', {
+        studentId: studentId.slice(0, 8) + '…',
+        error: err instanceof Error ? err.message : String(err),
+      })
+      return []
+    }
   }
 }
 

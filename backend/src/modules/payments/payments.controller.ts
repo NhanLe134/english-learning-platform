@@ -4,8 +4,10 @@ import { env } from '../../config/env.js'
 import { PaymentWebhookError } from './payments.errors.js'
 import { paymentService } from './payments.service.js'
 import { subscribeToOrderStatus } from './order-status-realtime.service.js'
+import { authorize } from '../../middlewares/authorize.js'
 import type { SePayWebhookEvent } from './payments.types.js'
 import type { SePayBankTransactionWebhook } from './payments.types.js'
+import type { AdminOrderQueryParams, PaymentStatistics } from './payments.types.js'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 export class PaymentController {
@@ -443,6 +445,131 @@ export class PaymentController {
       })
     }
   }
+
+  /* ============================================================
+     Admin Payment Management controller methods
+     ============================================================ */
+
+  async getAdminOrders(
+    request: Request,
+    response: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      const params: AdminOrderQueryParams = {
+        search: request.query.search ? String(request.query.search) : undefined,
+        status: request.query.status ? (String(request.query.status) as 'ALL' | 'pending' | 'paid' | 'failed' | 'expired' | 'cancelled') : 'ALL',
+        enrollment: request.query.enrollment ? (String(request.query.enrollment) as 'ALL' | 'has_enrollment' | 'missing_enrollment') : 'ALL',
+        dateFrom: request.query.dateFrom ? String(request.query.dateFrom) : undefined,
+        dateTo: request.query.dateTo ? String(request.query.dateTo) : undefined,
+        page: request.query.page ? parseInt(String(request.query.page), 10) : 1,
+        limit: request.query.limit ? parseInt(String(request.query.limit), 10) : 20,
+        sortBy: request.query.sortBy ? (String(request.query.sortBy) as 'created_at' | 'paid_at' | 'amount' | 'student_name' | 'course_title') : 'created_at',
+        sortOrder: request.query.sortOrder ? (String(request.query.sortOrder) as 'asc' | 'desc') : 'desc',
+      }
+
+      const result = await paymentService.getAdminOrders(params)
+
+      response.status(200).json({
+        success: true,
+        data: result.items,
+        pagination: {
+          page: result.page,
+          limit: result.limit,
+          total: result.total,
+          totalPages: result.totalPages,
+        },
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  async getAdminOrderDetail(
+    request: Request,
+    response: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      const { orderId } = request.params as { orderId?: string }
+      if (!orderId) {
+        response.status(400).json({ success: false, message: 'Order ID is required.' })
+        return
+      }
+
+      const order = await paymentService.getAdminOrderDetail(orderId)
+      if (!order) {
+        response.status(404).json({ success: false, message: 'Order not found.' })
+        return
+      }
+
+      // Log the admin view action (audit)
+      const user = response.locals.authUser as { id?: string } | undefined
+      await paymentService.recordAdminView(orderId, String(user?.id ?? ''))
+
+      response.status(200).json({
+        success: true,
+        data: order,
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  async getAdminStatistics(
+    request: Request,
+    response: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      const statistics = await paymentService.getPaymentStatistics()
+      response.status(200).json({
+        success: true,
+        data: statistics,
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  async reconcileOrder(
+    request: Request,
+    response: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    try {
+      const { orderId } = request.params as { orderId?: string }
+      if (!orderId) {
+        response.status(400).json({ success: false, message: 'Order ID is required.' })
+        return
+      }
+
+      const user = response.locals.authUser as { id?: string } | undefined
+      const adminId = String(user?.id ?? '')
+
+      const result = await paymentService.reconcileOrder(orderId, adminId)
+
+      response.status(200).json({
+        success: true,
+        message: result.message,
+        data: {
+          orderId: result.orderId,
+          status: result.status,
+          enrollmentCreated: result.enrollmentCreated,
+          enrollmentId: result.enrollmentId,
+          enrollmentStatus: result.enrollmentStatus,
+        },
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Khôi phục đăng ký thất bại.'
+      response.status(400).json({
+        success: false,
+        message,
+      })
+    }
+  }
+
+  /* ============================================================ */
 
   private parseSePayWebhook(body: unknown): SePayWebhookEvent {
     if (!body || typeof body !== 'object') {

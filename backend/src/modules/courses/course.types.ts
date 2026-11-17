@@ -78,3 +78,20 @@ export interface ManagedCoursePage {
   limit: number
   totalPages: number
 }
+
+export interface EnrolledCourseItem {
+  id: string
+  course_id: string
+  title: string
+  slug: string
+  category: string
+  level: string
+  thumbnail_url: string | null
+  total_lessons: number
+  completed_lessons: number
+  progress_percent: number
+  status: 'in_progress' | 'completed'
+  enrolled_at: string
+  last_active: string | null
+  teacher: CourseTeacher | null
+}

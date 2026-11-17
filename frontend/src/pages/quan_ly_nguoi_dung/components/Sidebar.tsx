@@ -1,5 +1,5 @@
 import React from 'react'
-import { Users, BookOpen, GraduationCap, BarChart3, Layers } from 'lucide-react'
+import { Users, BookOpen, GraduationCap, BarChart3, Layers, CreditCard } from 'lucide-react'
 
 interface SidebarProps {
   activeTab?: string
@@ -33,6 +33,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'bao_cao_thong_ke',
       label: 'Báo cáo & Thống kê',
       icon: BarChart3,
+      badgeDot: false,
+    },
+    {
+      id: 'thanh_toan',
+      label: 'Quản lý thanh toán',
+      icon: CreditCard,
       badgeDot: false,
     },
   ]
