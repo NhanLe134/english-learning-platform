@@ -688,7 +688,7 @@ export class AuthService {
     }
 
     const user = await this.findSessionUser(session.user_id)
-    if (!user || user.status !== 'active' || user.is_verified !== true) {
+    if (!user || user.status !== 'active' || (user.role !== 'ADMIN' && user.is_verified !== true)) {
       await this.store.revokeSession(session.id)
       throw invalidTokenError()
     }
@@ -761,7 +761,7 @@ export class AuthService {
     }
 
     const user = await this.findSessionUser(claims.sub)
-    if (!user || user.status !== 'active' || user.is_verified !== true) {
+    if (!user || user.status !== 'active' || (user.role !== 'ADMIN' && user.is_verified !== true)) {
       await this.store.revokeSession(session.id)
       throw invalidTokenError()
     }

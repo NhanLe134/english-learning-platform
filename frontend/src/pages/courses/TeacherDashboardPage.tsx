@@ -6,7 +6,7 @@ import { authApi } from '../auth/auth-api'
 
 export function TeacherDashboardPage() {
   const { user, logout, accessToken } = useAuth()
-  const [message, setMessage] = useState('Äang táº£i tĂ i khoáº£nâ€¦')
+  const [message, setMessage] = useState('Đang tải tài khoản…')
 
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -19,7 +19,7 @@ export function TeacherDashboardPage() {
     setPasswordMessage('')
     setPasswordError('')
     if (newPassword.length < 8 || new TextEncoder().encode(newPassword).length > 72) {
-      setPasswordError('Máº­t kháº©u má»›i cáº§n tá»« 8 kĂ½ tá»± vĂ  tá»‘i Ä‘a 72 byte.')
+      setPasswordError('Mật khẩu mới cần từ 8 ký tự và tối đa 72 byte.')
       return
     }
     try {
@@ -27,9 +27,9 @@ export function TeacherDashboardPage() {
       await authApi.changePassword(currentPassword, newPassword, accessToken ?? undefined)
       setCurrentPassword('')
       setNewPassword('')
-      setPasswordMessage('ÄĂ£ Ä‘á»•i máº­t kháº©u thĂ nh cĂ´ng.')
+      setPasswordMessage('Đã đổi mật khẩu thành công.')
     } catch (error) {
-      setPasswordError(error instanceof Error ? error.message : 'KhĂ´ng Ä‘á»•i Ä‘Æ°á»£c máº­t kháº©u.')
+      setPasswordError(error instanceof Error ? error.message : 'Không đổi được mật khẩu.')
     } finally {
       setChangingPassword(false)
     }
@@ -43,10 +43,10 @@ export function TeacherDashboardPage() {
     const apiBase = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
     fetch(`${apiBase}/teachers/me`, { headers: { Authorization: `Bearer ${session?.accessToken ?? ''}` } })
       .then(async (response) => {
-        if (!response.ok) throw new Error('PhiĂªn Ä‘Äƒng nháº­p khĂ´ng cĂ²n quyá»n giĂ¡o viĂªn.')
-        setMessage('TĂ i khoáº£n giĂ¡o viĂªn Ä‘Ă£ sáºµn sĂ ng. CĂ¡c cĂ´ng cá»¥ khĂ³a há»c sáº½ xuáº¥t hiá»‡n táº¡i Ä‘Ă¢y khi Ä‘Æ°á»£c triá»ƒn khai.')
+        if (!response.ok) throw new Error('Phiên đăng nhập không còn quyền giáo viên.')
+        setMessage('Tài khoản giáo viên đã sẵn sàng. Các công cụ khóa học sẽ xuất hiện tại đây khi được triển khai.')
       })
-      .catch((reason: unknown) => setMessage(reason instanceof Error ? reason.message : 'KhĂ´ng táº£i Ä‘Æ°á»£c tĂ i khoáº£n.'))
+      .catch((reason: unknown) => setMessage(reason instanceof Error ? reason.message : 'Không tải được tài khoản.'))
   }, [])
 
   return <main className="min-h-screen bg-slate-50">
@@ -78,25 +78,25 @@ export function TeacherDashboardPage() {
         <p className="text-sm font-semibold uppercase tracking-wide text-red-600">Teacher Dashboard</p>
         <h1 className="mt-1 text-2xl font-bold text-slate-900">Xin chào, {user?.fullName || 'Giáo viên'}</h1>
       </div>      <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6">
-        <h2 className="text-lg font-semibold">TĂ i khoáº£n cá»§a báº¡n</h2>
+        <h2 className="text-lg font-semibold">Tài khoản của bạn</h2>
         <p className="mt-2 text-slate-600">{message}</p>
         <p className="mt-4 text-sm text-slate-500">{user?.email}</p>
       </section>
       <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6">
-        <h2 className="text-lg font-semibold">Äá»•i máº­t kháº©u</h2>
+        <h2 className="text-lg font-semibold">Đổi mật khẩu</h2>
         <form className="mt-4 grid max-w-xl gap-4" onSubmit={handleChangePassword}>
           <label className="grid gap-1 text-sm font-medium text-slate-700">
-            Máº­t kháº©u hiá»‡n táº¡i
+            Mật khẩu hiện tại
             <input className="rounded-lg border border-slate-300 px-3 py-2" type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required />
           </label>
           <label className="grid gap-1 text-sm font-medium text-slate-700">
-            Máº­t kháº©u má»›i
+            Mật khẩu mới
             <input className="rounded-lg border border-slate-300 px-3 py-2" type="password" autoComplete="new-password" minLength={8} maxLength={72} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required />
           </label>
           {passwordError && <p className="text-sm text-red-700" role="alert">{passwordError}</p>}
           {passwordMessage && <p className="text-sm text-green-700" role="status">{passwordMessage}</p>}
           <button className="w-fit rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60" type="submit" disabled={changingPassword}>
-            {changingPassword ? 'Äang Ä‘á»•iâ€¦' : 'Äá»•i máº­t kháº©u'}
+            {changingPassword ? 'Đang đổi…' : 'Đổi mật khẩu'}
           </button>
         </form>
       </section>

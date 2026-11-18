@@ -984,6 +984,34 @@ describe('authentication service', () => {
     )
   })
 
+  it('authenticates an active unverified Admin from PostgreSQL when Supabase Auth has no password account', async () => {
+    const { service, users, store } = setup()
+    const admin: UserProfile = {
+      ...sampleUser,
+      id: randomUUID(),
+      email: 'database-admin@example.test',
+      role: 'ADMIN',
+      is_verified: false,
+    }
+    users.users.set(admin.id, admin)
+    users.passwords.set(admin.id, 'Database-Admin-Password!')
+
+    await expectAuthError(
+      () => service.login(admin.email, 'wrong-password'),
+      401
+    )
+    assert.equal(store.sessions.size, 0)
+
+    const tokens = await service.login(admin.email, 'Database-Admin-Password!')
+    assert.equal(tokens.user.id, admin.id)
+    assert.equal(tokens.user.role, 'ADMIN')
+    assert.equal((await service.authenticateAccessToken(tokens.accessToken)).role, 'ADMIN')
+    const refreshedTokens = await service.refresh(tokens.refreshToken)
+    assert.equal(refreshedTokens.user.role, 'ADMIN')
+    assert.equal((await service.authenticateAccessToken(refreshedTokens.accessToken)).role, 'ADMIN')
+    assert.equal(store.sessions.size, 1)
+  })
+
   it('rejects login for an inactive account', async () => {
     const { service, users, store } = setup()
     users.users.set(sampleUser.id, { ...sampleUser, status: 'locked' })
