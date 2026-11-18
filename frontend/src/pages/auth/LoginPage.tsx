@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import {
   BookOpen,
   Eye,
@@ -16,6 +16,8 @@ import { initiateGoogleSignIn } from './google-auth'
 import { sepayApi } from '../checkout/sepayApi'
 import './login-page.css'
 
+const LOGOUT_HISTORY_LOCK_KEY = 'your-voice-logout-history-lock'
+
 export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
@@ -29,6 +31,33 @@ export function LoginPage() {
   const [googleLoading, setGoogleLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const { setSession } = useAuth()
+
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem(LOGOUT_HISTORY_LOCK_KEY) !== '1') return
+    } catch {
+      return
+    }
+
+    const keepLoginPageAfterBack = () => {
+      try {
+        if (sessionStorage.getItem(LOGOUT_HISTORY_LOCK_KEY) !== '1') return
+        if (window.location.pathname !== '/login') {
+          window.history.replaceState(null, '', '/login')
+        }
+        window.history.pushState({ logoutHistoryLock: true }, '', '/login')
+      } catch {
+        // The logout and route guard still work if history state is unavailable.
+      }
+    }
+
+    keepLoginPageAfterBack()
+    window.addEventListener('popstate', keepLoginPageAfterBack)
+    return () => {
+      window.removeEventListener('popstate', keepLoginPageAfterBack)
+      try { sessionStorage.removeItem(LOGOUT_HISTORY_LOCK_KEY) } catch { /* Optional browser history protection. */ }
+    }
+  }, [])
 
   async function handleAuthSuccess(session: import('./auth-api').AuthSession) {
     setSession(session)
@@ -90,8 +119,7 @@ export function LoginPage() {
     try {
       const session = await authApi.login(
         String(formData.get('email') ?? '').trim(),
-        String(formData.get('password') ?? ''),
-        formData.get('rememberMe') === 'on'
+        String(formData.get('password') ?? '')
       )
       handleAuthSuccess(session)
     } catch (error) {
@@ -167,10 +195,6 @@ export function LoginPage() {
               {successMessage && <p className="auth-feedback auth-feedback-success" role="status">{successMessage}</p>}
 
               <div className="login-options">
-                <label className="login-remember">
-                  <input type="checkbox" name="rememberMe" />
-                  <span>Ghi nhớ đăng nhập</span>
-                </label>
               <a href={window.location.pathname.startsWith('/teacher') ? '/teacher/forgot-password' : '/forgot-password'}>Quên mật khẩu?</a>
               </div>
 

@@ -3,6 +3,7 @@ import { authApi, getAuthApiErrorStatus, type AuthSession } from './auth-api'
 import { AuthContext } from './auth-context'
 
 const AUTH_SESSION_STORAGE_KEY = 'your-voice-auth-session'
+const LOGOUT_HISTORY_LOCK_KEY = 'your-voice-logout-history-lock'
 let refreshInFlight: Promise<AuthSession> | undefined
 
 function getTokenExpiryMs(token: string): number | null {
@@ -127,6 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const setSession = useCallback((nextSession: AuthSession) => {
     setCurrentSession(nextSession)
     storeSession(nextSession)
+    try { sessionStorage.removeItem(LOGOUT_HISTORY_LOCK_KEY) } catch { /* Optional browser history protection. */ }
     setInitializationError(null)
   }, [])
 
@@ -179,6 +181,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const logout = useCallback(async () => {
+    try { sessionStorage.setItem(LOGOUT_HISTORY_LOCK_KEY, '1') } catch { /* Optional browser history protection. */ }
     let logoutError: unknown
     try {
       await authApi.logout(session?.accessToken)

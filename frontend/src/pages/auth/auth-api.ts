@@ -155,8 +155,8 @@ function tokenSession(result: unknown): AuthSession {
 }
 
 export const authApi = {
-  async login(email: string, password: string, rememberMe: boolean): Promise<AuthSession> {
-    return tokenSession(await request<unknown>('/login', { email, password, rememberMe }))
+  async login(email: string, password: string): Promise<AuthSession> {
+    return tokenSession(await request<unknown>('/login', { email, password, rememberMe: false }))
   },
 
   async loginWithGoogle(payload: {
