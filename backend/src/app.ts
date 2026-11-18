@@ -19,11 +19,17 @@ const allowedOrigins: string[] = [new URL(env.frontendUrl).origin]
 if (env.nodeEnv !== 'production') {
   try {
     const parsedFrontend = new URL(env.frontendUrl)
-    if (parsedFrontend.hostname === 'localhost') {
-      allowedOrigins.push(`${parsedFrontend.protocol}//127.0.0.1:${parsedFrontend.port || '5173'}`)
-    } else if (parsedFrontend.hostname === '127.0.0.1') {
-      allowedOrigins.push(`${parsedFrontend.protocol}//localhost:${parsedFrontend.port || '5173'}`)
+    const port = parsedFrontend.port || '5173'
+    const protocol = parsedFrontend.protocol
+    if (parsedFrontend.hostname === 'localhost' || parsedFrontend.hostname === '127.0.0.1') {
+      allowedOrigins.push(`${protocol}//localhost:${port}`)
+      allowedOrigins.push(`${protocol}//127.0.0.1:${port}`)
     }
+    // Allow the Vite dev proxy target so proxied /api requests are not
+    // rejected by CORS when the frontend runs on localhost:5173.
+    allowedOrigins.push(`${protocol}//localhost:5000`)
+    // Also allow the configured FRONTEND_URL origin directly.
+    allowedOrigins.push(env.frontendUrl)
   } catch {
     // ignore
   }

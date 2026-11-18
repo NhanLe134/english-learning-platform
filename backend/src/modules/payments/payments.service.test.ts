@@ -85,40 +85,57 @@ function createBankEvent(overrides: Record<string, unknown> = {}) {
 function setup(
   status: PaymentOrder['status'] = 'pending',
   lookup: 'found' | 'missing' | 'database-error' = 'found',
+  confirmationFailure = false,
+  emailReleaseFailure = false,
 ) {
   let order = createOrder(status)
   let enrollmentAttempts = 0
+  let enrollmentCount = 0
+  let enrollmentExists = status === 'paid'
+  let activationAttempts = 0
   let emailQueueAttempts = 0
+  const confirmationCalls: Array<{ orderId: string; providerOrderId: string | null; transactionId: string; amount: number }> = []
   const repository = {
     findOrderByTransferContent: async (transferContent: string) => {
       if (lookup === 'database-error') throw new Error('database unavailable')
       return lookup === 'missing' || transferContent !== order.transfer_content ? null : order
     },
-    markOrderPaid: async (_orderId: string, providerOrderId: string) => {
-      if (order.status === 'paid') return { order, isNewlyPaid: false }
-      order = { ...order, status: 'paid', provider_order_id: providerOrderId, provider_transaction_id: 'sepay-tx-1' }
-      return { order, isNewlyPaid: true }
-    },
-    markOrderPaidFromBankTransfer: async (_orderId: string, transactionId: string) => {
+    confirmVerifiedPayment: async (_orderId: string, providerOrderId: string | null, transactionId: string, amount: number) => {
+      confirmationCalls.push({ orderId: _orderId, providerOrderId, transactionId, amount })
+      if (confirmationFailure) throw new Error('atomic database transaction failed')
+      if (amount !== order.amount) throw new Error('amount mismatch')
+      const wasPaid = order.status === 'paid'
+      if (order.provider_order_id && order.provider_order_id !== providerOrderId) {
+        throw new Error('SePay order reference does not match the stored payment reference.')
+      }
       if (order.status === 'paid') {
         if (order.provider_transaction_id !== transactionId) throw new Error('A different transaction has already paid this course order.')
-        return { order, isNewlyPaid: false }
+      } else {
+        if (!['pending', 'expired', 'failed', 'cancelled'].includes(order.status)) throw new Error('Course order is not payable')
+        order = { ...order, status: 'paid', provider_order_id: providerOrderId, provider_transaction_id: transactionId, paid_at: new Date().toISOString() }
       }
-      order = { ...order, status: 'paid', provider_transaction_id: transactionId, paid_at: new Date().toISOString() }
-      return { order, isNewlyPaid: true }
-    },
-    createEnrollment: async () => {
       enrollmentAttempts += 1
-      return { created: enrollmentAttempts === 1 }
+      if (!enrollmentExists) {
+        enrollmentExists = true
+        enrollmentCount += 1
+      }
+      activationAttempts += 1
+      return { order, isNewlyPaid: !wasPaid }
     },
   }
   return {
     service: new PaymentService(repository as never, {
-      releaseAfterEnrollmentAndSend: async () => { emailQueueAttempts += 1 },
+      releaseAfterEnrollmentAndSend: async () => {
+        emailQueueAttempts += 1
+        if (emailReleaseFailure) throw new Error('email outbox unavailable')
+      },
     }),
     getOrder: () => order,
     getEnrollmentAttempts: () => enrollmentAttempts,
+    getEnrollmentCount: () => enrollmentCount,
+    getActivationAttempts: () => activationAttempts,
     getEmailQueueAttempts: () => emailQueueAttempts,
+    getConfirmationCalls: () => confirmationCalls,
   }
 }
 
@@ -135,7 +152,15 @@ describe('SePay payment confirmation', () => {
     assert.equal(test.getOrder().status, 'paid')
     assert.equal(test.getOrder().provider_order_id, 'sepay-order-1')
     assert.equal(test.getEnrollmentAttempts(), 1)
+    assert.equal(test.getEnrollmentCount(), 1)
+    assert.equal(test.getActivationAttempts(), 1)
     assert.equal(test.getEmailQueueAttempts(), 1)
+    assert.deepEqual(test.getConfirmationCalls()[0], {
+      orderId: ORDER_ID,
+      providerOrderId: 'sepay-order-1',
+      transactionId: 'sepay-tx-1',
+      amount: 50000,
+    })
   })
 
   it('rejects a SePay order reference that differs from the stored reference', async () => {
@@ -158,6 +183,7 @@ describe('SePay payment confirmation', () => {
     assert.equal(result.status, 'paid')
     assert.equal(result.isNewlyPaid, false)
     assert.equal(test.getEnrollmentAttempts(), 2)
+    assert.equal(test.getEnrollmentCount(), 1)
     assert.equal(test.getEmailQueueAttempts(), 2)
   })
 
@@ -183,14 +209,52 @@ describe('SePay payment confirmation', () => {
     assert.equal(test.getEnrollmentAttempts(), 0)
   })
 
+  it('does not grant access when SePay reports a failed or pending transaction', async () => {
+    for (const transactionStatus of ['DECLINED', 'PENDING'] as const) {
+      const test = setup()
+      await assert.rejects(test.service.handleSePayWebhook(createEvent({
+        transaction: { ...createEvent().transaction, transaction_status: transactionStatus },
+      })), /approved payment/)
+      assert.equal(test.getOrder().status, 'pending')
+      assert.equal(test.getEnrollmentCount(), 0)
+      assert.equal(test.getActivationAttempts(), 0)
+    }
+  })
+
+  it('applies a delayed verified capture after local expiry atomically', async () => {
+    const test = setup('expired')
+    const result = await test.service.handleSePayWebhook(createEvent())
+    assert.equal(result.status, 'paid')
+    assert.equal(test.getOrder().status, 'paid')
+    assert.equal(test.getEnrollmentCount(), 1)
+  })
+
   for (const status of ['expired', 'failed', 'cancelled'] as const) {
-    it(`rejects payment for a ${status} order`, async () => {
+    it(`does not grant access for an unverified payment on a ${status} order`, async () => {
       const test = setup(status)
-      await assert.rejects(test.service.handleSePayWebhook(createEvent()), /no longer payable/)
+      await assert.rejects(test.service.handleSePayWebhook(createEvent({
+        transaction: { ...createEvent().transaction, transaction_status: 'DECLINED' },
+      })), /approved payment/)
       assert.equal(test.getOrder().status, status)
-      assert.equal(test.getEnrollmentAttempts(), 0)
+      assert.equal(test.getEnrollmentCount(), 0)
     })
   }
+
+  it('keeps the order pending and grants no access when the atomic database operation fails', async () => {
+    const test = setup('pending', 'found', true)
+    await assert.rejects(test.service.handleSePayWebhook(createEvent()), /atomic database transaction failed/)
+    assert.equal(test.getOrder().status, 'pending')
+    assert.equal(test.getEnrollmentCount(), 0)
+    assert.equal(test.getActivationAttempts(), 0)
+  })
+
+  it('keeps the committed payment and enrollment when post-commit email release fails', async () => {
+    const test = setup('pending', 'found', false, true)
+    await assert.rejects(test.service.handleSePayWebhook(createEvent()), /email outbox unavailable/)
+    assert.equal(test.getOrder().status, 'paid')
+    assert.equal(test.getEnrollmentCount(), 1)
+    assert.equal(test.getActivationAttempts(), 1)
+  })
 
   it('rejects mismatched amounts, currencies, and unapproved state', async () => {
     const amountTest = setup()
@@ -217,6 +281,56 @@ describe('SePay payment confirmation', () => {
   })
 })
 
+describe('SePay pending order reuse', () => {
+  it('reuses an existing pending order and its payment reference instead of creating another', async () => {
+    const original = {
+      mode: env.sepayCheckoutMode,
+      bankCode: env.sepayBankCode,
+      bankName: env.sepayBankName,
+      accountNumber: env.sepayAccountNumber,
+      accountName: env.sepayAccountName,
+    }
+    Object.assign(env, {
+      sepayCheckoutMode: 'direct_qr',
+      sepayBankCode: 'TESTBANK',
+      sepayBankName: 'Test Bank',
+      sepayAccountNumber: '1234567890',
+      sepayAccountName: 'Test Recipient',
+    })
+    const pendingOrder = { ...createOrder('pending'), expired_at: new Date(Date.now() + 60_000).toISOString() }
+    let createCalls = 0
+    const repository = {
+      findPublishedCourse: async () => ({
+        id: COURSE_ID,
+        title: 'English course',
+        slug: 'english-course',
+        description: null,
+        thumbnail_url: null,
+        price: 50000,
+        discounted_price: null,
+      }),
+      findStudentSummary: async () => ({ id: STUDENT_ID, fullName: 'Student', email: 'student@example.test', phoneNumber: null }),
+      findPendingOrderForStudentCourse: async () => pendingOrder,
+      createOrder: async () => { createCalls += 1; return pendingOrder },
+    }
+    try {
+      const result = await new PaymentService(repository as never).createOrder({ studentId: STUDENT_ID, courseId: COURSE_ID })
+      assert.equal(result.order.id, pendingOrder.id)
+      assert.equal(result.paymentInformation?.transferContent, pendingOrder.transfer_content)
+      assert.equal(result.course.price, pendingOrder.amount)
+      assert.equal(createCalls, 0)
+    } finally {
+      Object.assign(env, {
+        sepayCheckoutMode: original.mode,
+        sepayBankCode: original.bankCode,
+        sepayBankName: original.bankName,
+        sepayAccountNumber: original.accountNumber,
+        sepayAccountName: original.accountName,
+      })
+    }
+  })
+})
+
 describe('SePay direct bank QR payment confirmation', () => {
   it('verifies incoming account, exact memo and amount before enrolling', async () => {
     const previousAccount = env.sepayAccountNumber
@@ -229,6 +343,12 @@ describe('SePay direct bank QR payment confirmation', () => {
       assert.equal(test.getOrder().status, 'paid')
       assert.equal(test.getEnrollmentAttempts(), 1)
       assert.equal(test.getEmailQueueAttempts(), 1)
+      assert.deepEqual(test.getConfirmationCalls()[0], {
+        orderId: ORDER_ID,
+        providerOrderId: null,
+        transactionId: '717171',
+        amount: 50000,
+      })
     } finally {
       Object.assign(env, { sepayAccountNumber: previousAccount })
     }
@@ -262,12 +382,15 @@ describe('SePay direct bank QR payment confirmation', () => {
     }
   })
 
-  it('rejects expired orders and a different transaction for an already-paid order', async () => {
+  it('recovers a delayed verified transfer after expiry and rejects a different transaction for paid orders', async () => {
     const previousAccount = env.sepayAccountNumber
     Object.assign(env, { sepayAccountNumber: '0012345678' })
     try {
-      await assert.rejects(setup('expired').service.handleSePayBankWebhook(createBankEvent()), /no longer payable/)
-      await assert.rejects(setup('paid').service.handleSePayBankWebhook(createBankEvent()), /different transaction/)
+      const delayed = setup('expired')
+      const result = await delayed.service.handleSePayBankWebhook(createBankEvent())
+      assert.equal(result.status, 'paid')
+      assert.equal(delayed.getEnrollmentCount(), 1)
+      await assert.rejects(setup('paid').service.handleSePayBankWebhook(createBankEvent()), /payment reference|different transaction/)
     } finally {
       Object.assign(env, { sepayAccountNumber: previousAccount })
     }

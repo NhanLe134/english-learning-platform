@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { QuanLyNguoiDungPage } from './pages/quan_ly_nguoi_dung'
+import { QuanLyThanhToanPage } from './pages/quan_ly_thanh_toan'
 import { HomePage } from './pages/home/HomePage'
 import { AboutPage } from './pages/about/AboutPage'
 import { EbooksPage } from './pages/ebooks/EbooksPage'
@@ -10,6 +11,8 @@ import { OAuthCallbackPage } from './pages/auth/OAuthCallbackPage'
 import { CourseManagementPage } from './pages/courses/CourseManagementPage'
 import { CourseDetailPage } from './pages/courses/CourseDetailPage'
 import { CourseListPage } from './pages/courses/CourseListPage'
+import { StudentCoursesPage } from './pages/courses/StudentCoursesPage'
+import { StudentCourseDetailPage } from './pages/courses/StudentCourseDetailPage'
 import { CheckoutPage } from './pages/checkout/CheckoutPage'
 import { CheckoutSuccessPage } from './pages/checkout/CheckoutSuccessPage'
 import { WorkshopsPage } from './pages/workshops/WorkshopsPage'
@@ -38,12 +41,9 @@ function AppRoutes() {
       if (isAdminRoute) {
         window.location.replace('/login')
       } else if (isAuthPage) {
-        const hasSelectedCourse = Boolean(new URLSearchParams(window.location.search).get('courseId'))
-        window.location.replace(
-          pathname === '/register' && !hasSelectedCourse
-            ? '/courses'
-            : `/checkout${window.location.search}`
-        )
+        // Redirect to role-appropriate default page – never blindly redirect to /checkout.
+        // The checkout flow itself will navigate here when needed.
+        window.location.replace('/my-courses')
       }
     } else {
       // Chưa đăng nhập mà truy cập route admin
@@ -82,7 +82,7 @@ function AppRoutes() {
     if (user && isAuthPage) {
       return (
         <main className="auth-route-status" role="status">
-          Đang chuyển đến trang thanh toán…
+          Đang chuyển đến trang khóa học…
         </main>
       )
     }
@@ -93,16 +93,38 @@ function AppRoutes() {
     case '/admin/users':
       page = <QuanLyNguoiDungPage />
       break
+    case '/admin/payments':
+      page = <QuanLyThanhToanPage />
+      break
     case '/admin/courses':
       page = <CourseManagementPage />
       break
+    case '/about':
+    case '/ve-chung-toi':
+      page = <AboutPage />
+      break
     case '/courses':
     case '/khoa-hoc':
-      page = <CourseListPage />
+      page = user?.role === 'STUDENT' ? <StudentCoursesPage /> : <CourseListPage />
+      break
+    case '/student/courses':
+    case '/my-courses':
+    case '/student':
+    case '/khoa-hoc-cua-toi':
+      page = <StudentCoursesPage />
       break
     case '/ebooks':
+    case '/ebook':
     case '/sach-dien-tu':
       page = <EbooksPage />
+      break
+    case '/workshops':
+    case '/workshop':
+      page = <WorkshopsPage />
+      break
+    case '/contact':
+    case '/lien-he':
+      page = <ContactPage />
       break
     case '/register':
       page = <RegisterPage />
@@ -122,20 +144,7 @@ function AppRoutes() {
     case '/thanh-toan/thanh-cong':
       page = <CheckoutSuccessPage />
       break
-    case '/about':
-      page = <AboutPage />
-      break
-    case '/workshops':
-    case '/workshop':
-      page = <WorkshopsPage />
-      break
-    case '/contact':
-    case '/lien-he':
-      page = <ContactPage />
-      break
     case '/home':
-      page = <HomePage />
-      break
     case '/':
       page = <HomePage />
       break
@@ -144,10 +153,24 @@ function AppRoutes() {
       break
     default:
       {
+        const studentCourseRoute = pathname.match(
+          /^\/(?:student\/courses?|my-courses|khoa-hoc-cua-toi)\/([^/]+)$/
+        )
+        if (studentCourseRoute && studentCourseRoute[1]) {
+          page = <StudentCourseDetailPage courseSlug={decodeURIComponent(studentCourseRoute[1])} />
+          break
+        }
+
         const courseRoute = pathname.match(/^\/(?:courses|khoa-hoc)\/([^/]+)$/)
-        page = courseRoute
-          ? <CourseDetailPage identifier={decodeURIComponent(courseRoute[1])} />
-          : <CourseListPage />
+        if (courseRoute && courseRoute[1]) {
+          const decodedSlug = decodeURIComponent(courseRoute[1])
+          page = user?.role === 'STUDENT'
+            ? <StudentCourseDetailPage courseSlug={decodedSlug} />
+            : <CourseDetailPage identifier={decodedSlug} />
+          break
+        }
+
+        page = user?.role === 'STUDENT' ? <StudentCoursesPage /> : <CourseListPage />
       }
   }
   return (

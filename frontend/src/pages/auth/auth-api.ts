@@ -5,6 +5,10 @@ const API_BASE_URL = (
 ).replace(/\/+$/, '')
 
 export function startGoogleOAuth(): void {
+  const paymentOrderId = new URLSearchParams(window.location.search).get('paymentOrderId')
+  if (paymentOrderId && /^[0-9a-f-]{36}$/i.test(paymentOrderId)) {
+    try { sessionStorage.setItem('your-voice-pending-payment-order-id', paymentOrderId) } catch { /* Optional redirect context. */ }
+  }
   window.location.assign(`${API_BASE_URL}/auth/google`)
 }
 

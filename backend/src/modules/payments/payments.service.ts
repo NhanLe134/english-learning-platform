@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { env } from '../../config/env.js'
+import { createSupabaseClient } from '../../config/supabase.js'
 import { buildSePayVietQrImageUrl, getSePayClient } from '../../config/sepay.js'
 import { PaymentWebhookError } from './payments.errors.js'
 import { courseService } from '../courses/course.service.js'
@@ -12,8 +13,12 @@ import {
   paymentOrderRepository,
 } from './payments.repository.js'
 import type {
+  AdminOrderDetail,
+  AdminOrderListItem,
+  AdminOrderQueryParams,
   PaymentOrder,
   PaymentOrderStatus,
+  PaymentStatistics,
   SePayWebhookEvent,
   SePayBankTransactionWebhook,
   VerifyPaymentResult,
@@ -60,22 +65,25 @@ export class PaymentService {
     const amount = course.discounted_price ?? course.price
     if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error('Course price is invalid.')
     const sepay = env.sepayCheckoutMode === 'hosted' ? getSePayClient() : null
-    const id = randomUUID()
-    const transferContent = `DH${id}`
-    const order = await this.repository.createOrder({
-      ...input,
-      id,
-      amount,
-      transferContent,
-      expiredAt: new Date(Date.now() + ORDER_HOLD_MINUTES * 60 * 1000).toISOString(),
-    })
+    const existingOrder = await this.repository.findPendingOrderForStudentCourse(input.studentId, input.courseId)
+    let order = existingOrder
+    if (!order) {
+      const id = randomUUID()
+      order = await this.repository.createOrder({
+        ...input,
+        id,
+        amount,
+        transferContent: `DH${id}`,
+        expiredAt: new Date(Date.now() + ORDER_HOLD_MINUTES * 60 * 1000).toISOString(),
+      })
+    }
     const checkoutFields = sepay?.checkout.initOneTimePaymentFields({
       operation: 'PURCHASE',
       payment_method: 'BANK_TRANSFER',
-      order_invoice_number: transferContent,
+      order_invoice_number: order.transfer_content,
       order_amount: order.amount,
       currency: 'VND',
-      order_description: `Course: ${course.title} (${transferContent})`,
+      order_description: `Course: ${course.title} (${order.transfer_content})`,
       customer_id: order.student_id,
       success_url: `${env.frontendUrl}/checkout/success?orderId=${encodeURIComponent(order.id)}`,
       error_url: `${env.frontendUrl}/checkout?payment=error&orderId=${encodeURIComponent(order.id)}`,
@@ -97,11 +105,17 @@ export class PaymentService {
         slug: course.slug,
         description: course.description,
         thumbnailUrl: course.thumbnail_url,
-        price: amount,
+        price: order.amount,
         originalPrice: course.price,
         quantity: 1,
       },
     }
+  }
+
+  async createGuestOrder(input: { email: string; courseId: string }): ReturnType<PaymentService['createOrder']> {
+    const student = await this.repository.findVerifiedStudentByEmail(input.email)
+    if (!student) throw new PaymentWebhookError('Verify the registration email before creating a payment order.', 403)
+    return this.createOrder({ studentId: student.id, courseId: input.courseId })
   }
 
   async getOrder(orderId: string): Promise<PaymentOrder | null> {
@@ -118,6 +132,10 @@ export class PaymentService {
 
   async getCourseDetails(courseId: string) {
     return courseService.getCourseForPaidOrder(courseId)
+  }
+
+  async hasActiveEnrollment(studentId: string, courseId: string): Promise<boolean> {
+    return this.repository.hasActiveEnrollment(studentId, courseId)
   }
 
   async expireStaleOrders(): Promise<void> {
@@ -143,8 +161,18 @@ export class PaymentService {
     // is its own UUID; order.order_id is the gateway reference persisted below.
     const order = await this.repository.findOrderByTransferContent(invoiceNumber)
     if (!order) {
+      console.warn('[SePayWebhook] order lookup missed', {
+        merchantInvoice: maskDiagnosticValue(invoiceNumber),
+      })
       throw new PaymentWebhookError(`Course order not found for invoice number: ${invoiceNumber}`, 404)
     }
+    console.info('[SePayWebhook] order lookup matched', {
+      orderId: maskDiagnosticValue(order.id),
+      status: order.status,
+      amount: order.amount,
+      currency: order.currency,
+      hasStoredProviderReference: Boolean(order.provider_order_id),
+    })
     if (order.provider_order_id && order.provider_order_id !== sepayOrderId) {
       throw new PaymentWebhookError('SePay payment reference does not match the stored reference.', 422)
     }
@@ -165,13 +193,18 @@ export class PaymentService {
       )
     }
 
-    if (order.status === 'expired' || order.status === 'cancelled' || order.status === 'failed') throw new PaymentWebhookError('Order is no longer payable.', 422)
-    const result = await this.repository.markOrderPaid(order.id, sepayOrderId, transactionId, amountIn)
+    const result = await this.repository.confirmVerifiedPayment(order.id, sepayOrderId, transactionId, amountIn)
+    if (result.order.status !== 'paid') {
+      throw new Error('Verified payment was not committed as paid; course access was not granted.')
+    }
+    console.info('[SePayWebhook] paid transition result', {
+      orderId: maskDiagnosticValue(result.order.id),
+      status: result.order.status,
+      newlyPaid: result.isNewlyPaid,
+    })
 
-    // Retry enrollment when payment was committed but an earlier IPN failed before enrollment.
-    await this.repository.createEnrollment(order.student_id, order.course_id)
-    // The database creates the unique outbox row atomically with the paid transition.
-    // Release it only after enrollment succeeds; email errors never undo payment.
+    // The database commits payment, enrollment, and account activation together.
+    // Release the email outbox only after that transaction commits.
     await this.confirmationEmails.releaseAfterEnrollmentAndSend(order.id)
 
     return {
@@ -208,12 +241,10 @@ export class PaymentService {
     if (order.currency !== 'VND' || amount !== order.amount) {
       throw new PaymentWebhookError('Bank transfer amount or currency does not match the order.', 422)
     }
-    if (order.status === 'expired' || order.status === 'cancelled' || order.status === 'failed') {
-      throw new PaymentWebhookError('Order is no longer payable.', 422)
+    const result = await this.repository.confirmVerifiedPayment(order.id, null, String(event.id), amount)
+    if (result.order.status !== 'paid') {
+      throw new Error('Verified bank transfer was not committed as paid; course access was not granted.')
     }
-
-    const result = await this.repository.markOrderPaidFromBankTransfer(order.id, String(event.id))
-    await this.repository.createEnrollment(order.student_id, order.course_id)
     await this.confirmationEmails.releaseAfterEnrollmentAndSend(order.id)
 
     return {
@@ -225,6 +256,114 @@ export class PaymentService {
       isNewlyPaid: result.isNewlyPaid,
     }
   }
+
+  /* ============================================================
+     Admin Payment Management service methods
+     ============================================================ */
+
+  async getAdminOrders(params: AdminOrderQueryParams): Promise<{
+    items: AdminOrderListItem[]
+    total: number
+    page: number
+    limit: number
+    totalPages: number
+  }> {
+    return this.repository.findAdminOrders(params)
+  }
+
+  async getAdminOrderDetail(orderId: string): Promise<AdminOrderDetail | null> {
+    return this.repository.findAdminOrderById(orderId)
+  }
+
+  async getPaymentStatistics(): Promise<PaymentStatistics> {
+    return this.repository.getPaymentStatistics()
+  }
+
+  /**
+   * Reconcile a paid order that is missing a course enrollment.
+   * Only acts when the order is already 'paid' and no active enrollment exists.
+   * Creates the enrollment and logs the admin action.
+   * Does NOT re-verify the payment with SePay — the order must already be paid.
+   */
+  async recordAdminView(orderId: string, adminId: string): Promise<void> {
+    await this.repository.logAdminPaymentAction(adminId, orderId, 'view', null)
+  }
+
+  async reconcileOrder(orderId: string, adminId: string): Promise<{
+    orderId: string
+    status: string
+    enrollmentCreated: boolean
+    enrollmentId: string | null
+    enrollmentStatus: string | null
+    message: string
+  }> {
+    const order = await this.repository.findAdminOrderById(orderId)
+    if (!order) {
+      throw new Error('Không tìm thấy đơn hàng.')
+    }
+
+    const alreadyHasEnrollment = Boolean(order.enrollmentId && order.enrollmentStatus)
+    if (alreadyHasEnrollment) {
+      await this.repository.logAdminPaymentAction(adminId, orderId, 'reconcile_enrollment', {
+        skipped: true,
+        reason: 'Enrollment already exists',
+        existingEnrollmentId: order.enrollmentId,
+        existingEnrollmentStatus: order.enrollmentStatus,
+      })
+      return {
+        orderId: order.orderId,
+        status: order.status,
+        enrollmentCreated: false,
+        enrollmentId: order.enrollmentId,
+        enrollmentStatus: order.enrollmentStatus,
+        message: 'Đơn hàng đã có đăng ký khóa học rồi.',
+      }
+    }
+
+    if (order.status !== 'paid') {
+      await this.repository.logAdminPaymentAction(adminId, orderId, 'reconcile_enrollment', {
+        skipped: true,
+        reason: 'Order is not paid',
+        currentStatus: order.status,
+      })
+      throw new Error('Chỉ có thể khôi phục đăng ký cho đơn hàng đã thanh toán (status = paid).')
+    }
+
+    // Create the enrollment
+    const enrollment = await this.repository.createEnrollment(order.studentId, order.courseId)
+
+    // Activate profile if pending
+    await createSupabaseClient()
+      .from('profiles')
+      .update({ status: 'active' })
+      .eq('id', order.studentId)
+      .eq('status', 'pending')
+
+    await this.repository.logAdminPaymentAction(adminId, orderId, 'reconcile_enrollment', {
+      skipped: false,
+      studentId: order.studentId,
+      courseId: order.courseId,
+      newEnrollmentId: enrollment.id,
+      newEnrollmentStatus: enrollment.status,
+    })
+
+    return {
+      orderId: order.orderId,
+      status: order.status,
+      enrollmentCreated: true,
+      enrollmentId: enrollment.id,
+      enrollmentStatus: enrollment.status,
+      message: 'Đã khôi phục đăng ký khóa học cho đơn hàng đã thanh toán.',
+    }
+  }
+
+  /* ============================================================ */
+
+}
+
+function maskDiagnosticValue(value: string): string {
+  if (value.length <= 8) return `${value.slice(0, 2)}***`
+  return `${value.slice(0, 4)}***${value.slice(-4)}`
 }
 
 export const paymentService = new PaymentService()

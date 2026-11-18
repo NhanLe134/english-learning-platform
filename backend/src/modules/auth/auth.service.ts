@@ -516,9 +516,13 @@ export class AuthService {
         error
       )
     }
-    if (!user || user.status !== 'active' || user.is_verified !== true) {
+    if (!user || user.is_verified !== true) {
       throw genericCredentialsError()
     }
+    if (user.status === 'pending') {
+      throw new AuthError('Complete course payment before logging in.', 403)
+    }
+    if (user.status !== 'active') throw genericCredentialsError()
     try {
       return await this.createSession(user)
     } catch (error) {
@@ -580,6 +584,9 @@ export class AuthService {
           throw new AuthError('Không thể tạo tài khoản Google trong cơ sở dữ liệu.', 503, error)
         }
       }
+    }
+    if (user.status === 'pending') {
+      throw new AuthError('Complete course payment before logging in.', 403)
     }
     if (user.status !== 'active') {
       throw new AuthError('Tài khoản này đã bị khóa hoặc ngừng hoạt động.', 403)

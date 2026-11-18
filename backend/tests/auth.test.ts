@@ -117,6 +117,7 @@ class FakeUsers {
       email,
       full_name: fullName,
       phone_number: phoneNumber,
+      status: 'pending',
       is_verified: false,
     }
     this.createdRegistrationDetails = { fullName, dateOfBirth, phoneNumber, selectedCourseIds }
@@ -141,6 +142,7 @@ class FakeUsers {
       email: normalizedEmail,
       full_name: fullName,
       avatar_url: avatarUrl,
+      status: 'pending',
       is_verified: true,
     }
     this.createdRole = user.role
@@ -579,6 +581,9 @@ describe('authentication service', () => {
     assert.equal(user.is_verified, true)
     assert.equal(store.sessions.size, 0)
 
+    await expectAuthError(() => service.login(user.email, 'A-long-password-123'), 403)
+    assert.equal(store.sessions.size, 0)
+    user.status = 'active' // Simulate the verified payment callback activating the account.
     const tokens = await service.login(user.email, 'A-long-password-123')
     assert.equal(tokens.user.id, user.id)
     assert.equal(store.sessions.size, 1)
@@ -1150,7 +1155,7 @@ describe('authentication service', () => {
     await expectAuthError(() => service.authenticateAccessToken(tampered), 401)
   })
 
-  it('creates a student account for a new Google identity and logs it in', async () => {
+  it('blocks Google login for a new identity until payment activates the account', async () => {
     const { service, users } = setup()
     const result = await service.loginWithGoogle({
       developmentDemoUser: {
@@ -1173,20 +1178,17 @@ describe('authentication service', () => {
     assert.equal(secondLogin.user.id, result.user.id)
     assert.equal(users.users.size, 1)
 
-    const newAccount = await service.loginWithGoogle({
+    await expectAuthError(() => service.loginWithGoogle({
       developmentDemoUser: {
         email: 'new-google@example.test',
         name: 'New Google Learner',
         avatarUrl: 'https://example.test/new-avatar.png',
       },
-    })
-    assert.equal(newAccount.user.email, 'new-google@example.test')
-    assert.equal(newAccount.user.role, 'STUDENT')
+    }), 403)
     assert.equal(users.users.size, 2)
-    assert.equal(
-      [...users.users.values()].find((user) => user.email === 'new-google@example.test')?.avatar_url,
-      'https://example.test/new-avatar.png'
-    )
+    const newAccount = [...users.users.values()].find((user) => user.email === 'new-google@example.test')
+    assert.equal(newAccount?.avatar_url, 'https://example.test/new-avatar.png')
+    assert.equal(newAccount?.status, 'pending')
   })
 
   it('returns verified Google profile details for the registration form', async () => {

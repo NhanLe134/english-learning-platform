@@ -5,6 +5,7 @@ import type {
   CourseCatalogEntry,
   CourseLevel,
   CourseListFilters,
+  EnrolledCourseItem,
   ManagedCourse,
   ManagedCourseInput,
   ManagedCoursePage,
@@ -73,6 +74,13 @@ export class CourseService {
       throw new CourseRequestError('The course catalog is not configured.', 503)
     }
     return this.repository.findPublishedCourses()
+  }
+
+  async getEnrolledCourses(studentId: string): Promise<EnrolledCourseItem[]> {
+    if (!studentId || !UUID_PATTERN.test(studentId)) {
+      throw new CourseRequestError('Invalid student ID.', 400)
+    }
+    return this.repository.findEnrolledCourses(studentId)
   }
 
   async getPublishedCourse(identifier: string): Promise<CourseCatalogEntry | null> {

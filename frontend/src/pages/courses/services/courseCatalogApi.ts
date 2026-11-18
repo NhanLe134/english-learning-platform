@@ -101,6 +101,23 @@ async function requestCourseData<T>(path: string): Promise<T> {
   return result.data
 }
 
+export interface BackendEnrolledCourse {
+  id: string
+  course_id: string
+  title: string
+  slug: string
+  category: string
+  level: string
+  thumbnail_url: string | null
+  total_lessons: number
+  completed_lessons: number
+  progress_percent: number
+  status: 'in_progress' | 'completed'
+  enrolled_at: string
+  last_active: string | null
+  teacher: { id: string; full_name: string; avatar_url: string | null } | null
+}
+
 export const courseCatalogApi = {
   async list(): Promise<CourseReference[]> {
     const data = await requestCourseData<CourseCatalogRecord[]>('catalog')
@@ -108,6 +125,30 @@ export const courseCatalogApi = {
       return []
     }
     return data.map(mapCourseCatalogRecord)
+  },
+
+  async getMyCourses(accessToken: string): Promise<BackendEnrolledCourse[]> {
+    if (!accessToken) return []
+    let response: Response
+    try {
+      response = await fetch(`${API_BASE_URL}/courses/my-courses`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      })
+    } catch {
+      return []
+    }
+
+    try {
+      const result = await response.json() as ApiResponse<BackendEnrolledCourse[]>
+      if (response.ok && result.success && Array.isArray(result.data)) {
+        return result.data
+      }
+      return []
+    } catch {
+      return []
+    }
   },
 
   async get(identifier: string): Promise<CourseReference> {

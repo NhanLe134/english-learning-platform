@@ -231,7 +231,7 @@ export class AuthRepository {
       )
       const { rows: verifiedRows } = await client.query(
         `UPDATE public.profiles
-         SET is_verified = true, updated_at = $2
+         SET is_verified = true, status = 'pending', updated_at = $2
          WHERE id = $1 AND is_verified = false
          RETURNING id, email, full_name, nickname, phone_number, role,
                    avatar_url, status, is_verified, created_at, updated_at`,
@@ -323,7 +323,7 @@ export class AuthRepository {
            status, is_verified, created_at, updated_at)
          VALUES
           (gen_random_uuid(), $1, $2, NULL, NULL, 'STUDENT',
-           $3, 'active', true, now(), now())
+           $3, 'pending', true, now(), now())
          RETURNING ${USER_COLUMNS}`,
         [email.trim().toLowerCase(), fullName.trim(), avatarUrl]
       )

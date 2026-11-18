@@ -2,7 +2,7 @@ import { reasons } from '../home-data'
 
 export function AboutSection() {
   return (
-    <section className="bg-white">
+    <section id="ve-chung-toi" className="bg-white">
       <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
         <div className="mx-auto max-w-2xl text-center">
           <p className="text-xs font-bold uppercase tracking-widest text-brand-600">

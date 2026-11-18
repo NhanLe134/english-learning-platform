@@ -15,6 +15,7 @@ interface ApiResponse<T> {
 
 interface CreateOrderRequest {
   courseId: string
+  email?: string
 }
 
 export interface CreateOrderResponse {
@@ -63,6 +64,7 @@ interface RawOrderStatusResponse {
   createdAt: string
   courseDetails: CourseCatalogRecord | null
   courseDetailsUnavailable: boolean
+  enrollmentExists: boolean | null
 }
 
 export interface OrderStatusResponse extends Omit<RawOrderStatusResponse, 'courseDetails'> {
@@ -105,10 +107,10 @@ export const sepayApi = {
     input: CreateOrderRequest,
     accessToken: string | null,
   ): Promise<CreateOrderResponse> {
-    const response = await request<CreateOrderResponse>('/orders', {
+    const response = await request<CreateOrderResponse>(accessToken ? '/orders' : '/orders/guest', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
+      body: JSON.stringify(accessToken ? { courseId: input.courseId } : input),
     }, accessToken)
     if (!response.data) throw new Error('Máy chủ không trả về đơn hàng.')
     return response.data
@@ -119,7 +121,7 @@ export const sepayApi = {
     accessToken: string | null,
   ): Promise<OrderStatusResponse> {
     const response = await request<RawOrderStatusResponse>(
-      `/orders/${encodeURIComponent(orderId)}`,
+      `/orders/${encodeURIComponent(orderId)}${accessToken ? '' : '/public'}`,
       { method: 'GET', cache: 'no-store' },
       accessToken,
     )

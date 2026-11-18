@@ -42,6 +42,7 @@ const tags = [
   { name: 'Authentication' },
   { name: 'Courses', description: 'Public course selection and ADMIN-only course management.' },
   { name: 'User Management', description: 'ADMIN-only user administration endpoints.' },
+  { name: 'Payment Management', description: 'ADMIN-only payment order management, reconciliation, and audit.' },
 ]
 
 const adminSecurity = [{ bearerAuth: [] }]
@@ -117,6 +118,20 @@ export const openApiDocument = {
         responses: {
           '200': jsonResponse('Published course catalog'),
           '503': jsonResponse('Course catalog is not configured', {
+            $ref: '#/components/schemas/ErrorResponse',
+          }),
+        },
+      },
+    },
+    '/api/courses/my-courses': {
+      get: {
+        tags: ['Courses'],
+        summary: 'List enrolled courses for the authenticated student',
+        operationId: 'getMyEnrolledCourses',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          '200': jsonResponse('Enrolled courses list'),
+          '401': jsonResponse('Authentication required', {
             $ref: '#/components/schemas/ErrorResponse',
           }),
         },
@@ -527,6 +542,58 @@ export const openApiDocument = {
         },
       },
     },
+    '/api/payment/admin/orders': {
+      get: {
+        tags: ['Payment Management'],
+        summary: 'List payment orders with filters',
+        description: 'ADMIN only. Returns paginated course orders with student, course, and enrollment details.',
+        operationId: 'listAdminPaymentOrders',
+        security: adminSecurity,
+        parameters: [
+          { in: 'query', name: 'search', schema: { type: 'string' }, description: 'Search student name, email, course title, or transfer content.' },
+          { in: 'query', name: 'status', schema: { type: 'string', enum: ['ALL', 'pending', 'paid', 'failed', 'expired', 'cancelled'], default: 'ALL' } },
+          { in: 'query', name: 'enrollment', schema: { type: 'string', enum: ['ALL', 'has_enrollment', 'missing_enrollment'], default: 'ALL' } },
+          { in: 'query', name: 'dateFrom', schema: { type: 'string', format: 'date-time' } },
+          { in: 'query', name: 'dateTo', schema: { type: 'string', format: 'date-time' } },
+          { in: 'query', name: 'page', schema: { type: 'integer', minimum: 1, default: 1 } },
+          { in: 'query', name: 'limit', schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 } },
+          { in: 'query', name: 'sortBy', schema: { type: 'string', enum: ['created_at', 'paid_at', 'amount', 'student_name', 'course_title'], default: 'created_at' } },
+          { in: 'query', name: 'sortOrder', schema: { type: 'string', enum: ['asc', 'desc'], default: 'desc' } },
+        ],
+        responses: {
+          '200': jsonResponse('Paginated payment orders', { $ref: '#/components/schemas/PaginatedAdminPaymentOrdersResponse' }),
+          ...adminResponses,
+        },
+      },
+    },
+    '/api/payment/admin/orders/{orderId}': {
+      get: {
+        tags: ['Payment Management'],
+        summary: 'Get payment order detail',
+        description: 'ADMIN only. Returns a single order with full student, course, and enrollment information.',
+        operationId: 'getAdminPaymentOrderDetail',
+        security: adminSecurity,
+        parameters: [{ in: 'path', name: 'orderId', required: true, schema: { type: 'string', format: 'uuid' } }],
+        responses: {
+          '200': jsonResponse('Payment order detail', { $ref: '#/components/schemas/AdminPaymentOrderResponse' }),
+          '404': jsonResponse('Order not found', { $ref: '#/components/schemas/ErrorResponse' }),
+          ...adminResponses,
+        },
+      },
+      post: {
+        tags: ['Payment Management'],
+        summary: 'Reconcile enrollment for a paid order',
+        description: 'ADMIN only. If the order is paid but has no enrollment, creates the enrollment and activates the student profile. Does not re-verify the payment with SePay.',
+        operationId: 'reconcileAdminPaymentOrder',
+        security: adminSecurity,
+        parameters: [{ in: 'path', name: 'orderId', required: true, schema: { type: 'string', format: 'uuid' } }],
+        responses: {
+          '200': jsonResponse('Reconciliation result', { $ref: '#/components/schemas/ReconcileOrderResponse' }),
+          '404': jsonResponse('Order not found', { $ref: '#/components/schemas/ErrorResponse' }),
+          ...adminResponses,
+        },
+      },
+    },
   },
   components: {
     securitySchemes: {
@@ -907,6 +974,73 @@ export const openApiDocument = {
         properties: {
           success: { type: 'boolean', example: true },
           data: { $ref: '#/components/schemas/PublicUser' },
+        },
+      },
+      AdminPaymentOrder: {
+        type: 'object',
+        required: ['orderId', 'studentId', 'studentName', 'studentEmail', 'courseId', 'courseTitle', 'amount', 'currency', 'status', 'transferContent', 'createdAt', 'enrollmentStatus', 'needsAttention'],
+        properties: {
+          orderId: { type: 'string', format: 'uuid' },
+          studentId: { type: 'string', format: 'uuid' },
+          studentName: { type: 'string' },
+          studentEmail: { type: 'string', format: 'email' },
+          studentPhone: { type: 'string', nullable: true },
+          courseId: { type: 'string', format: 'uuid' },
+          courseTitle: { type: 'string' },
+          courseSlug: { type: 'string', nullable: true },
+          amount: { type: 'number' },
+          currency: { type: 'string' },
+          status: { type: 'string', enum: ['pending', 'paid', 'failed', 'expired', 'cancelled'] },
+          transferContent: { type: 'string' },
+          providerTransactionId: { type: 'string', nullable: true },
+          providerOrderId: { type: 'string', nullable: true },
+          paidAt: { type: 'string', format: 'date-time', nullable: true },
+          expiredAt: { type: 'string', format: 'date-time', nullable: true },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+          enrollmentStatus: { type: 'string', enum: ['active', 'completed', 'cancelled'], nullable: true },
+          enrollmentId: { type: 'string', format: 'uuid', nullable: true },
+          needsAttention: { type: 'boolean' },
+        },
+      },
+      PaginatedAdminPaymentOrdersResponse: {
+        type: 'object',
+        properties: {
+          success: { type: 'boolean', example: true },
+          data: { type: 'array', items: { $ref: '#/components/schemas/AdminPaymentOrder' } },
+          pagination: {
+            type: 'object',
+            properties: {
+              page: { type: 'integer' },
+              limit: { type: 'integer' },
+              total: { type: 'integer' },
+              totalPages: { type: 'integer' },
+            },
+          },
+        },
+      },
+      AdminPaymentOrderResponse: {
+        type: 'object',
+        properties: {
+          success: { type: 'boolean', example: true },
+          data: { $ref: '#/components/schemas/AdminPaymentOrder' },
+        },
+      },
+      ReconcileOrderResponse: {
+        type: 'object',
+        properties: {
+          success: { type: 'boolean', example: true },
+          message: { type: 'string' },
+          data: {
+            type: 'object',
+            properties: {
+              orderId: { type: 'string', format: 'uuid' },
+              status: { type: 'string' },
+              enrollmentCreated: { type: 'boolean' },
+              enrollmentId: { type: 'string', format: 'uuid', nullable: true },
+              enrollmentStatus: { type: 'string', nullable: true },
+            },
+          },
         },
       },
       ApiResponse: {

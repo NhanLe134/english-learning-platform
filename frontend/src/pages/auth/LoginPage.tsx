@@ -7,10 +7,13 @@ import {
   Mail,
   ShieldCheck,
 } from 'lucide-react'
-import { GoogleAuthButton, LoginVisual, SiteFooter, SiteHeader } from './AuthShared'
+import { GoogleAuthButton, LoginVisual } from './AuthShared'
+import { SiteHeader } from '../../components/layout/SiteHeader'
+import { SiteFooter } from '../../components/layout/SiteFooter'
 import { useAuth } from './auth-context'
 import { authApi, getErrorMessage } from './auth-api'
 import { initiateGoogleSignIn } from './google-auth'
+import { sepayApi } from '../checkout/sepayApi'
 import './login-page.css'
 
 export function LoginPage() {
@@ -25,13 +28,40 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false)
   const { setSession } = useAuth()
 
-  function handleAuthSuccess(session: import('./auth-api').AuthSession) {
+  async function handleAuthSuccess(session: import('./auth-api').AuthSession) {
     setSession(session)
+    // Admin redirect
     if (session.user.role === 'ADMIN') {
       window.location.assign('/admin/users')
-    } else {
-      window.location.assign(`/checkout${window.location.search}`)
+      return
     }
+    // Payment flow handling
+    const paymentOrderId = new URLSearchParams(window.location.search).get('paymentOrderId')
+    if (paymentOrderId) {
+      try {
+        const order = await sepayApi.getOrderStatus(paymentOrderId, session.accessToken)
+        if (order.status !== 'paid' || !order.courseDetails?.slug) {
+          throw new Error('Chưa tìm thấy giao dịch thanh toán thành công cho tài khoản này.')
+        }
+        if (order.enrollmentExists !== true) {
+          window.location.assign(`/checkout/success?orderId=${encodeURIComponent(paymentOrderId)}`)
+          return
+        }
+        window.location.assign(`/courses/${encodeURIComponent(order.courseDetails.slug)}`)
+        return
+      } catch (error) {
+        setErrorMessage(getErrorMessage(error))
+        return
+      }
+    }
+    // Redirect param handling (checkout only) – resume only if a payment order is present
+    const redirect = new URLSearchParams(window.location.search).get('redirect')
+    if (paymentOrderId && redirect && redirect.startsWith('/checkout')) {
+      window.location.assign(redirect)
+      return
+    }
+    // Default student landing page
+    window.location.assign('/my-courses')
   }
 
   async function handleGoogleLogin() {
@@ -77,7 +107,6 @@ export function LoginPage() {
               <span className="login-brand-icon"><BookOpen size={22} strokeWidth={2.4} /></span>
               <span className="login-brand-name">
                 <strong>Your English Voice</strong>
-                
               </span>
             </div>
             <h1 id="login-title">Chào mừng trở lại!</h1>
@@ -85,7 +114,6 @@ export function LoginPage() {
               Đăng nhập để tiếp tục lộ trình học tập và mở khóa các bài học tiếng Anh chuẩn quốc tế.
             </p>
 
-            
             <GoogleAuthButton
               onClick={() => void handleGoogleLogin()}
               disabled={submitting || googleLoading}
@@ -143,7 +171,6 @@ export function LoginPage() {
               <button type="submit" className="submit-button" disabled={submitting}>
                 {submitting ? 'ĐANG ĐĂNG NHẬP…' : 'ĐĂNG NHẬP'} <span aria-hidden="true">→</span>
               </button>
-
             </form>
 
             <p className="signup-prompt">

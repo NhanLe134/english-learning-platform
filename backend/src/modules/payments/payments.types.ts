@@ -35,6 +35,7 @@ export interface VerifyPaymentResult {
   status: PaymentOrderStatus
   amount: number
   transferContent: string
+  provider?: string | null
   providerTransactionId: string | null
   isNewlyPaid: boolean
 }
@@ -89,4 +90,73 @@ export interface SePayBankTransactionWebhook {
   transferType: string
   transferAmount: number | string
   referenceCode?: string
+}
+
+/* ============================================================
+   Admin Payment Management types
+   ============================================================ */
+
+export type AdminOrderStatus = 'pending' | 'paid' | 'failed' | 'expired' | 'cancelled'
+
+export type AdminOrderAction = 'view' | 'reconcile_enrollment' | 'export'
+
+export interface AdminOrderListItem {
+  orderId: string
+  studentId: string
+  studentName: string
+  studentEmail: string
+  studentPhone: string | null
+  courseId: string
+  courseTitle: string
+  courseSlug: string | null
+  amount: number
+  currency: string
+  status: AdminOrderStatus
+  transferContent: string
+  provider?: string | null
+  providerTransactionId: string | null
+  paidAt: string | null
+  createdAt: string
+  enrollmentStatus: 'active' | 'completed' | 'cancelled' | null
+  enrollmentId: string | null
+  needsAttention: boolean
+}
+
+export interface AdminOrderDetail extends AdminOrderListItem {
+  providerOrderId: string | null
+  expiredAt: string | null
+  updatedAt: string
+}
+
+export interface AdminOrderQueryParams {
+  search?: string
+  status?: 'ALL' | AdminOrderStatus
+  enrollment?: 'ALL' | 'has_enrollment' | 'missing_enrollment'
+  dateFrom?: string
+  dateTo?: string
+  page?: number
+  limit?: number
+  sortBy?: 'created_at' | 'paid_at' | 'amount' | 'student_name' | 'course_title'
+  sortOrder?: 'asc' | 'desc'
+}
+
+export interface AdminPaymentActionLog {
+  id: string
+  adminId: string
+  orderId: string
+  action: AdminOrderAction
+  details: Record<string, unknown> | null
+  createdAt: string
+}
+
+/* ============================================================
+   Payment statistics
+   ============================================================ */
+
+export interface PaymentStatistics {
+  totalOrders: number
+  totalPaid: number
+  totalPending: number
+  totalFailed: number
+  totalAmount: number
 }
