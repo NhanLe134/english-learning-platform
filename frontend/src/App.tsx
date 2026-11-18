@@ -62,8 +62,9 @@ function AppRoutes() {
         window.location.replace('/login')
       }
       if (isStudentArea) window.location.replace('/login')
+      if (isTeacherArea && !isTeacherPublicRoute) window.location.replace('/teacher/login')
     }
-  }, [isAdminRoute, isAuthCallback, isAuthPage, isInitializing, isStudentArea, pathname, user])
+  }, [isAdminRoute, isAuthCallback, isAuthPage, isInitializing, isStudentArea, isTeacherArea, isTeacherPublicRoute, pathname, user])
 
   // Trạng thái đang xác minh quyền hoặc đang điều hướng
   if (!isAuthCallback) {
