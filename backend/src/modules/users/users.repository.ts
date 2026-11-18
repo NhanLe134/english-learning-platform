@@ -283,7 +283,22 @@ export class UsersRepository {
     if (error) {
       const code = 'code' in error ? error.code : undefined
       const status = 'status' in error && typeof error.status === 'number' ? error.status : undefined
-      if (code === 'invalid_credentials') return null
+      if (code === 'invalid_credentials') {
+        // Keep provider diagnostics useful without logging the submitted email/password or keys.
+        let projectHost = 'not-configured'
+        try {
+          projectHost = new URL(env.supabaseUrl).host
+        } catch {
+          // Configuration validation below reports missing/invalid setup separately.
+        }
+        console.warn('[AdminAuth] Supabase rejected password sign-in', {
+          stage: 'provider_response',
+          code,
+          ...(status ? { status } : {}),
+          projectHost,
+        })
+        return null
+      }
       if (code === 'email_not_confirmed') {
         throw new AuthError('Please confirm your email address before signing in.', 403, error, 'EMAIL_NOT_CONFIRMED')
       }

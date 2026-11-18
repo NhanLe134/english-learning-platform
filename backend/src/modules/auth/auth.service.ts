@@ -554,7 +554,10 @@ export class AuthService {
         error
       )
     }
-    if (!user || user.is_verified !== true) {
+    // Admin accounts may use the PostgreSQL credential store without a matching
+    // Supabase Auth user, so email verification is not available for that path.
+    // Their role, password hash, and active status are still checked below.
+    if (!user || (user.role !== 'ADMIN' && user.is_verified !== true)) {
       throw genericCredentialsError()
     }
     if (user.role === 'STUDENT' && user.status === 'pending') {

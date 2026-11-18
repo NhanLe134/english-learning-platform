@@ -1,5 +1,14 @@
 # Deployment
 
+## Local Admin login on a new computer
+
+GitHub contains the example environment files, not the private `.env` files. Configure both apps locally:
+
+- `backend/.env`: set `SUPABASE_URL` to the intended project URL, `SUPABASE_PUBLISHABLE_KEY` (or `SUPABASE_ANON_KEY`) from that same project's API settings, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, and a private `AUTH_JWT_SECRET` of at least 32 bytes. The backend loads this file relative to `backend/src/config/env.ts`; a repository-root `.env` is not used.
+- `frontend/.env`: set `VITE_API_BASE_URL=http://localhost:5000/api` for the local backend. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to the same project only for frontend Supabase features such as Google OAuth. These frontend values are embedded at build time, so restart Vite after changing them.
+
+Admin password login is sent to the backend API. The backend authenticates with the Supabase URL and public key, loads the application profile, and verifies that its role is `ADMIN`; PostgreSQL also needs to point at the same application environment. Never put `SUPABASE_SERVICE_ROLE_KEY`, database credentials, or `AUTH_JWT_SECRET` in frontend variables or commit real `.env` files. If Supabase returns `invalid_credentials`, check the configured project ref on both computers and confirm the account exists in that project's Supabase Auth; the backend now logs the provider code, HTTP status, and project host without logging credentials.
+
 ## Tổng quan
 
 | Thành phần | Nền tảng | URL |

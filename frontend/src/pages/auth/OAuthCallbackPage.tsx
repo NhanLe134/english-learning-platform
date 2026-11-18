@@ -27,7 +27,7 @@ export function OAuthCallbackPage() {
             try { paymentOrderId = sessionStorage.getItem('your-voice-pending-payment-order-id') } catch { /* Optional redirect context. */ }
           }
           try { sessionStorage.removeItem('your-voice-pending-payment-order-id') } catch { /* Optional redirect context. */ }
-          if (paymentOrderId && appSession.user.role !== 'ADMIN') {
+          if (paymentOrderId && appSession.user.role === 'STUDENT') {
             const order = await sepayApi.getOrderStatus(paymentOrderId, appSession.accessToken)
             if (order.status !== 'paid' || !order.courseDetails?.slug) {
               throw new Error('Không tìm thấy giao dịch thanh toán thành công cho tài khoản này.')
@@ -40,7 +40,11 @@ export function OAuthCallbackPage() {
             return
           }
           window.location.replace(
-            appSession.user.role === 'ADMIN' ? '/admin/users' : '/my-courses'
+            appSession.user.role === 'ADMIN'
+              ? '/admin/users'
+              : appSession.user.role === 'TEACHER'
+                ? '/teacher/dashboard'
+                : '/my-courses'
           )
           return
         }
