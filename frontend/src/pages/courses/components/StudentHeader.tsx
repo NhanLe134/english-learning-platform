@@ -170,7 +170,7 @@ export const StudentHeader: React.FC<StudentHeaderProps> = ({ student, onLogout 
                       } catch {
                         // ignore
                       }
-                      window.location.assign('/login')
+                      window.location.replace('/login')
                     }
                   }}
                 >

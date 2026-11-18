@@ -66,7 +66,13 @@ export function TeacherDashboardPage() {
             <p className="max-w-56 truncate text-sm font-semibold text-slate-800">{user?.fullName || 'Giáo viên'}</p>
             <p className="max-w-56 truncate text-xs text-slate-500">{user?.email}</p>
           </div>
-          <button type="button" className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-red-300 hover:bg-red-50 hover:text-red-700" onClick={() => void logout()}>
+          <button type="button" className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-red-300 hover:bg-red-50 hover:text-red-700" onClick={async () => {
+            try {
+              await logout()
+            } catch {
+              // The local session is cleared even when the logout request fails.
+            }
+          }}>
             <LogOut size={16} aria-hidden="true" />
             <span>Đăng xuất</span>
           </button>
