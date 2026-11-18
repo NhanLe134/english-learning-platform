@@ -7,6 +7,7 @@ import { UserTable } from './components/UserTable'
 import { UserPagination } from './components/UserPagination'
 import { CreateUserModal } from './components/CreateUserModal'
 import { ConfirmActionModal, type ConfirmActionType } from './components/ConfirmActionModal'
+import { EditTeacherModal } from './components/EditTeacherModal'
 import { userApi } from './services/userApi'
 import { useAuth } from '../auth/auth-context'
 import type { CreateUserInput, PaginationInfo, UserFilterState, UserProfile } from './types'
@@ -53,6 +54,7 @@ export const QuanLyNguoiDungPage: React.FC = () => {
     user: null,
     loading: false,
   })
+  const [editingTeacher, setEditingTeacher] = useState<UserProfile | null>(null)
 
   // State for toast feedback
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -133,24 +135,26 @@ export const QuanLyNguoiDungPage: React.FC = () => {
           user.id,
           'locked',
           accessToken,
-          async () => (await refreshSession()).accessToken
+          async () => (await refreshSession()).accessToken,
+          user.role
         )
         showToast('success', `Đã khóa tài khoản của ${user.full_name} (${user.email})`)
       } else if (type === 'unlock') {
-        await userApi.updateStatus(
-          user.id,
-          'active',
-          accessToken,
-          async () => (await refreshSession()).accessToken
-        )
-        showToast('success', `Đã mở khóa tài khoản của ${user.full_name} (${user.email})`)
+        if (user.role === 'TEACHER' && user.status === 'pending') {
+          await userApi.resendTeacherActivation(user.id, accessToken, async () => (await refreshSession()).accessToken)
+          showToast('success', `Đã gửi lại liên kết kích hoạt đến ${user.email}`)
+        } else {
+          await userApi.updateStatus(user.id, 'active', accessToken, async () => (await refreshSession()).accessToken, user.role)
+          showToast('success', `Đã mở khóa tài khoản của ${user.full_name} (${user.email})`)
+        }
       } else if (type === 'delete') {
-        await userApi.deleteUser(
-          user.id,
-          accessToken,
-          async () => (await refreshSession()).accessToken
-        )
-        showToast('success', `Đã xóa vĩnh viễn người dùng ${user.full_name} khỏi Supabase`)
+        if (user.role === 'TEACHER') {
+          await userApi.updateStatus(user.id, 'deactivated', accessToken, async () => (await refreshSession()).accessToken, user.role)
+          showToast('success', `Đã vô hiệu hóa tài khoản ${user.full_name}`)
+        } else {
+          await userApi.deleteUser(user.id, accessToken, async () => (await refreshSession()).accessToken)
+          showToast('success', `Đã xóa vĩnh viễn người dùng ${user.full_name} khỏi Supabase`)
+        }
       }
 
       setConfirmModal({ isOpen: false, type: 'lock', user: null, loading: false })
@@ -172,7 +176,9 @@ export const QuanLyNguoiDungPage: React.FC = () => {
       )
       showToast(
         'success',
-        `Đã lưu người dùng vào Supabase: ${created.full_name} (${created.role === 'ADMIN' ? 'Quản trị viên' : 'Giáo viên'})`
+        created.role === 'TEACHER'
+          ? `Đã tạo tài khoản giáo viên. Giáo viên có thể đăng nhập bằng mật khẩu khởi tạo: ${created.email}`
+          : `Đã lưu quản trị viên: ${created.full_name} (${created.email})`
       )
       await loadUsers()
     } catch (err: unknown) {
@@ -180,6 +186,14 @@ export const QuanLyNguoiDungPage: React.FC = () => {
       showToast('error', msg)
       throw err
     }
+  }
+
+  const handleUpdateTeacher = async (input: { full_name: string; nickname: string; phone_number: string }) => {
+    if (!editingTeacher) return
+    await userApi.updateTeacher(editingTeacher.id, input, accessToken, async () => (await refreshSession()).accessToken)
+    setEditingTeacher(null)
+    showToast('success', 'Đã cập nhật thông tin giáo viên.')
+    await loadUsers()
   }
 
   // Handle seed data into Supabase
@@ -328,6 +342,7 @@ export const QuanLyNguoiDungPage: React.FC = () => {
             users={users}
             loading={loading}
             onActionClick={handleOpenActionModal}
+            onEditClick={setEditingTeacher}
           />
 
           {/* Table Footer: Count, Export CSV, and Pagination */}
@@ -356,6 +371,7 @@ export const QuanLyNguoiDungPage: React.FC = () => {
         onClose={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
         onConfirm={handleExecuteAction}
       />
+      <EditTeacherModal key={editingTeacher?.id ?? 'none'} user={editingTeacher} onClose={() => setEditingTeacher(null)} onSave={handleUpdateTeacher} />
     </div>
   )
 }

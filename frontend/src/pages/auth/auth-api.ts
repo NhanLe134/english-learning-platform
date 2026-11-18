@@ -44,15 +44,25 @@ export interface RegistrationResult {
 
 export class AuthApiError extends Error {
   readonly status: number
+  readonly code?: string
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code?: string) {
     super(message)
     this.status = status
+    this.code = code
     this.name = 'AuthApiError'
   }
 }
 
 async function request<T>(
+  path: string,
+  body?: Record<string, unknown>,
+  accessToken?: string
+): Promise<T> {
+  return requestApi<T>(`/auth${path}`, body, accessToken)
+}
+
+async function requestApi<T>(
   path: string,
   body?: Record<string, unknown>,
   accessToken?: string
@@ -63,20 +73,18 @@ async function request<T>(
 
   let response: Response
   try {
-    response = await fetch(`${API_BASE_URL}/auth${path}`, {
+    response = await fetch(`${API_BASE_URL}${path}`, {
       method: body ? 'POST' : 'GET',
       headers,
       credentials: 'include',
       ...(body ? { body: JSON.stringify(body) } : {}),
     })
   } catch (error) {
-    const isNetworkFetchError =
-      error instanceof TypeError && error.message.toLowerCase().includes('failed to fetch')
     throw new AuthApiError(
-      isNetworkFetchError
-        ? 'Không thể kết nối máy chủ xác thực (port 5000). Vui lòng đảm bảo backend đang chạy (cd backend; npm run dev).'
+      error instanceof TypeError
+        ? 'Không thể kết nối máy chủ xác thực. Hãy kiểm tra kết nối mạng và cấu hình API của website.'
         : error instanceof Error
-          ? `Không thể kết nối máy chủ xác thực: ${error.message}`
+          ? `Không thể gửi yêu cầu xác thực: ${error.message}`
           : 'Không thể kết nối máy chủ xác thực.',
       0
     )
@@ -98,7 +106,10 @@ async function request<T>(
       typeof result.message === 'string'
         ? result.message
         : `Yêu cầu thất bại (HTTP ${response.status}).`
-    throw new AuthApiError(message, response.status)
+    const code = result && typeof result === 'object' && 'code' in result && typeof result.code === 'string'
+      ? result.code
+      : undefined
+    throw new AuthApiError(message, response.status, code)
   }
 
   return result as T
@@ -278,6 +289,10 @@ export const authApi = {
     await request<void>('/logout', {}, accessToken)
   },
 
+  async changePassword(currentPassword: string, newPassword: string, accessToken?: string): Promise<void> {
+    await request<void>('/change-password', { currentPassword, newPassword }, accessToken)
+  },
+
   async forgotPassword(email: string): Promise<ForgotPasswordResponse> {
     const result = await request<unknown>('/forgot-password', { email })
     if (
@@ -287,6 +302,18 @@ export const authApi = {
       throw new AuthApiError('Phản hồi khôi phục mật khẩu không đúng định dạng.', 502)
     }
     return { message: result.message }
+  },
+
+  async activateTeacher(token: string, password: string): Promise<void> {
+    await requestApi('/teachers/activation/complete', { token, password })
+  },
+
+  async requestTeacherPasswordReset(email: string): Promise<void> {
+    await requestApi('/teachers/password-reset/request', { email })
+  },
+
+  async resetTeacherPassword(token: string, password: string): Promise<void> {
+    await requestApi('/teachers/password-reset/complete', { token, password })
   },
 }
 

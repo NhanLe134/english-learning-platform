@@ -17,6 +17,8 @@ import { CheckoutPage } from './pages/checkout/CheckoutPage'
 import { CheckoutSuccessPage } from './pages/checkout/CheckoutSuccessPage'
 import { WorkshopsPage } from './pages/workshops/WorkshopsPage'
 import { ContactPage } from './pages/contact/ContactPage'
+import { TeacherDashboardPage } from './pages/courses/TeacherDashboardPage'
+import { TeacherAccountActionPage } from './pages/auth/TeacherAccountActionPage'
 import { AuthProvider } from './pages/auth/AuthContext'
 import { useAuth } from './pages/auth/auth-context'
 
@@ -24,6 +26,9 @@ function AppRoutes() {
   const { initializationError, isInitializing, user } = useAuth()
   const pathname = window.location.pathname
   const isAdminRoute = pathname.startsWith('/admin')
+  const isTeacherArea = pathname.startsWith('/teacher')
+  const isTeacherPublicRoute = ['/teacher/login', '/teacher/activate', '/teacher/reset-password', '/teacher/forgot-password'].includes(pathname)
+  const isStudentArea = pathname === '/my-courses' || pathname.startsWith('/student') || pathname.startsWith('/my-courses/')
   const isAuthCallback = pathname === '/auth/callback'
   const isAuthPage = ['/login', '/register', '/forgot-password'].includes(pathname)
 
@@ -36,7 +41,13 @@ function AppRoutes() {
       if (!isAdminRoute) {
         window.location.replace('/admin/users')
       }
-    } else if (user) {
+    } else if (user?.role === 'TEACHER') {
+      if (isAdminRoute || isStudentArea || pathname === '/login' || pathname === '/register') {
+        window.location.replace('/teacher/dashboard')
+      } else if (pathname === '/teacher/login' || pathname === '/teacher/forgot-password') {
+        window.location.replace('/teacher/dashboard')
+      }
+    } else if (user?.role === 'STUDENT') {
       // Học viên đã đăng nhập: không vào được admin và không mở lại trang login/register
       if (isAdminRoute) {
         window.location.replace('/login')
@@ -50,8 +61,9 @@ function AppRoutes() {
       if (isAdminRoute) {
         window.location.replace('/login')
       }
+      if (isStudentArea) window.location.replace('/login')
     }
-  }, [isAdminRoute, isAuthCallback, isAuthPage, isInitializing, pathname, user])
+  }, [isAdminRoute, isAuthCallback, isAuthPage, isInitializing, isStudentArea, pathname, user])
 
   // Trạng thái đang xác minh quyền hoặc đang điều hướng
   if (!isAuthCallback) {
@@ -70,6 +82,9 @@ function AppRoutes() {
         </main>
       )
     }
+    if (user?.role === 'TEACHER' && !isTeacherArea && !isAdminRoute && pathname !== '/auth/callback') {
+      return <main className="auth-route-status" role="status">Đang chuyển đến trang giáo viên…</main>
+    }
 
     if (isAdminRoute && (isInitializing || user?.role !== 'ADMIN')) {
       return (
@@ -77,6 +92,12 @@ function AppRoutes() {
           {isInitializing ? 'Đang xác minh phiên đăng nhập…' : 'Đang chuyển đến trang đăng nhập…'}
         </main>
       )
+    }
+    if (isTeacherArea && !isTeacherPublicRoute && (isInitializing || user?.role !== 'TEACHER')) {
+      return <main className="auth-route-status" role="status">{isInitializing ? 'Đang xác minh phiên đăng nhập…' : 'Đang chuyển đến đăng nhập giáo viên…'}</main>
+    }
+    if (isStudentArea && (isInitializing || user?.role !== 'STUDENT')) {
+      return <main className="auth-route-status" role="status">Đang chuyển đến khu vực phù hợp…</main>
     }
 
     if (user && isAuthPage) {
@@ -90,6 +111,21 @@ function AppRoutes() {
 
   let page
   switch (window.location.pathname) {
+    case '/teacher/login':
+      page = <LoginPage />
+      break
+    case '/teacher/activate':
+      page = <TeacherAccountActionPage mode="activate" />
+      break
+    case '/teacher/reset-password':
+      page = <TeacherAccountActionPage mode="reset" />
+      break
+    case '/teacher/dashboard':
+      page = <TeacherDashboardPage />
+      break
+    case '/teacher/forgot-password':
+      page = <ForgotPasswordPage />
+      break
     case '/admin/users':
       page = <QuanLyNguoiDungPage />
       break

@@ -478,6 +478,44 @@ export class AuthRepository {
       [userId]
     )
   }
+
+  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+    const client = await getDatabasePool().connect()
+    try {
+      await client.query('BEGIN')
+      const { rows } = await client.query(
+        `SELECT password_hash FROM public.auth_credentials WHERE user_id = $1 FOR UPDATE`,
+        [userId]
+      )
+      const cred = rows[0] as { password_hash?: string } | undefined
+      if (!cred?.password_hash) {
+        throw new Error('Credentials not found')
+      }
+      const matches = await bcrypt.compare(currentPassword, cred.password_hash)
+      if (!matches) {
+        throw new Error('Current password does not match')
+      }
+      const newHash = await bcrypt.hash(newPassword, 12)
+      await client.query(
+        `UPDATE public.auth_credentials SET password_hash = $2, updated_at = now() WHERE user_id = $1`,
+        [userId, newHash]
+      )
+      await client.query(
+        `UPDATE public.profiles SET status = 'active', is_verified = true, updated_at = now() WHERE id = $1`,
+        [userId]
+      )
+      await client.query('COMMIT')
+    } catch (error) {
+      try {
+        await client.query('ROLLBACK')
+      } catch (rollbackError) {
+        throw new AggregateError([error, rollbackError], 'Failed to rollback change password transaction')
+      }
+      throw error
+    } finally {
+      client.release()
+    }
+  }
 }
 
 export const authRepository = new AuthRepository()

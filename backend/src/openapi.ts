@@ -257,7 +257,7 @@ export const openApiDocument = {
         parameters: [
           { in: 'query', name: 'search', schema: { type: 'string' }, description: 'Search name, email, phone number, or nickname.' },
           { in: 'query', name: 'role', schema: { type: 'string', enum: ['ALL', 'STUDENT', 'TEACHER', 'ADMIN'], default: 'ALL' } },
-          { in: 'query', name: 'status', schema: { type: 'string', enum: ['ALL', 'active', 'locked', 'pending'], default: 'ALL' } },
+          { in: 'query', name: 'status', schema: { type: 'string', enum: ['ALL', 'active', 'locked', 'pending', 'deactivated'], default: 'ALL' } },
           { in: 'query', name: 'page', schema: { type: 'integer', minimum: 1, default: 1 } },
           { in: 'query', name: 'limit', schema: { type: 'integer', minimum: 1, maximum: 100, default: 10 } },
         ],
@@ -345,6 +345,45 @@ export const openApiDocument = {
           ...adminResponses,
         },
       },
+    },
+    '/api/teachers/admin': {
+      get: {
+        tags: ['User Management'], summary: 'List teacher accounts', operationId: 'listTeachers', security: adminSecurity,
+        parameters: [
+          { in: 'query', name: 'search', schema: { type: 'string' } },
+          { in: 'query', name: 'status', schema: { type: 'string', enum: ['ALL', 'active', 'locked', 'pending', 'deactivated'] } },
+          { in: 'query', name: 'page', schema: { type: 'integer', minimum: 1 } },
+          { in: 'query', name: 'limit', schema: { type: 'integer', minimum: 1, maximum: 100 } },
+        ],
+        responses: { '200': jsonResponse('Paginated teacher profiles'), ...adminResponses },
+      },
+      post: {
+        tags: ['User Management'], summary: 'Create a teacher account with an initial password', operationId: 'createTeacher', security: adminSecurity,
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['full_name', 'email', 'password'], properties: { full_name: { type: 'string', minLength: 1 }, email: { type: 'string', format: 'email' }, password: { type: 'string', minLength: 8, maxLength: 72, format: 'password' }, nickname: { type: 'string' }, phone_number: { type: 'string' }, avatar_url: { type: 'string', format: 'uri' } } } } } },
+        responses: { '201': jsonResponse('Active teacher profile'), ...adminResponses },
+      },
+    },
+    '/api/teachers/admin/{id}': {
+      get: { tags: ['User Management'], summary: 'Get teacher details', operationId: 'getTeacher', security: adminSecurity, parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { '200': jsonResponse('Teacher profile'), '404': jsonResponse('Teacher not found'), ...adminResponses } },
+      patch: { tags: ['User Management'], summary: 'Edit teacher profile', operationId: 'updateTeacher', security: adminSecurity, parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' } }], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['full_name'], properties: { full_name: { type: 'string' }, nickname: { type: 'string' }, phone_number: { type: 'string' } } } } } }, responses: { '200': jsonResponse('Updated teacher profile'), ...adminResponses } },
+    },
+    '/api/teachers/admin/{id}/status': {
+      patch: { tags: ['User Management'], summary: 'Change teacher account status', operationId: 'updateTeacherStatus', security: adminSecurity, parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' } }], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['status'], properties: { status: { type: 'string', enum: ['active', 'locked', 'pending', 'deactivated'] } } } } } }, responses: { '200': jsonResponse('Updated teacher status'), ...adminResponses } },
+    },
+    '/api/teachers/admin/{id}/activation/resend': {
+      post: { tags: ['User Management'], summary: 'Resend teacher activation link', operationId: 'resendTeacherActivation', security: adminSecurity, parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { '202': jsonResponse('Activation email queued or sent'), ...adminResponses } },
+    },
+    '/api/teachers/activation/complete': {
+      post: { tags: ['Authentication'], summary: 'Activate a teacher account', operationId: 'activateTeacher', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['token', 'password'], properties: { token: { type: 'string' }, password: { type: 'string', minLength: 8, maxLength: 72 } } } } } }, responses: { '200': jsonResponse('Teacher activated'), ...errorResponses } },
+    },
+    '/api/teachers/password-reset/request': {
+      post: { tags: ['Authentication'], summary: 'Request a teacher password reset link', operationId: 'requestTeacherPasswordReset', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['email'], properties: { email: { type: 'string', format: 'email' } } } } } }, responses: { '200': jsonResponse('Generic response independent of account existence'), ...errorResponses } },
+    },
+    '/api/teachers/password-reset/complete': {
+      post: { tags: ['Authentication'], summary: 'Complete teacher password reset', operationId: 'resetTeacherPassword', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['token', 'password'], properties: { token: { type: 'string' }, password: { type: 'string', minLength: 8, maxLength: 72 } } } } } }, responses: { '200': jsonResponse('Password reset and sessions revoked'), ...errorResponses } },
+    },
+    '/api/teachers/me': {
+      get: { tags: ['Authentication'], summary: 'Get authenticated teacher profile', operationId: 'getTeacherMe', security: [{ bearerAuth: [] }], responses: { '200': jsonResponse('Teacher profile'), ...adminResponses } },
     },
     '/api/auth/register': {
       post: {

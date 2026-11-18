@@ -21,7 +21,9 @@ export function LoginPage() {
   const [errorMessage, setErrorMessage] = useState('')
   const [successMessage, setSuccessMessage] = useState(() =>
     new URLSearchParams(window.location.search).get('passwordReset') === 'sent'
-      ? 'Nếu email đã được đăng ký, mật khẩu tạm thời đã được gửi. Vui lòng kiểm tra email và đăng nhập bằng mật khẩu đó.'
+      ? (window.location.pathname.startsWith('/teacher')
+        ? 'Nếu tài khoản đang hoạt động, liên kết đặt lại mật khẩu đã được gửi đến email.'
+        : 'Nếu tài khoản đã được đăng ký, hướng dẫn khôi phục đã được gửi đến email.')
       : ''
   )
   const [googleLoading, setGoogleLoading] = useState(false)
@@ -33,6 +35,10 @@ export function LoginPage() {
     // Admin redirect
     if (session.user.role === 'ADMIN') {
       window.location.assign('/admin/users')
+      return
+    }
+    if (session.user.role === 'TEACHER') {
+      window.location.assign('/teacher/dashboard')
       return
     }
     // Payment flow handling
@@ -165,7 +171,7 @@ export function LoginPage() {
                   <input type="checkbox" name="rememberMe" />
                   <span>Ghi nhớ đăng nhập</span>
                 </label>
-                <a href="/forgot-password">Quên mật khẩu?</a>
+              <a href={window.location.pathname.startsWith('/teacher') ? '/teacher/forgot-password' : '/forgot-password'}>Quên mật khẩu?</a>
               </div>
 
               <button type="submit" className="submit-button" disabled={submitting}>
