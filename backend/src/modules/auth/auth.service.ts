@@ -487,6 +487,12 @@ export class AuthService {
       }
       throw new AuthError('Admin authentication provider is unavailable.', 503, error)
     }
+    if (!user && storedUser) {
+      // The ADMIN profile exists in PostgreSQL with a valid credential, but the
+      // Supabase Auth user is missing or its password is out of sync. Fall back
+      // to the database credential so the account remains usable.
+      return this.loginWithDatabasePassword(email, password)
+    }
     if (!user || user.status !== 'active') throw genericCredentialsError()
     try {
       await this.adminAuth.verifyEmail(user.id)

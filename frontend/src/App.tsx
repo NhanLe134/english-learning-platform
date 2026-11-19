@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { QuanLyNguoiDungPage } from './pages/quan_ly_nguoi_dung'
 import { QuanLyThanhToanPage } from './pages/quan_ly_thanh_toan'
+import QuanLyBaiGiangPage from './pages/quan_ly_bai_giang'
 import { HomePage } from './pages/home/HomePage'
 import { AboutPage } from './pages/about/AboutPage'
 import { EbooksPage } from './pages/ebooks/EbooksPage'
@@ -98,6 +99,9 @@ function AppRoutes() {
       break
     case '/admin/courses':
       page = <CourseManagementPage />
+      break
+    case '/teacher/lessons/new':
+      page = <QuanLyBaiGiangPage />
       break
     case '/about':
     case '/ve-chung-toi':
