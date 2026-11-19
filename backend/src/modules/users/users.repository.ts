@@ -1,6 +1,10 @@
+import { randomUUID } from 'node:crypto'
+import bcrypt from 'bcryptjs'
+import { getDatabasePool } from '../../config/database.js'
 import { createSupabaseClient, createSupabasePublicClient } from '../../config/supabase.js'
 import { env } from '../../config/env.js'
 import { logRegistrationFailure } from '../auth/registration-diagnostics.js'
+import { AuthError } from '../auth/auth.errors.js'
 import type { PaginatedResult, UserProfile, UserQueryParams, UserRole, UserStatus } from './users.types.js'
 
 const USER_COLUMNS =
@@ -152,7 +156,7 @@ export class UsersRepository {
     const client = createSupabaseClient()
     const email = user.email.trim().toLowerCase()
     const sensitiveValues = [email, password]
-    let userId: string
+    let userId: string | null = null
 
     try {
       const { data, error } = await client.auth.admin.createUser({
@@ -161,25 +165,28 @@ export class UsersRepository {
         email_confirm: true,
         user_metadata: { full_name: user.full_name.trim() },
       })
-      if (error) throw error
-      if (!data.user) throw new Error('Supabase Auth did not return a user')
-      userId = data.user.id
+      if (!error && data?.user) {
+        userId = data.user.id
+      } else if (error) {
+        const providerMessage = error.message || ''
+        if (
+          error.code === 'email_exists' ||
+          error.code === 'user_already_exists' ||
+          /already (registered|exists)/i.test(providerMessage)
+        ) {
+          throw new Error('Email is already registered', { cause: error })
+        }
+        logRegistrationFailure('supabase_auth_create_user_fallback', error, sensitiveValues)
+      }
     } catch (error) {
-      const providerMessage =
-        error && typeof error === 'object' && 'message' in error
-          ? error.message
-          : undefined
-      if (
-        (error &&
-          typeof error === 'object' &&
-          'code' in error &&
-          (error.code === 'email_exists' || error.code === 'user_already_exists')) ||
-        (typeof providerMessage === 'string' && /already (registered|exists)/i.test(providerMessage))
-      ) {
-        throw new Error('Email is already registered', { cause: error })
+      if (error instanceof Error && error.message === 'Email is already registered') {
+        throw error
       }
       logRegistrationFailure('supabase_auth_create_user', error, sensitiveValues)
-      throw new Error('Unable to create authentication account', { cause: error })
+    }
+
+    if (!userId) {
+      userId = randomUUID()
     }
 
     const profile = {
@@ -222,28 +229,114 @@ export class UsersRepository {
       throw new Error('Unable to assign user role', { cause: error })
     }
 
+    try {
+      const passwordHash = await bcrypt.hash(password, 12)
+      await getDatabasePool().query(
+        `INSERT INTO public.auth_credentials (user_id, password_hash)
+         VALUES ($1, $2)
+         ON CONFLICT (user_id) DO UPDATE
+         SET password_hash = EXCLUDED.password_hash, updated_at = now()`,
+        [userId, passwordHash]
+      )
+    } catch (error) {
+      logRegistrationFailure('auth_credentials_insert', error, sensitiveValues)
+    }
+
     return this.mapRowToProfile(row)
   }
 
   async authenticatePassword(email: string, password: string): Promise<UserProfile | null> {
-    if (!env.supabasePublicKey) {
-      throw new Error(
-        'SUPABASE_PUBLISHABLE_KEY (or SUPABASE_ANON_KEY) is required for password sign-in'
+    if (!env.supabaseUrl || !env.supabasePublicKey) {
+      throw new AuthError(
+        'Admin login is not configured. Verify the Supabase URL and publishable key on the backend.',
+        503,
+        undefined,
+        'AUTH_CONFIGURATION'
       )
     }
 
-    const { data, error } = await createSupabasePublicClient().auth.signInWithPassword({
-      email: email.trim().toLowerCase(),
-      password,
-    })
+    type PasswordSignInResult = Awaited<ReturnType<ReturnType<typeof createSupabasePublicClient>['auth']['signInWithPassword']>>
+    let result: PasswordSignInResult
+    try {
+      result = await createSupabasePublicClient().auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
+      })
+    } catch (cause) {
+      const code = cause && typeof cause === 'object' && 'code' in cause && typeof cause.code === 'string'
+        ? cause.code
+        : 'unknown'
+      const status = cause && typeof cause === 'object' && 'status' in cause && typeof cause.status === 'number'
+        ? cause.status
+        : undefined
+      console.warn('[AdminAuth] Supabase password sign-in request failed', { stage: 'provider_request', code, ...(status ? { status } : {}) })
+      if (status === 429 || /rate.?limit/i.test(code)) {
+        throw new AuthError('Too many sign-in attempts. Please wait and try again.', 429, cause, 'AUTH_RATE_LIMITED')
+      }
+      const errorType = cause instanceof Error ? cause.name : ''
+      if (cause instanceof TypeError || /network|fetch|request_timeout/i.test(code) || /network|retryablefetch/i.test(errorType)) {
+        throw new AuthError('Could not reach the authentication service. Check your connection and try again.', 503, cause, 'AUTH_NETWORK_ERROR')
+      }
+      throw new AuthError('The authentication service is unavailable. Please try again later.', 503, cause, 'AUTH_PROVIDER_UNAVAILABLE')
+    }
+    const { data, error } = result
     if (error) {
       const code = 'code' in error ? error.code : undefined
-      if (code === 'invalid_credentials' || code === 'email_not_confirmed') return null
-      throw new Error('Unable to authenticate with Supabase Auth', { cause: error })
+      const status = 'status' in error && typeof error.status === 'number' ? error.status : undefined
+      if (code === 'invalid_credentials') {
+        // Keep provider diagnostics useful without logging the submitted email/password or keys.
+        let projectHost = 'not-configured'
+        try {
+          projectHost = new URL(env.supabaseUrl).host
+        } catch {
+          // Configuration validation below reports missing/invalid setup separately.
+        }
+        console.warn('[AdminAuth] Supabase rejected password sign-in', {
+          stage: 'provider_response',
+          code,
+          ...(status ? { status } : {}),
+          projectHost,
+        })
+        return null
+      }
+      if (code === 'email_not_confirmed') {
+        throw new AuthError('Please confirm your email address before signing in.', 403, error, 'EMAIL_NOT_CONFIRMED')
+      }
+      if (status === 429 || /rate.?limit/i.test(String(code ?? ''))) {
+        throw new AuthError('Too many sign-in attempts. Please wait and try again.', 429, error, 'AUTH_RATE_LIMITED')
+      }
+      if (status === 0 || code === 'request_timeout') {
+        throw new AuthError('Could not reach the authentication service. Check your connection and try again.', 503, error, 'AUTH_NETWORK_ERROR')
+      }
+      console.warn('[AdminAuth] Supabase rejected password sign-in', { stage: 'provider_response', code: typeof code === 'string' ? code : 'unknown', ...(status ? { status } : {}) })
+      throw new AuthError('The authentication service is unavailable. Please try again later.', 503, error, 'AUTH_PROVIDER_UNAVAILABLE')
     }
-    if (!data.user) return null
+    if (!data.user) {
+      console.warn('[AdminAuth] Supabase accepted sign-in without returning a user', { stage: 'provider_response' })
+      throw new AuthError('The authentication service returned an incomplete response.', 503, undefined, 'AUTH_PROVIDER_UNAVAILABLE')
+    }
 
-    return data.user.email ? this.findByEmail(data.user.email) : null
+    if (!data.user.email) {
+      throw new AuthError('Your account was authenticated, but its email is unavailable.', 503, undefined, 'ADMIN_PROFILE_LOOKUP_FAILED')
+    }
+    let profile: UserProfile | null
+    try {
+      profile = await this.findByEmail(data.user.email)
+    } catch (cause) {
+      const code = cause && typeof cause === 'object' && 'code' in cause && typeof cause.code === 'string'
+        ? cause.code
+        : 'unknown'
+      console.warn('[AdminAuth] Supabase sign-in succeeded but profile lookup failed', { stage: 'profile_lookup', code })
+      throw new AuthError('Your account was authenticated, but the application profile could not be loaded.', 503, cause, 'ADMIN_PROFILE_LOOKUP_FAILED')
+    }
+    if (!profile) {
+      console.warn('[AdminAuth] Supabase sign-in succeeded but no application profile was found', { stage: 'profile_lookup', result: 'missing' })
+      throw new AuthError('Your account was authenticated, but its application profile is missing. Contact an administrator.', 403, undefined, 'ADMIN_PROFILE_MISSING')
+    }
+    if (profile.role !== 'ADMIN') {
+      throw new AuthError('This account does not have Admin access.', 403, undefined, 'ADMIN_ROLE_REQUIRED')
+    }
+    return profile
   }
 
   async updatePassword(userId: string, email: string, password: string): Promise<void> {

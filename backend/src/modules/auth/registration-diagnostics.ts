@@ -1,8 +1,10 @@
 export type RegistrationOperation =
   | 'supabase_auth_create_user'
+  | 'supabase_auth_create_user_fallback'
   | 'profile_upsert'
   | 'role_upsert'
   | 'auth_session_insert'
+  | 'auth_credentials_insert'
   | 'registration_cleanup'
 
 function redactSensitiveText(message: string, sensitiveValues: readonly string[]): string {

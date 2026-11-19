@@ -72,6 +72,7 @@ export const UserFilterBar: React.FC<UserFilterBarProps> = ({
           <option value="active">Đang hoạt động</option>
           <option value="locked">Bị khóa / Vi phạm</option>
           <option value="pending">Chờ kích hoạt</option>
+          <option value="deactivated">Đã vô hiệu hóa</option>
         </select>
         <ChevronDown className="select-arrow" size={16} />
       </div>

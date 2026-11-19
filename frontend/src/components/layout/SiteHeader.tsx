@@ -91,7 +91,7 @@ export function SiteHeader({ activeTab: explicitActiveTab, brandName = 'Your Eng
   async function handleAccountClick() {
     if (!user) {
       if (window.location.pathname !== '/login') {
-        window.location.assign('/login')
+        window.location.replace('/login')
       }
       return
     }
@@ -101,12 +101,12 @@ export function SiteHeader({ activeTab: explicitActiveTab, brandName = 'Your Eng
       if (auth?.logout) {
         await auth.logout()
       }
-      window.location.assign('/login')
+      window.location.replace('/login')
     } catch (error) {
       if (auth?.reportError) {
         auth.reportError(error instanceof Error ? error.message : 'Đăng xuất không thành công.')
       }
-      window.location.assign('/login')
+      window.location.replace('/login')
     } finally {
       setLoggingOut(false)
     }

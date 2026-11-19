@@ -1126,25 +1126,9 @@ html:has(.login-page) {
 .login-options {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
   margin: 16px 0 14px;
-}
-
-.login-remember {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: #5F3E39;
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.login-remember input {
-  width: 14px;
-  height: 14px;
-  margin: 0;
-  accent-color: #BC0002;
 }
 
 .login-options > a,

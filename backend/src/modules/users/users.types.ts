@@ -1,5 +1,5 @@
 export type UserRole = 'STUDENT' | 'TEACHER' | 'ADMIN'
-export type UserStatus = 'active' | 'locked' | 'pending'
+export type UserStatus = 'active' | 'locked' | 'pending' | 'deactivated'
 
 export interface UserProfile {
   id: string

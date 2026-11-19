@@ -804,6 +804,76 @@ describe('authentication service', () => {
     assert.equal((await service.authenticateAccessToken(session.accessToken)).id, adminProfile.id)
   })
 
+  it('reports a missing Admin profile after Supabase accepted the password', async () => {
+    const { users, store } = setup()
+    let databasePasswordLookups = 0
+    users.authenticatePassword = async () => {
+      databasePasswordLookups += 1
+      return null
+    }
+    const adminAuth = {
+      async authenticatePassword() {
+        throw new AuthError('profile missing', 403, undefined, 'ADMIN_PROFILE_MISSING')
+      },
+      async findByEmail() { return null },
+      async findById() { return null },
+      async updatePassword() {},
+      async verifyEmail() {},
+    }
+    const service = new AuthService(users, store, undefined, undefined, undefined, adminAuth)
+
+    const error = await expectAuthError(() => service.login('orphan-admin@example.test', 'Correct-Password-1'), 403)
+    assert.equal(error.errorCode, 'ADMIN_PROFILE_MISSING')
+    assert.equal(databasePasswordLookups, 0)
+  })
+
+  it('distinguishes an unconfirmed Admin email from bad credentials', async () => {
+    const { users, store } = setup()
+    const adminProfile: UserProfile = { ...sampleUser, id: randomUUID(), email: 'unconfirmed-admin@example.test', role: 'ADMIN' }
+    const adminAuth = {
+      async authenticatePassword() {
+        throw new AuthError('Please confirm your email address before signing in.', 403, undefined, 'EMAIL_NOT_CONFIRMED')
+      },
+      async findByEmail() { return adminProfile },
+      async findById() { return adminProfile },
+      async updatePassword() {},
+      async verifyEmail() {},
+    }
+    const service = new AuthService(users, store, undefined, undefined, undefined, adminAuth)
+
+    const error = await expectAuthError(() => service.login(adminProfile.email, 'Correct-Password-1'), 403)
+    assert.equal(error.errorCode, 'EMAIL_NOT_CONFIRMED')
+  })
+
+  it('preserves Supabase rate-limit and Admin-role failures', async () => {
+    const { users, store } = setup()
+    const adminProfile: UserProfile = { ...sampleUser, id: randomUUID(), email: 'admin-role@example.test', role: 'ADMIN' }
+    const rateLimitedAuth = {
+      async authenticatePassword() {
+        throw new AuthError('Too many sign-in attempts. Please wait and try again.', 429, undefined, 'AUTH_RATE_LIMITED')
+      },
+      async findByEmail() { return adminProfile },
+      async findById() { return adminProfile },
+      async updatePassword() {},
+      async verifyEmail() {},
+    }
+    const rateLimitedService = new AuthService(users, store, undefined, undefined, undefined, rateLimitedAuth)
+    const rateLimitError = await expectAuthError(() => rateLimitedService.login(adminProfile.email, 'Correct-Password-1'), 429)
+    assert.equal(rateLimitError.errorCode, 'AUTH_RATE_LIMITED')
+
+    const studentProfile = { ...adminProfile, role: 'STUDENT' as const }
+    const wrongRoleAuth = {
+      async authenticatePassword() { return studentProfile },
+      async findByEmail() { return adminProfile },
+      async findById() { return studentProfile },
+      async updatePassword() {},
+      async verifyEmail() {},
+    }
+    const wrongRoleService = new AuthService(users, store, undefined, undefined, undefined, wrongRoleAuth)
+    const roleError = await expectAuthError(() => wrongRoleService.login(adminProfile.email, 'Correct-Password-1'), 403)
+    assert.equal(roleError.errorCode, 'ADMIN_ROLE_REQUIRED')
+  })
+
   it('rejects invalid registration fields and duplicate email addresses', async () => {
     const { service } = setup()
     await expectAuthError(
@@ -912,6 +982,34 @@ describe('authentication service', () => {
       () => service.login('unknown@example.test', 'wrong-password'),
       401
     )
+  })
+
+  it('authenticates an active unverified Admin from PostgreSQL when Supabase Auth has no password account', async () => {
+    const { service, users, store } = setup()
+    const admin: UserProfile = {
+      ...sampleUser,
+      id: randomUUID(),
+      email: 'database-admin@example.test',
+      role: 'ADMIN',
+      is_verified: false,
+    }
+    users.users.set(admin.id, admin)
+    users.passwords.set(admin.id, 'Database-Admin-Password!')
+
+    await expectAuthError(
+      () => service.login(admin.email, 'wrong-password'),
+      401
+    )
+    assert.equal(store.sessions.size, 0)
+
+    const tokens = await service.login(admin.email, 'Database-Admin-Password!')
+    assert.equal(tokens.user.id, admin.id)
+    assert.equal(tokens.user.role, 'ADMIN')
+    assert.equal((await service.authenticateAccessToken(tokens.accessToken)).role, 'ADMIN')
+    const refreshedTokens = await service.refresh(tokens.refreshToken)
+    assert.equal(refreshedTokens.user.role, 'ADMIN')
+    assert.equal((await service.authenticateAccessToken(refreshedTokens.accessToken)).role, 'ADMIN')
+    assert.equal(store.sessions.size, 1)
   })
 
   it('rejects login for an inactive account', async () => {

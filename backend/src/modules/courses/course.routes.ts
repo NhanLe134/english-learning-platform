@@ -9,7 +9,7 @@ coursesRouter.get('/catalog', (request, response, next) =>
   courseController.listPublishedCourses(request, response, next)
 )
 
-coursesRouter.get('/my-courses', authenticate, (request, response, next) =>
+coursesRouter.get('/my-courses', authenticate, authorize('STUDENT'), (request, response, next) =>
   courseController.getMyEnrolledCourses(request, response, next)
 )
 

@@ -45,10 +45,10 @@ export const ConfirmActionModal: React.FC<ConfirmActionModalProps> = ({
           iconBgClass: 'confirm-icon-wrapper-success',
           title: 'Xác nhận Mở khóa tài khoản',
           actionBtnClass: 'btn-confirm-success',
-          actionBtnText: 'Mở khóa ngay',
+          actionBtnText: user.status === 'pending' ? 'Gửi lại liên kết' : 'Mở khóa ngay',
           description: (
             <>
-              Bạn có chắc chắn muốn <strong>mở khóa</strong> cho tài khoản của{' '}
+              Bạn có chắc chắn muốn <strong>{user.status === 'pending' ? 'gửi lại liên kết kích hoạt' : 'mở khóa'}</strong> cho tài khoản của{' '}
               <strong className="text-highlight">{user.full_name}</strong> (<code>{user.email}</code>)? Người dùng sẽ có thể đăng nhập và sử dụng hệ thống bình thường.
             </>
           ),
@@ -59,11 +59,11 @@ export const ConfirmActionModal: React.FC<ConfirmActionModalProps> = ({
           iconBgClass: 'confirm-icon-wrapper-danger',
           title: 'Xác nhận Xóa người dùng vĩnh viễn',
           actionBtnClass: 'btn-confirm-danger',
-          actionBtnText: 'Xóa vĩnh viễn',
+          actionBtnText: user.role === 'TEACHER' ? 'Vô hiệu hóa' : 'Xóa vĩnh viễn',
           description: (
             <>
-              Bạn có chắc chắn muốn <strong>xóa người dùng</strong>{' '}
-              <strong className="text-highlight">{user.full_name}</strong> (<code>{user.email}</code>) khỏi hệ thống? Hành động này sẽ xóa dữ liệu vĩnh viễn khỏi cơ sở dữ liệu Supabase và <strong>không thể hoàn tác</strong>.
+              Bạn có chắc chắn muốn <strong>{user.role === 'TEACHER' ? 'vô hiệu hóa tài khoản giáo viên' : 'xóa người dùng'}</strong>{' '}
+              <strong className="text-highlight">{user.full_name}</strong> (<code>{user.email}</code>) khỏi hệ thống? {user.role === 'TEACHER' ? 'Tài khoản sẽ bị khóa vĩnh viễn và các phiên hiện tại sẽ bị thu hồi.' : <>Hành động này sẽ xóa dữ liệu vĩnh viễn khỏi cơ sở dữ liệu Supabase và <strong>không thể hoàn tác</strong>.</>}
             </>
           ),
         }
