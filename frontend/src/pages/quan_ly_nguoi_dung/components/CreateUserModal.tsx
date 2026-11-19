@@ -10,12 +10,10 @@ interface CreateUserModalProps {
 
 // Helper to generate temporary secure password
 function generateTempPassword(): string {
-  const years = [2025, 2026]
-  const year = years[Math.floor(Math.random() * years.length)]
-  const specials = ['#Temp', '@Pass', '!Secure', '#Master']
-  const special = specials[Math.floor(Math.random() * specials.length)]
-  const randNum = Math.floor(100 + Math.random() * 900)
-  return `EngMaster@${year}${special}${randNum}`
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%'
+  const random = new Uint32Array(16)
+  crypto.getRandomValues(random)
+  return Array.from(random, (value) => alphabet[value % alphabet.length]).join('')
 }
 
 export const CreateUserModal: React.FC<CreateUserModalProps> = ({
@@ -28,7 +26,7 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
   const [email, setEmail] = useState('')
   const [phoneNumber, setPhoneNumber] = useState('')
   const [role, setRole] = useState<'TEACHER' | 'ADMIN'>('TEACHER')
-  const [password, setPassword] = useState('EngMaster@2025#Temp')
+  const [password, setPassword] = useState(() => generateTempPassword())
 
   const [submitting, setSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -75,7 +73,7 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
       setNickname('')
       setEmail('')
       setPhoneNumber('')
-      setPassword('EngMaster@2025#Temp')
+      setPassword(generateTempPassword())
       onClose()
     } catch (err: unknown) {
       if (err instanceof Error) {
@@ -230,6 +228,9 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
                 className="form-input password-input"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                minLength={8}
+                maxLength={72}
+                autoComplete="new-password"
                 required
               />
               <button
@@ -242,7 +243,7 @@ export const CreateUserModal: React.FC<CreateUserModalProps> = ({
               </button>
             </div>
             <p className="form-helper-note">
-              Yêu cầu người dùng đổi mật khẩu ở lần đăng nhập đầu tiên.
+              Tài khoản giáo viên đăng nhập được ngay. Hãy gửi mật khẩu khởi tạo riêng cho giáo viên và hướng dẫn đổi sau khi đăng nhập.
             </p>
           </div>
 

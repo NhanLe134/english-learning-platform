@@ -3,6 +3,7 @@ import { authApi, getAuthApiErrorStatus, type AuthSession } from './auth-api'
 import { AuthContext } from './auth-context'
 
 const AUTH_SESSION_STORAGE_KEY = 'your-voice-auth-session'
+const LOGOUT_HISTORY_LOCK_KEY = 'your-voice-logout-history-lock'
 let refreshInFlight: Promise<AuthSession> | undefined
 
 function getTokenExpiryMs(token: string): number | null {
@@ -113,13 +114,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (event.key !== AUTH_SESSION_STORAGE_KEY) return
       setCurrentSession(event.newValue ? readStoredSession() : null)
     }
+    const recheckSessionAfterBackNavigation = (event: PageTransitionEvent) => {
+      if (event.persisted) setCurrentSession(readStoredSession())
+    }
     window.addEventListener('storage', syncSessionAcrossTabs)
-    return () => window.removeEventListener('storage', syncSessionAcrossTabs)
+    window.addEventListener('pageshow', recheckSessionAfterBackNavigation)
+    return () => {
+      window.removeEventListener('storage', syncSessionAcrossTabs)
+      window.removeEventListener('pageshow', recheckSessionAfterBackNavigation)
+    }
   }, [])
 
   const setSession = useCallback((nextSession: AuthSession) => {
     setCurrentSession(nextSession)
     storeSession(nextSession)
+    try { sessionStorage.removeItem(LOGOUT_HISTORY_LOCK_KEY) } catch { /* Optional browser history protection. */ }
     setInitializationError(null)
   }, [])
 
@@ -172,14 +181,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const logout = useCallback(async () => {
+    try { sessionStorage.setItem(LOGOUT_HISTORY_LOCK_KEY, '1') } catch { /* Optional browser history protection. */ }
+    let logoutError: unknown
     try {
       await authApi.logout(session?.accessToken)
     } catch (error) {
-      if (getAuthApiErrorStatus(error) !== 401) throw error
+      if (getAuthApiErrorStatus(error) !== 401) logoutError = error
+    } finally {
+      // Always end the local session so a server/network error cannot leave the
+      // current protected screen rendered as though the user were still signed in.
+      setCurrentSession(null)
+      storeSession(null)
+      setInitializationError(null)
     }
-    setCurrentSession(null)
-    storeSession(null)
-    setInitializationError(null)
+    if (logoutError) throw logoutError
   }, [session])
 
   return (

@@ -3,7 +3,10 @@ import { AuthError } from '../modules/auth/auth.errors.js'
 
 export const errorHandler: ErrorRequestHandler = (error: unknown, _request, response, _next) => {
   if (error instanceof AuthError) {
-    response.status(error.statusCode).json({ message: error.message })
+    response.status(error.statusCode).json({
+      message: error.message,
+      ...(error.errorCode ? { code: error.errorCode } : {}),
+    })
     return
   }
 

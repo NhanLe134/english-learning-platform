@@ -33,6 +33,7 @@ import {
 } from './auth.tokens.js'
 import type { GoogleAuthInput } from './google.types.js'
 import { getGoogleRegistrationDetails, verifyGoogleAuthInput } from './google.verifier.js'
+import { teacherService } from '../teachers/teacher.service.js'
 
 interface UserService {
   createStudentAccount(
@@ -121,7 +122,7 @@ export interface RegistrationOtpRequestResult {
 }
 
 export const GENERIC_FORGOT_MESSAGE =
-  'If an account exists for that address, a temporary password will be sent.'
+  'If an account exists for that address, recovery instructions will be sent.'
 
 export interface ForgotPasswordResult {
   message: string
@@ -144,7 +145,7 @@ function publicUser(user: UserProfile): TokenPair['user'] {
 }
 
 function genericCredentialsError(): AuthError {
-  return new AuthError('Invalid email or password', 401)
+  return new AuthError('Invalid email or password', 401, undefined, 'INVALID_CREDENTIALS')
 }
 
 function invalidTokenError(): AuthError {
@@ -464,54 +465,85 @@ export class AuthService {
       )
     }
     if (storedUser?.role === 'ADMIN' && adminLookupError) {
-      throw new AuthError('Admin authentication provider is unavailable.', 503, adminLookupError)
+      throw new AuthError('The Admin authentication service is unavailable. Please try again later.', 503, adminLookupError, 'AUTH_PROVIDER_UNAVAILABLE')
     }
 
     if (!adminProfile || adminProfile.role !== 'ADMIN') {
+      if ((!storedUser || storedUser.role === 'ADMIN') && !databaseLookupError) {
+        const authenticatedProfile = await this.authenticateAdminProvider(email.trim().toLowerCase(), password)
+        if (authenticatedProfile) {
+          if (authenticatedProfile.role !== 'ADMIN') {
+            throw new AuthError('This account does not have Admin access.', 403, undefined, 'ADMIN_ROLE_REQUIRED')
+          }
+          return this.createAdminSession(authenticatedProfile)
+        }
+      }
       return this.loginWithDatabasePassword(email, password)
     }
 
-    let user: UserProfile | null
-    try {
-      user = await this.adminAuth.authenticatePassword(email.trim().toLowerCase(), password)
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        /SUPABASE_PUBLISHABLE_KEY/.test(error.message)
-      ) {
-        throw new AuthError(
-          'Admin login is not configured. Set SUPABASE_PUBLISHABLE_KEY (or SUPABASE_ANON_KEY) in backend/.env and restart the backend.',
-          503,
-          error
-        )
-      }
-      throw new AuthError('Admin authentication provider is unavailable.', 503, error)
-    }
-    if (!user && storedUser) {
-      // The ADMIN profile exists in PostgreSQL with a valid credential, but the
-      // Supabase Auth user is missing or its password is out of sync. Fall back
-      // to the database credential so the account remains usable.
+    const user = await this.authenticateAdminProvider(email.trim().toLowerCase(), password)
+    if (!user) {
       return this.loginWithDatabasePassword(email, password)
     }
-    if (!user || user.status !== 'active') throw genericCredentialsError()
+    if (user.role !== 'ADMIN') {
+      throw new AuthError('This account does not have Admin access.', 403, undefined, 'ADMIN_ROLE_REQUIRED')
+    }
+    return this.createAdminSession(user)
+  }
+
+  private async authenticateAdminProvider(email: string, password: string): Promise<UserProfile | null> {
+    try {
+      return await this.adminAuth.authenticatePassword(email, password)
+    } catch (error) {
+      if (error instanceof AuthError) throw error
+      if (error instanceof Error && /SUPABASE_URL|SUPABASE_PUBLISHABLE_KEY/.test(error.message)) {
+        throw new AuthError(
+          'Admin login is not configured. Verify the Supabase URL and publishable key on the backend.',
+          503,
+          error,
+          'AUTH_CONFIGURATION'
+        )
+      }
+      console.warn('[AdminAuth] Authentication provider failed', {
+        stage: 'provider_request',
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+      })
+      throw new AuthError('The Admin authentication service is unavailable. Please try again later.', 503, error, 'AUTH_PROVIDER_UNAVAILABLE')
+    }
+
+  }
+
+  private async createAdminSession(user: UserProfile): Promise<TokenPair> {
+    if (user.status !== 'active') {
+      throw new AuthError('This Admin account is inactive. Contact an administrator.', 403, undefined, 'ACCOUNT_INACTIVE')
+    }
     try {
       await this.adminAuth.verifyEmail(user.id)
     } catch (error) {
-      throw new AuthError('Unable to update Admin email verification status.', 503, error)
+      console.warn('[AdminAuth] Authenticated Admin profile could not be verified', {
+        stage: 'profile_verification',
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+      })
+      throw new AuthError('Your account was authenticated, but its Admin profile could not be verified.', 503, error, 'ADMIN_PROFILE_LOOKUP_FAILED')
     }
     try {
       return await this.createSession(user)
     } catch (error) {
+      console.warn('[AdminAuth] Authenticated Admin session could not be created', {
+        stage: 'session_creation',
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+      })
       throw new AuthError(
         'Authentication session storage is unavailable. Verify PostgreSQL access and apply the auth database migration.',
         503,
-        error
+        error,
+        'SESSION_STORAGE_UNAVAILABLE'
       )
     }
   }
 
   private async loginWithDatabasePassword(email: string, password: string): Promise<TokenPair> {
-    let user: UserProfile | null
+    let user: UserProfile | null = null
     try {
       user = await this.users.authenticatePassword(email.trim().toLowerCase(), password)
     } catch (error) {
@@ -522,13 +554,18 @@ export class AuthService {
         error
       )
     }
-    if (!user || user.is_verified !== true) {
+    // Admin accounts may use the PostgreSQL credential store without a matching
+    // Supabase Auth user, so email verification is not available for that path.
+    // Their role, password hash, and active status are still checked below.
+    if (!user || (user.role !== 'ADMIN' && user.is_verified !== true)) {
       throw genericCredentialsError()
     }
-    if (user.status === 'pending') {
+    if (user.role === 'STUDENT' && user.status === 'pending') {
       throw new AuthError('Complete course payment before logging in.', 403)
     }
-    if (user.status !== 'active') throw genericCredentialsError()
+    if (user.status !== 'active') {
+      throw genericCredentialsError()
+    }
     try {
       return await this.createSession(user)
     } catch (error) {
@@ -547,7 +584,7 @@ export class AuthService {
       throw new AuthError('Địa chỉ email Google chưa được xác minh.', 400)
     }
 
-    let user: UserProfile | null
+    let user: UserProfile | null = null
     try {
       user = await this.users.findByEmail(userInfo.email)
     } catch (error) {
@@ -651,7 +688,7 @@ export class AuthService {
     }
 
     const user = await this.findSessionUser(session.user_id)
-    if (!user || user.status !== 'active' || user.is_verified !== true) {
+    if (!user || user.status !== 'active' || (user.role !== 'ADMIN' && user.is_verified !== true)) {
       await this.store.revokeSession(session.id)
       throw invalidTokenError()
     }
@@ -724,7 +761,7 @@ export class AuthService {
     }
 
     const user = await this.findSessionUser(claims.sub)
-    if (!user || user.status !== 'active' || user.is_verified !== true) {
+    if (!user || user.status !== 'active' || (user.role !== 'ADMIN' && user.is_verified !== true)) {
       await this.store.revokeSession(session.id)
       throw invalidTokenError()
     }
@@ -774,6 +811,11 @@ export class AuthService {
       throw new AuthError('Admin authentication provider is unavailable.', 503, adminLookupError)
     }
     if (!user || user.status !== 'active') return { message: GENERIC_FORGOT_MESSAGE }
+
+    if (user.role === 'TEACHER') {
+      await teacherService.requestPasswordReset(user.email)
+      return { message: GENERIC_FORGOT_MESSAGE }
+    }
 
     const temporaryPassword = generateTemporaryPassword()
     try {
@@ -836,6 +878,32 @@ export class AuthService {
       )
     }
     return { message: GENERIC_FORGOT_MESSAGE }
+  }
+
+  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+    validatePassword(newPassword)
+    const user = await this.findSessionUser(userId)
+    if (!user) {
+      throw new AuthError('User not found', 404)
+    }
+
+    try {
+      await authRepository.changePassword(userId, currentPassword, newPassword)
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : ''
+      if (msg === 'Current password does not match' || msg.includes('không chính xác')) {
+        throw new AuthError('Mật khẩu hiện tại không chính xác', 400)
+      }
+      throw new AuthError(msg || 'Không thể đổi mật khẩu. Vui lòng thử lại sau.', 400, error)
+    }
+
+    if (user.role === 'ADMIN') {
+      try {
+        await this.adminAuth.updatePassword(userId, user.email, newPassword)
+      } catch (error) {
+        console.warn('Admin Supabase Auth password update non-fatal error:', error)
+      }
+    }
   }
 
   private async findSessionUser(userId: string): Promise<UserProfile | null> {

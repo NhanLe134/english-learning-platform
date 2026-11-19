@@ -334,6 +334,26 @@ export class AuthController {
     }
   }
 
+  async changePassword(request: Request, response: Response, next: NextFunction): Promise<void> {
+    const user = response.locals.authUser
+    if (!user) {
+      next(new AuthError('Authentication is required', 401))
+      return
+    }
+
+    try {
+      const currentPassword = requireString(request.body?.currentPassword, 'currentPassword')
+      const newPassword = requireString(request.body?.newPassword, 'newPassword')
+      await authService.changePassword(user.id, currentPassword, newPassword)
+      response.status(200).json({
+        success: true,
+        message: 'Đổi mật khẩu thành công',
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+
   me(_request: Request, response: Response, next: NextFunction): void {
     const user = response.locals.authUser
     if (!user) {

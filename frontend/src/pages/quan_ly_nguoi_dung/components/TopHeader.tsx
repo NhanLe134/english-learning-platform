@@ -40,7 +40,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ currentPage = 'Quản lý 
     setLoggingOut(true)
     try {
       await logout()
-      window.location.assign('/login')
+      window.location.replace('/login')
     } catch (error) {
       reportError(error instanceof Error ? error.message : 'Đăng xuất không thành công.')
     } finally {

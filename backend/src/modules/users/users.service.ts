@@ -26,8 +26,8 @@ export class UsersService {
       throw new Error('Định dạng email không hợp lệ')
     }
 
-    if (!dto.role || (dto.role !== 'TEACHER' && dto.role !== 'ADMIN')) {
-      throw new Error('Vai trò cấp quyền phải là TEACHER hoặc ADMIN')
+    if (dto.role !== 'ADMIN') {
+      throw new Error('Teacher accounts must be created through the activation workflow')
     }
 
     const password = dto.password
