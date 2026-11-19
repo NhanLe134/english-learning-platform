@@ -2,6 +2,7 @@ import cors from 'cors'
 import { app } from './app.js'
 import { env } from './config/env.js'
 import { paymentConfirmationEmailService } from './modules/payments/payment-confirmation-email.service.js'
+import { khoiDongTienTrinhDonDepTuDong } from './modules/daily-word/daily-word.service.js'
 
 // Danh sách các domain cụ thể được phép gọi API
 const allowedOrigins = [
@@ -31,4 +32,7 @@ app.listen(env.port, () => {
     void paymentConfirmationEmailService.processDueJobs()
   }, 60_000)
   paymentEmailRetryTimer.unref()
+
+  // Tự động kích hoạt dọn dẹp dữ liệu Daily Word cũ hơn 2 tháng định kỳ
+  khoiDongTienTrinhDonDepTuDong()
 })

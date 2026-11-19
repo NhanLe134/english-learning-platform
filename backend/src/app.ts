@@ -11,6 +11,7 @@ import { usersRouter } from './modules/users/users.routes.js'
 import { paymentsRouter } from './modules/payments/payments.routes.js'
 
 import { workshopsRouter } from './modules/workshops/workshop.routes.js'
+import { dailyWordRouter } from './modules/daily-word/daily-word.routes.js'
 import { openApiDocument } from './openapi.js'
 
 export const app = express()
@@ -66,6 +67,7 @@ app.use('/api/courses', coursesRouter)
 app.use('/api/payment', paymentsRouter)
 
 app.use('/api/workshops', workshopsRouter)
+app.use('/api/daily-word', dailyWordRouter)
 
 app.get('/docs/openapi.json', (_request, response) => {
   response.status(200).json(openApiDocument)

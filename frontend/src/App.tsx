@@ -16,9 +16,11 @@ import { StudentCourseDetailPage } from './pages/courses/StudentCourseDetailPage
 import { CheckoutPage } from './pages/checkout/CheckoutPage'
 import { CheckoutSuccessPage } from './pages/checkout/CheckoutSuccessPage'
 import { WorkshopsPage } from './pages/workshops/WorkshopsPage'
+import { DailyWordPage } from './pages/daily-word/DailyWordPage'
 import { ContactPage } from './pages/contact/ContactPage'
 import { AuthProvider } from './pages/auth/AuthContext'
 import { useAuth } from './pages/auth/auth-context'
+import { StudentDailyWordPopup } from './components/daily-word/StudentDailyWordPopup'
 
 function AppRoutes() {
   const { initializationError, isInitializing, user } = useAuth()
@@ -98,6 +100,10 @@ function AppRoutes() {
       break
     case '/admin/courses':
       page = <CourseManagementPage />
+      break
+    case '/daily-word':
+    case '/admin/daily-word':
+      page = <DailyWordPage />
       break
     case '/about':
     case '/ve-chung-toi':
@@ -179,6 +185,9 @@ function AppRoutes() {
         <div className="auth-global-error" role="alert">{initializationError}</div>
       )}
       {page}
+      {!isAdminRoute && !isAuthPage && !isAuthCallback && pathname !== '/daily-word' && (
+        <StudentDailyWordPopup />
+      )}
     </>
   )
 }
