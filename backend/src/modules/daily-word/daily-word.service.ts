@@ -347,6 +347,11 @@ export class DailyWordService {
     return this.repo.layHangDoiFlashcard(hocVienId)
   }
 
+  // Xóa từ vựng (kèm lịch đăng + hàng đợi ôn tập liên quan nhờ CASCADE)
+  async xoaTuVung(tuVungId: string): Promise<boolean> {
+    return this.repo.xoaTuVung(tuVungId)
+  }
+
   // =======================================================
   // DỌN DẸP DỮ LIỆU CŨ HƠN 2 THÁNG
   // =======================================================

@@ -11,6 +11,7 @@ import {
   TableProperties,
   Sparkles,
   Download,
+  FileUp,
 } from 'lucide-react'
 import type { TuVungBocTach } from '../types/dailyWord.types'
 import {
@@ -177,19 +178,21 @@ export const SmartDocParserCard: React.FC<SmartDocParserCardProps> = ({
                 type="button"
                 disabled={parsing}
                 onClick={() => fileInputRef.current?.click()}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200/90 bg-white px-3 text-[11.5px] font-semibold text-slate-700 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 hover:shadow-[0_3px_8px_rgba(0,0,0,0.06)] active:translate-y-0 active:scale-98 disabled:opacity-50 cursor-pointer"
+                className="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:bg-slate-50 hover:text-ink-700 active:scale-98 disabled:opacity-50 cursor-pointer"
+                title={parsing ? 'Đang nhận diện file...' : 'Chọn file tài liệu (.docx, .doc, .txt)'}
+                aria-label={parsing ? 'Đang nhận diện file' : 'Chọn file tài liệu'}
               >
-                {parsing ? 'Đang nhận diện…' : 'Chọn file tài liệu'}
+                <FileUp className="size-4" />
               </button>
 
               <button
                 type="button"
                 onClick={handleDownload}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200/90 bg-white px-2.5 text-[11.5px] font-semibold text-brand-700 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:-translate-y-0.5 hover:border-brand-300 hover:bg-brand-50/50 hover:shadow-[0_3px_8px_rgba(200,16,46,0.08)] active:translate-y-0 active:scale-98 cursor-pointer"
-                title="Tải file mẫu để điền theo đúng chuẩn"
+                className="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:bg-slate-50 hover:text-ink-700 active:scale-98 cursor-pointer"
+                title="Tải file mẫu import để điền theo đúng chuẩn"
+                aria-label="Tải file mẫu import"
               >
-                <Download className="size-3.5 text-brand-600" />
-                <span>File mẫu import</span>
+                <Download className="size-4" />
               </button>
             </div>
           </div>

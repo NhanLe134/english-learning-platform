@@ -273,21 +273,22 @@ export function CourseManagementPage() {
             <div className="flex items-center gap-3">
               {/* TODO (người dùng tự làm): xuất danh sách khóa học ra Excel */}
               <button
-                type="button"
-                disabled
-                title="Tính năng sẽ được cập nhật sau"
-                className="flex h-[38px] items-center gap-2 rounded border border-slate-200 bg-white px-4 text-xs font-semibold text-ink-900 opacity-60"
-              >
-                <Download size={14} />
-                Xuất Excel
-              </button>
+              type="button"
+              disabled
+              title="Tính năng sẽ được cập nhật sau"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200/90 bg-white px-3.5 text-[12px] font-semibold text-slate-700 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-98 disabled:opacity-50"
+            >
+              <Download size={14} />
+              Xuất Excel
+            </button>
+
               <button
                 type="button"
                 onClick={() => setEditingCourse(null)}
-                className="flex h-[38px] items-center gap-2 rounded bg-brand-600 px-4 text-xs font-semibold text-white hover:bg-brand-700"
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-gradient-to-r from-brand-600 to-brand-700 px-3.5 text-[12px] font-bold text-white shadow-[0_2px_8px_rgba(200,16,46,0.25)] ring-1 ring-brand-700/20 transition-all duration-150 ease-out hover:-translate-y-0.5 hover:from-brand-500 hover:to-brand-600 hover:shadow-[0_4px_12px_rgba(200,16,46,0.35)] active:translate-y-0 active:scale-98 cursor-pointer"
               >
                 <Plus size={14} />
-                Thêm khóa học mới
+                Thêm khóa mới
               </button>
             </div>
           </div>
@@ -332,7 +333,7 @@ export function CourseManagementPage() {
               <Search size={15} className="shrink-0 text-ink-400" aria-hidden="true" />
               <input
                 type="search"
-                placeholder="Tìm kiếm theo tên khóa học, mã học phần, slug..."
+                placeholder="Tìm kiếm theo tên khóa học, slug..."
                 value={filters.search}
                 onChange={(event) => updateFilters({ search: event.target.value, page: 1 })}
                 className="h-full w-full border-none bg-transparent text-xs text-ink-900 placeholder:text-ink-400 focus:outline-none"
@@ -407,7 +408,10 @@ export function CourseManagementPage() {
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
                 {courses.map((course) => {
                   const pill = statusPill(course.status)
-                  const teacher = course.teacher_id ? teacherMap.get(course.teacher_id) : undefined
+                  // Giáo viên chính = phần tử đầu tiên trong danh sách phân công (fallback teacher_id)
+                  const primaryTeacherId = course.teacher_ids?.[0] ?? course.teacher_id
+                  const teacher = primaryTeacherId ? teacherMap.get(primaryTeacherId) : undefined
+                  const extraTeacherCount = Math.max(0, (course.teacher_ids?.length ?? 0) - 1)
                   const discount = discountPercent(course)
                   return (
                     <article key={course.id} className="flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
@@ -474,6 +478,11 @@ export function CourseManagementPage() {
                           <div className="min-w-0">
                             <p className="truncate text-sm font-semibold text-ink-900">
                               {teacher?.full_name ?? 'Chưa phân công'}
+                              {extraTeacherCount > 0 && (
+                                <span className="ml-1.5 rounded border border-brand-100 bg-brand-50 px-1.5 py-0.5 text-[10px] font-bold text-brand-600 align-middle">
+                                  +{extraTeacherCount} GV
+                                </span>
+                              )}
                             </p>
                             <p className="text-[11px] text-ink-500">Giảng viên phụ trách</p>
                           </div>
@@ -508,7 +517,7 @@ export function CourseManagementPage() {
                             <button
                               type="button"
                               onClick={() => setConfirmAction({ type: 'toggle', course })}
-                              className="flex h-[34px] flex-1 items-center justify-center gap-2 rounded border border-slate-200 bg-white text-xs font-semibold text-ink-900 hover:bg-slate-50"
+                              className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200/90 bg-white text-[11.5px] font-semibold text-slate-700 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:-translate-y-0.5 hover:bg-slate-50 hover:text-slate-900 active:translate-y-0 active:scale-98 cursor-pointer"
                             >
                               <Play size={13} />
                               Khôi phục xuất bản
@@ -519,17 +528,17 @@ export function CourseManagementPage() {
                               onClick={() =>
                                 window.location.assign(`/admin/lessons?courseId=${course.id}`)
                               }
-                              className="flex h-[34px] flex-1 items-center justify-center gap-2 rounded border border-slate-200 bg-white text-xs font-semibold text-ink-900 hover:bg-slate-50"
+                              className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200/90 bg-white text-[11.5px] font-semibold text-slate-700 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:-translate-y-0.5 hover:bg-slate-50 hover:text-slate-900 active:translate-y-0 active:scale-98 cursor-pointer"
                             >
                               <BookOpen size={13} />
-                              Quản lý {course.total_lessons} bài giảng
+                              Quản lý {course.lesson_count ?? course.total_lessons} bài giảng
                             </button>
                           )}
                           <button
                             type="button"
                             aria-label={course.status === 'published' ? `Lưu trữ ${course.title}` : `Công khai ${course.title}`}
                             onClick={() => setConfirmAction({ type: 'toggle', course })}
-                            className="flex h-[34px] w-[38px] items-center justify-center rounded border border-slate-200 bg-white text-ink-700 hover:bg-slate-50"
+                            className="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:bg-slate-50 hover:text-ink-700 active:scale-98 cursor-pointer"
                           >
                             {course.status === 'published' ? <Archive size={13} /> : <Play size={13} />}
                           </button>
@@ -565,7 +574,7 @@ export function CourseManagementPage() {
                   aria-label="Trang trước"
                   disabled={loading || pagination.page <= 1}
                   onClick={() => updateFilters({ page: pagination.page - 1 })}
-                  className="flex size-8 items-center justify-center rounded border border-slate-200 bg-white text-ink-700 disabled:opacity-40"
+                  className="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:bg-slate-50 hover:text-ink-700 active:scale-98 disabled:opacity-40 cursor-pointer"
                 >
                   <ChevronLeft size={15} />
                 </button>
@@ -575,10 +584,10 @@ export function CourseManagementPage() {
                     type="button"
                     aria-current={page === pagination.page ? 'page' : undefined}
                     onClick={() => updateFilters({ page })}
-                    className={`flex size-8 items-center justify-center rounded text-xs font-semibold ${
+                    className={`inline-flex size-8 items-center justify-center rounded-lg text-[11.5px] font-bold transition-all duration-150 ease-out active:scale-95 cursor-pointer ${
                       page === pagination.page
-                        ? 'bg-brand-600 text-white'
-                        : 'border border-slate-200 bg-white text-ink-700 hover:bg-slate-50'
+                        ? 'bg-gradient-to-r from-brand-600 to-brand-700 text-white shadow-[0_2px_8px_rgba(200,16,46,0.25)]'
+                        : 'border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-ink-900'
                     }`}
                   >
                     {page}
@@ -589,7 +598,7 @@ export function CourseManagementPage() {
                   aria-label="Trang sau"
                   disabled={loading || pagination.page >= pagination.totalPages}
                   onClick={() => updateFilters({ page: pagination.page + 1 })}
-                  className="flex size-8 items-center justify-center rounded border border-slate-200 bg-white text-ink-700 disabled:opacity-40"
+                  className="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:bg-slate-50 hover:text-ink-700 active:scale-98 disabled:opacity-40 cursor-pointer"
                 >
                   <ChevronRight size={15} />
                 </button>
@@ -609,6 +618,7 @@ export function CourseManagementPage() {
         <CourseDrawer
           key={editingCourse?.id ?? 'new-course'}
           course={editingCourse}
+          teachers={teachers}
           saving={saving}
           onClose={() => {
             if (!saving) setEditingCourse(undefined)

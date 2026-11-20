@@ -13,6 +13,7 @@ import { paymentsRouter } from './modules/payments/payments.routes.js'
 import { workshopsRouter } from './modules/workshops/workshop.routes.js'
 import { dailyWordRouter } from './modules/daily-word/daily-word.routes.js'
 import { teacherRouter } from './modules/teachers/teacher.routes.js'
+import { lessonsRouter } from './modules/lessons/lessons.routes.js'
 import { openApiDocument } from './openapi.js'
 
 export const app = express()
@@ -64,6 +65,7 @@ app.get('/api/health', (_request, response) => {
 app.use('/api/users', usersRouter)
 app.use('/api/auth', authRouter)
 app.use('/api/courses', coursesRouter)
+app.use('/api/lessons', lessonsRouter)
 
 app.use('/api/payment', paymentsRouter)
 

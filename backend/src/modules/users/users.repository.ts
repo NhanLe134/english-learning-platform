@@ -512,6 +512,39 @@ export class UsersRepository {
   }
 
   /**
+   * Cập nhật hồ sơ người dùng (mọi vai trò): họ tên, nickname, số điện thoại, avatar.
+   * Không đụng đến email/role/status — các trường đó có luồng riêng.
+   */
+  async updateProfile(
+    id: string,
+    payload: Partial<Pick<UserProfile, 'full_name' | 'nickname' | 'phone_number' | 'avatar_url'>>
+  ): Promise<UserProfile> {
+    if (!this.hasSupabaseConfig()) {
+      throw new Error('Chưa cấu hình Supabase trong backend/.env')
+    }
+
+    const client = createSupabaseClient()
+    const update: Record<string, unknown> = { updated_at: new Date().toISOString() }
+    if (payload.full_name !== undefined) update.full_name = payload.full_name
+    if (payload.nickname !== undefined) update.nickname = payload.nickname || null
+    if (payload.phone_number !== undefined) update.phone_number = payload.phone_number || null
+    if (payload.avatar_url !== undefined) update.avatar_url = payload.avatar_url || null
+
+    const { data, error } = await client
+      .from('profiles')
+      .update(update)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error || !data) {
+      throw new Error(`Lỗi cập nhật hồ sơ người dùng: ${error?.message || 'không tìm thấy người dùng'}`)
+    }
+
+    return this.mapRowToProfile(data)
+  }
+
+  /**
    * Delete user from Supabase profiles
    */
   async delete(id: string): Promise<boolean> {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Plus, Ticket, CheckCircle2, AlertCircle, Database, RefreshCw, AlertTriangle } from 'lucide-react'
+import { Plus, CheckCircle2, AlertCircle, Database, RefreshCw, AlertTriangle } from 'lucide-react'
 import { Sidebar } from './components/Sidebar'
 import { TopHeader } from './components/TopHeader'
 import { UserFilterBar } from './components/UserFilterBar'
@@ -7,7 +7,7 @@ import { UserTable } from './components/UserTable'
 import { UserPagination } from './components/UserPagination'
 import { CreateUserModal } from './components/CreateUserModal'
 import { ConfirmActionModal, type ConfirmActionType } from './components/ConfirmActionModal'
-import { EditTeacherModal } from './components/EditTeacherModal'
+import { EditUserModal, type EditUserPayload } from './components/EditUserModal'
 import { userApi } from './services/userApi'
 import { useAuth } from '../auth/auth-context'
 import type { CreateUserInput, PaginationInfo, UserFilterState, UserProfile } from './types'
@@ -55,6 +55,15 @@ export const QuanLyNguoiDungPage: React.FC = () => {
     loading: false,
   })
   const [editingTeacher, setEditingTeacher] = useState<UserProfile | null>(null)
+
+  // Lưu chỉnh sửa hồ sơ người dùng (mọi vai trò) qua PATCH /users/:id/profile
+  const handleUpdateUser = async (input: EditUserPayload) => {
+    if (!editingTeacher) return
+    await userApi.updateUserProfile(editingTeacher.id, input, accessToken, async () => (await refreshSession()).accessToken)
+    setEditingTeacher(null)
+    showToast('success', 'Đã cập nhật hồ sơ người dùng.')
+    await loadUsers()
+  }
 
   // State for toast feedback
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -188,14 +197,6 @@ export const QuanLyNguoiDungPage: React.FC = () => {
     }
   }
 
-  const handleUpdateTeacher = async (input: { full_name: string; nickname: string; phone_number: string }) => {
-    if (!editingTeacher) return
-    await userApi.updateTeacher(editingTeacher.id, input, accessToken, async () => (await refreshSession()).accessToken)
-    setEditingTeacher(null)
-    showToast('success', 'Đã cập nhật thông tin giáo viên.')
-    await loadUsers()
-  }
-
   // Handle seed data into Supabase
   const handleSeedData = async () => {
     try {
@@ -230,13 +231,6 @@ export const QuanLyNguoiDungPage: React.FC = () => {
     } finally {
       setExporting(false)
     }
-  }
-
-  // Handle "Tạo mã đăng ký" feature
-  const handleGenerateRegistrationCode = () => {
-    const code = `ENG-${Math.random().toString(36).substring(2, 8).toUpperCase()}-2025`
-    navigator.clipboard.writeText(code)
-    showToast('success', `Đã tạo & sao chép mã đăng ký mới: ${code}`)
   }
 
   const navigateAdmin = (tab: string) => {
@@ -305,7 +299,7 @@ export const QuanLyNguoiDungPage: React.FC = () => {
 
           {/* Page Title & Top Actions Row */}
           <div className="page-title-row">
-            <h1 className="page-main-title">QUẢN LÝ NGƯỜI DÙNG</h1>
+            <h1 className="page-main-title">Quản Lý Người Dùng</h1>
             <div className="page-top-actions">
               {/* Button: + Thêm Giáo viên / Admin (Primary Red #F60005) */}
               <button
@@ -315,17 +309,6 @@ export const QuanLyNguoiDungPage: React.FC = () => {
               >
                 <Plus size={18} />
                 <span>Thêm Giáo viên / Admin</span>
-              </button>
-
-              {/* Button: Tạo mã Đăng ký (Secondary Outline) */}
-              <button
-                type="button"
-                className="btn-secondary-outline"
-                onClick={handleGenerateRegistrationCode}
-                title="Tạo mã đăng ký khóa học cho học viên"
-              >
-                <Ticket size={17} />
-                <span>Tạo mã Đăng ký</span>
               </button>
             </div>
           </div>
@@ -371,7 +354,7 @@ export const QuanLyNguoiDungPage: React.FC = () => {
         onClose={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
         onConfirm={handleExecuteAction}
       />
-      <EditTeacherModal key={editingTeacher?.id ?? 'none'} user={editingTeacher} onClose={() => setEditingTeacher(null)} onSave={handleUpdateTeacher} />
+      <EditUserModal key={editingTeacher?.id ?? 'none'} user={editingTeacher} onClose={() => setEditingTeacher(null)} onSave={handleUpdateUser} />
     </div>
   )
 }

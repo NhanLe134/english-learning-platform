@@ -4,7 +4,6 @@ import {
   ChevronRight,
   CheckCircle2,
   Clock,
-  AlertTriangle,
 } from 'lucide-react'
 import type { LichDangItem, ThongKeThang } from '../types/dailyWord.types'
 import { CalendarDayCell } from './CalendarDayCell'
@@ -120,12 +119,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             <span>{statistics.so_tu_sap_dang} từ sắp đăng</span>
           </div>
 
-          {statistics.so_ngay_con_lai > 0 && (
-            <div className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700 border border-amber-200/60 whitespace-nowrap">
-              <AlertTriangle className="size-3 text-amber-600 shrink-0" />
-              <span>còn {statistics.so_ngay_con_lai} ngày nữa hết từ</span>
-            </div>
-          )}
+        
         </div>
       </div>
 

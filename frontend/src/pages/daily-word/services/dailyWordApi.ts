@@ -102,6 +102,19 @@ export const dailyWordApi = {
   },
 
   /**
+   * Xóa từ vựng khỏi kho (kèm lịch đăng + hàng đợi ôn tập liên quan)
+   */
+  async xoaTuVung(tuVungId: string): Promise<void> {
+    const res = await fetch(`${API_BASE_URL}/daily-word/tu-vung/${tuVungId}`, {
+      method: 'DELETE',
+    })
+    const json = await res.json()
+    if (!res.ok || !json.success) {
+      throw new Error(json.error || 'Không thể xóa từ vựng')
+    }
+  },
+
+  /**
    * Dọn dẹp dữ liệu cũ hơn 2 tháng để làm nhẹ database
    */
   async donDepDuLieuCu(): Promise<{

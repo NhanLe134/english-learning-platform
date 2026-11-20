@@ -145,6 +145,23 @@ export class DailyWordController {
     }
   }
 
+  // Xóa từ vựng khỏi kho (kèm lịch đăng + hàng đợi ôn tập liên quan)
+  async xoaTuVung(req: Request, res: Response) {
+    try {
+      const tuVungId = String(req.params.id || '').trim()
+      if (!tuVungId) {
+        return res.status(400).json({ success: false, error: 'Thiếu ID từ vựng' })
+      }
+      const deleted = await dailyWordService.xoaTuVung(tuVungId)
+      if (!deleted) {
+        return res.status(404).json({ success: false, error: 'Không tìm thấy từ vựng' })
+      }
+      res.json({ success: true, message: 'Đã xóa từ vựng và lịch đăng liên quan' })
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message || 'Lỗi server' })
+    }
+  }
+
   async phatAm(req: Request, res: Response) {
     try {
       const tuTiengAnh = String(req.params.tuTiengAnh || '').trim()

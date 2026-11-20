@@ -24,6 +24,9 @@ dailyWordRouter.post('/', (req, res) => dailyWordController.taoTuVungThuCong(req
 // Đổi ngày phát hành
 dailyWordRouter.patch('/:id/reschedule', (req, res) => dailyWordController.doiNgayPhatHanh(req, res))
 
+// Xóa từ vựng (kèm lịch đăng + hàng đợi ôn tập liên quan nhờ CASCADE)
+dailyWordRouter.delete('/tu-vung/:id', (req, res) => dailyWordController.xoaTuVung(req, res))
+
 // Xác nhận và đồng bộ xếp lịch hàng loạt từ tệp
 dailyWordRouter.post('/bulk-schedule', (req, res) => dailyWordController.xepLichHangLoat(req, res))
 

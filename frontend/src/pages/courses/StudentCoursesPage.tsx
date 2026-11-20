@@ -3,14 +3,12 @@ import { Search, ArrowRight, BookOpen } from 'lucide-react'
 import { StudentHeader } from './components/StudentHeader'
 import { MyCourseCard } from './components/MyCourseCard'
 import { OtherCourseCard } from './components/OtherCourseCard'
-import { DailyWordWidget } from './components/DailyWordWidget'
 import { ImprovementAreasWidget } from './components/ImprovementAreasWidget'
 import { useAuth } from '../auth/auth-context'
 import {
   CURRENT_STUDENT,
   MY_COURSES,
   OTHER_COURSES,
-  DAILY_WORD,
   IMPROVEMENT_ISSUES,
   type MyCourse,
   type OtherCourse,
@@ -102,7 +100,6 @@ export const StudentCoursesPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'in_progress' | 'completed'>('all')
   const [sortBy, _setSortBy] = useState<'recent' | 'progress' | 'title'>('recent')
-  const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [myCoursesLoading, setMyCoursesLoading] = useState(false)
   const [myCoursesError, setMyCoursesError] = useState<string | null>(null)
 
@@ -113,11 +110,6 @@ export const StudentCoursesPage: React.FC = () => {
     return []
   })
   const [catalogCourses, setCatalogCourses] = useState<OtherCourse[]>(() => OTHER_COURSES)
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg)
-    setTimeout(() => setToastMessage(null), 3500)
-  }
 
   // Fetch real catalog courses and enrolled courses
   useEffect(() => {
@@ -232,14 +224,6 @@ export const StudentCoursesPage: React.FC = () => {
 
   return (
     <div className="student-portal-page">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-ink-900 text-white text-xs font-semibold px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
-          <span className="w-2 h-2 rounded-full bg-brand-600 animate-ping" />
-          <span>{toastMessage}</span>
-        </div>
-      )}
-
       {/* Header */}
       <StudentHeader student={studentProfile} />
 
@@ -413,14 +397,6 @@ export const StudentCoursesPage: React.FC = () => {
 
           {/* Right Column (Sidebar Widgets) */}
           <aside className="right-sidebar-column">
-            {/* Daily Word Widget */}
-            <DailyWordWidget
-              data={DAILY_WORD}
-              onPracticeAI={(word) => {
-                showToast(`Đã mở phòng luyện phát âm AI với từ "${word}"!`)
-              }}
-            />
-
             {/* Areas for Improvement Widget */}
             <ImprovementAreasWidget issues={IMPROVEMENT_ISSUES} />
           </aside>

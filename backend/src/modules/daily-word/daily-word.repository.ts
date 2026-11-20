@@ -2,10 +2,31 @@ import { createSupabaseClient } from '../../config/supabase.js'
 import type {
   TuVungHangNgay,
   LichDangTuVung,
+  TrangThaiLichDang,
   YeuCauTaoTuVungVaLich,
   MucDoGhiNho,
   HangDoiOnTapTuVung,
 } from './daily-word.types.js'
+
+// Ngày hôm nay theo múi giờ máy chủ, định dạng YYYY-MM-DD
+function layNgayHomNay(): string {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+}
+
+/**
+ * Suy ra trạng thái phát hành ĐỘNG theo ngày hiện tại thay vì tin cậy cột
+ * trang_thai trong DB (không có tiến trình nào cập nhật trạng thái theo thời gian,
+ * nên các lịch đã qua ngày vẫn kẹt ở 'cho_phat_hanh' và làm sai thống kê).
+ * Trạng thái 'tam_dung' (tạm dừng thủ công) được giữ nguyên.
+ */
+function suyRaTrangThai(ngayPhatHanh: string, trangThaiDb: string): TrangThaiLichDang {
+  if (trangThaiDb === 'tam_dung') return 'tam_dung'
+  const homNay = layNgayHomNay()
+  if (ngayPhatHanh < homNay) return 'da_qua'
+  if (ngayPhatHanh === homNay) return 'dang_hoat_dong'
+  return 'cho_phat_hanh'
+}
 
 export class DailyWordRepository {
   private getClient() {
@@ -45,7 +66,7 @@ export class DailyWordRepository {
         tu_vung_id: row.tu_vung_id,
         ngay_phat_hanh: row.ngay_phat_hanh,
         gio_phat_hanh: row.gio_phat_hanh,
-        trang_thai: row.trang_thai,
+        trang_thai: suyRaTrangThai(row.ngay_phat_hanh, row.trang_thai),
         nguon_du_lieu: row.nguon_du_lieu,
         ten_tep_nguon: row.ten_tep_nguon,
         da_gui_thong_bao: row.da_gui_thong_bao,
@@ -89,7 +110,7 @@ export class DailyWordRepository {
         tu_vung_id: data.tu_vung_id,
         ngay_phat_hanh: data.ngay_phat_hanh,
         gio_phat_hanh: data.gio_phat_hanh,
-        trang_thai: data.trang_thai,
+        trang_thai: suyRaTrangThai(data.ngay_phat_hanh, data.trang_thai),
         nguon_du_lieu: data.nguon_du_lieu,
         ten_tep_nguon: data.ten_tep_nguon,
         da_gui_thong_bao: data.da_gui_thong_bao,
@@ -225,6 +246,22 @@ export class DailyWordRepository {
       throw new Error(`Không thể xóa lịch đăng: ${error.message}`)
     }
     return true
+  }
+
+  // Xóa từ vựng khỏi kho — lịch đăng và hàng đợi ôn tập liên quan tự động
+  // bị xóa theo nhờ ON DELETE CASCADE từ các bảng con
+  async xoaTuVung(tuVungId: string): Promise<boolean> {
+    const client = this.getClient()
+    const { data, error } = await client
+      .from('tu_vung_hang_ngay')
+      .delete()
+      .eq('id', tuVungId)
+      .select('id')
+
+    if (error) {
+      throw new Error(`Không thể xóa từ vựng: ${error.message}`)
+    }
+    return Array.isArray(data) && data.length > 0
   }
 
   async luuLichHangLoat(danhSach: Array<{

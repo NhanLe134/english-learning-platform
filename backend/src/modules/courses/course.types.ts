@@ -43,6 +43,10 @@ export interface ManagedCourse {
   thumbnail_url: string | null
   status: ManagedCourseStatus
   teacher_id: string
+  /** Danh sách ID giáo viên được phân công (1..n) — teacher_id là giáo viên chính */
+  teacher_ids?: string[]
+  /** Số bài giảng THẬT tế của khóa (đếm qua topics, không dùng cột total_lessons tĩnh) */
+  lesson_count?: number
   created_at: string
   updated_at: string
 }

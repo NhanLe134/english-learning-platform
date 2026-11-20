@@ -39,7 +39,7 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  color: #c8102e;
+  color: #F60005;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -126,24 +126,24 @@
 }
 
 .public-course-guarantee svg {
-  color: #c8102e;
+  color: #F60005;
 }
 
 .public-course-guarantee:hover,
 .public-course-guarantee.active {
   border-color: #fbb5bc;
   background: #fef1f2;
-  color: #c8102e;
+  color: #F60005;
 }
 
 .public-course-search-button {
   border: 0;
-  background: #c8102e;
+  background: #F60005;
   color: #fff;
 }
 
 .public-course-search-button:hover {
-  background: #a30d26;
+  background: #D60004;
 }
 
 .public-course-results {
@@ -175,7 +175,7 @@
   padding: 6px 12px;
   border-radius: 9999px;
   background: #fef1f2;
-  color: #c8102e;
+  color: #F60005;
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
@@ -305,7 +305,7 @@
 }
 
 .public-course-status-badge {
-  background: #c8102e;
+  background: #F60005;
   color: #fff;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -331,7 +331,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  color: #c8102e;
+  color: #F60005;
   font-size: 12px;
   font-weight: 700;
 }
@@ -366,7 +366,7 @@
 }
 
 .public-course-card:hover h2 {
-  color: #c8102e;
+  color: #F60005;
 }
 
 .public-course-card-copy > p {
@@ -401,7 +401,7 @@
 .public-course-highlight-item svg {
   flex: 0 0 auto;
   margin-top: 1px;
-  color: #c8102e;
+  color: #F60005;
 }
 
 .public-course-instructor-row {
@@ -420,7 +420,7 @@
   place-items: center;
   border-radius: 50%;
   background: #fef1f2;
-  color: #c8102e;
+  color: #F60005;
   font-size: 12px;
   font-weight: 700;
 }
@@ -455,7 +455,7 @@
 }
 
 .public-course-price-group strong {
-  color: #c8102e;
+  color: #F60005;
   font-size: 20px;
   font-weight: 800;
 }
@@ -468,7 +468,7 @@
   gap: 5px;
   padding: 8px 12px;
   border-radius: 8px;
-  background: #c8102e;
+  background: #F60005;
   color: #fff;
   font-size: 12px;
   font-weight: 700;
@@ -477,7 +477,7 @@
 }
 
 .public-course-card:hover .public-course-btn-primary {
-  background: #a30d26;
+  background: #D60004;
 }
 
 .public-course-status,
@@ -520,7 +520,7 @@
   padding: 0 12px;
   border: 0;
   border-radius: 8px;
-  background: #c8102e;
+  background: #F60005;
   color: #fff;
   cursor: pointer;
   font-family: inherit;
@@ -529,7 +529,7 @@
 }
 
 .public-course-error button:hover {
-  background: #a30d26;
+  background: #D60004;
 }
 
 @media (min-width: 640px) {

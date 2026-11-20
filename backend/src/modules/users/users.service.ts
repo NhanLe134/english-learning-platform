@@ -101,6 +101,47 @@ export class UsersService {
   }
 
   /**
+   * Cập nhật hồ sơ người dùng (mọi vai trò): họ tên, nickname, SĐT, avatar
+   */
+  async updateProfile(
+    id: string,
+    payload: Partial<Pick<UserProfile, 'full_name' | 'nickname' | 'phone_number' | 'avatar_url'>>
+  ): Promise<UserProfile> {
+    if (!id) throw new Error('Thiếu ID người dùng')
+    const clean: typeof payload = {}
+    if (payload.full_name !== undefined) {
+      const fullName = payload.full_name.trim()
+      if (!fullName || fullName.length > 120) {
+        throw new Error('Họ và tên là bắt buộc và tối đa 120 ký tự')
+      }
+      clean.full_name = fullName
+    }
+    if (payload.nickname !== undefined) {
+      const nickname = payload.nickname.trim()
+      if (nickname.length > 60) throw new Error('Nickname tối đa 60 ký tự')
+      clean.nickname = nickname
+    }
+    if (payload.phone_number !== undefined) {
+      const phone = payload.phone_number.trim()
+      if (phone && phone.length > 32) throw new Error('Số điện thoại tối đa 32 ký tự')
+      clean.phone_number = phone
+    }
+    if (payload.avatar_url !== undefined) {
+      const avatarUrl = payload.avatar_url.trim()
+      if (avatarUrl) {
+        try {
+          const parsed = new URL(avatarUrl)
+          if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error()
+        } catch {
+          throw new Error('Avatar URL phải là liên kết http/https hợp lệ')
+        }
+      }
+      clean.avatar_url = avatarUrl
+    }
+    return usersRepository.updateProfile(id, clean)
+  }
+
+  /**
    * Delete user profile
    */
   async deleteUser(id: string): Promise<boolean> {

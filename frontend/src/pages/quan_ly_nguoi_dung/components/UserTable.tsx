@@ -117,7 +117,7 @@ export const UserTable: React.FC<UserTableProps> = ({ users, loading, onActionCl
                               {user.full_name}
                             </span>
                             {user.is_verified && (
-                              <CheckCircle2 size={15} className="verified-badge-icon" />
+                              <CheckCircle2 size={14} className="verified-badge-icon" />
                             )}
                           </div>
                           {user.status !== 'active' && <span className="text-xs font-medium text-amber-700">{user.status === 'pending' ? 'Chờ kích hoạt' : user.status === 'deactivated' ? 'Đã vô hiệu hóa' : 'Đang tạm khóa'}</span>}
@@ -152,10 +152,10 @@ export const UserTable: React.FC<UserTableProps> = ({ users, loading, onActionCl
                       </div>
                     </td>
 
-                    {/* 6. Action Column: Lock/Unlock & Delete */}
+                    {/* 6. Action Column: Edit (mọi vai trò) / Lock-Unlock & Delete */}
                     <td className="td-actions text-center">
                       <div className="action-buttons-group">
-                        {user.role === 'TEACHER' && onEditClick && <button type="button" className="action-btn-pill" title="Chỉnh sửa thông tin giáo viên" onClick={() => onEditClick(user)}><Pencil size={15} /></button>}
+                        {onEditClick && <button type="button" className="action-btn-pill" title="Chi tiết & chỉnh sửa người dùng" onClick={() => onEditClick(user)}><Pencil size={14} /></button>}
                         {/* Lock / Unlock Toggle Button */}
                         {user.status !== 'deactivated' && <button
                           type="button"
@@ -165,12 +165,12 @@ export const UserTable: React.FC<UserTableProps> = ({ users, loading, onActionCl
                         >
                           {isLocked ? (
                             <>
-                              <Lock size={15} className="action-icon-lock" />
+                              <Lock size={13} className="action-icon-lock" />
                               <span className="action-btn-label">Bị khóa</span>
                             </>
                           ) : (
                             <>
-                              <Unlock size={15} className="action-icon-unlock" />
+                              <Unlock size={13} className="action-icon-unlock" />
                               <span className="action-btn-label">{user.status === 'pending' ? 'Kích hoạt' : 'Mở'}</span>
                             </>
                           )}
@@ -183,7 +183,7 @@ export const UserTable: React.FC<UserTableProps> = ({ users, loading, onActionCl
                           title="Xóa người dùng vĩnh viễn khỏi CSDL Supabase"
                           onClick={() => onActionClick(user, 'delete')}
                         >
-                          <Trash2 size={16} />
+                          <Trash2 size={14} />
                         </button> : null}
                       </div>
                     </td>

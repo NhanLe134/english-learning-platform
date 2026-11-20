@@ -1,4 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
+import { Sidebar } from '../quan_ly_nguoi_dung/components/Sidebar'
+import { TopHeader } from '../quan_ly_nguoi_dung/components/TopHeader'
+import { ConfirmModal } from './components/ConfirmModal'
 import { DailyWordHeader } from './components/DailyWordHeader'
 import { SmartDocParserCard } from './components/SmartDocParserCard'
 import { CalendarView } from './components/CalendarView'
@@ -38,29 +41,53 @@ export function DailyWordPage() {
   const [rescheduleModalOpen, setRescheduleModalOpen] = useState(false)
   const [isCleaningUp, setIsCleaningUp] = useState(false)
 
+  // Modal xác nhận thay cho window.confirm của trình duyệt
+  const [confirmRequest, setConfirmRequest] = useState<{
+    title: string
+    message: string
+    confirmLabel: string
+    danger: boolean
+    action: () => Promise<void>
+  } | null>(null)
+  const [confirmLoading, setConfirmLoading] = useState(false)
+
+  async function handleConfirmAction() {
+    if (!confirmRequest) return
+    setConfirmLoading(true)
+    try {
+      await confirmRequest.action()
+      setConfirmRequest(null)
+    } catch (err: any) {
+      alert(`Lỗi khi thực hiện thao tác: ${err.message || 'Vui lòng thử lại'}`)
+    } finally {
+      setConfirmLoading(false)
+    }
+  }
+
   // Dọn dẹp dữ liệu cũ hơn 2 tháng
-  async function handleCleanupOldData() {
+  function handleCleanupOldData() {
     const twoMonthsAgo = new Date()
     twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2)
     const mocStr = `${String(twoMonthsAgo.getDate()).padStart(2, '0')}/${String(twoMonthsAgo.getMonth() + 1).padStart(2, '0')}/${twoMonthsAgo.getFullYear()}`
 
-    const confirmed = window.confirm(
-      `Xác nhận dọn dẹp toàn bộ dữ liệu lịch đăng và từ vựng trước ngày ${mocStr} (cũ hơn 2 tháng) để làm nhẹ Database? Thao tác này sẽ giải phóng dung lượng lưu trữ.`
-    )
-    if (!confirmed) return
-
-    try {
-      setIsCleaningUp(true)
-      const res = await dailyWordApi.donDepDuLieuCu()
-      alert(
-        `Dọn dẹp thành công!\n- Số lịch đã xóa: ${res.so_lich_da_xoa}\n- Số từ vựng đã xóa: ${res.so_tu_da_xoa}\n- Mốc thời gian cắt: Trước ngày ${res.ngay_moc_cat}`
-      )
-      await taiDuLieuThang(currentYear, currentMonth)
-    } catch (err: any) {
-      alert(`Lỗi khi dọn dẹp dữ liệu: ${err.message || 'Vui lòng thử lại'}`)
-    } finally {
-      setIsCleaningUp(false)
-    }
+    setConfirmRequest({
+      title: 'Dọn dẹp dữ liệu cũ?',
+      message: `Xác nhận dọn dẹp toàn bộ dữ liệu lịch đăng và từ vựng trước ngày ${mocStr} (cũ hơn 2 tháng) để làm nhẹ Database? Thao tác này sẽ giải phóng dung lượng lưu trữ.`,
+      confirmLabel: 'Dọn dẹp',
+      danger: false,
+      action: async () => {
+        setIsCleaningUp(true)
+        try {
+          const res = await dailyWordApi.donDepDuLieuCu()
+          alert(
+            `Dọn dẹp thành công!\n- Số lịch đã xóa: ${res.so_lich_da_xoa}\n- Số từ vựng đã xóa: ${res.so_tu_da_xoa}\n- Mốc thời gian cắt: Trước ngày ${res.ngay_moc_cat}`
+          )
+          await taiDuLieuThang(currentYear, currentMonth)
+        } finally {
+          setIsCleaningUp(false)
+        }
+      },
+    })
   }
 
   // Tải danh sách lịch đăng từ Backend theo năm và tháng
@@ -163,6 +190,22 @@ export function DailyWordPage() {
     }
   }
 
+  // Xóa từ vựng đang chọn (kèm lịch đăng + hàng đợi ôn tập liên quan)
+  function handleDeleteSelectedWord() {
+    if (!selectedItem) return
+    setConfirmRequest({
+      title: 'Xóa từ vựng này?',
+      message: `Xóa từ "${selectedItem.tu_vung.tu_tieng_anh}" và lịch đăng ngày ${selectedItem.ngay_phat_hanh}? Hành động không thể hoàn tác.`,
+      confirmLabel: 'Xác nhận xóa',
+      danger: true,
+      action: async () => {
+        await dailyWordApi.xoaTuVung(selectedItem.tu_vung_id)
+        setSelectedDate(null)
+        await taiDuLieuThang(currentYear, currentMonth)
+      },
+    })
+  }
+
   function handleDownloadTemplate() {
     downloadSampleImportFile()
   }
@@ -174,25 +217,36 @@ export function DailyWordPage() {
     setSelectedDate(getTodayDateStr())
   }
 
-  return (
-    <div className="min-h-screen bg-[#F8F9FA] text-ink-900">
-      {/* Header thanh lịch với cụm button ép sát sang phải */}
-      <DailyWordHeader
-        onOpenManualModal={() => {
-          setEditingWordData(undefined)
-          setManualInitialDate(selectedDate || getTodayDateStr())
-          setManualModalOpen(true)
-        }}
-        onToggleSmartParser={() => setShowSmartParser((open) => !open)}
-        showSmartParser={showSmartParser}
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
-        onDownloadTemplate={handleDownloadTemplate}
-        onCleanupOldData={handleCleanupOldData}
-        isCleaningUp={isCleaningUp}
-      />
+  const navigateAdmin = (tab: string) => {
+    if (tab === 'quan_ly_nguoi_dung') window.location.assign('/admin/users')
+    if (tab === 'khoa_hoc_bai_tap') window.location.assign('/admin/courses')
+    if (tab === 'thanh_toan') window.location.assign('/admin/payments')
+  }
 
-      <main className="mx-auto max-w-[1440px] px-6 py-7 lg:px-8">
+  return (
+    <div className="user-management-page-container">
+      <Sidebar activeTab="daily_word" onTabChange={navigateAdmin} />
+      <div className="user-management-main-wrapper">
+        <TopHeader currentPage="Daily Word & Lịch đăng" />
+
+        <main className="min-h-screen bg-white px-8 py-8">
+          {/* Thanh tiêu đề + cụm nút hành động của tính năng */}
+          <DailyWordHeader
+            onOpenManualModal={() => {
+              setEditingWordData(undefined)
+              setManualInitialDate(selectedDate || getTodayDateStr())
+              setManualModalOpen(true)
+            }}
+            onToggleSmartParser={() => setShowSmartParser((open) => !open)}
+            showSmartParser={showSmartParser}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
+            onDownloadTemplate={handleDownloadTemplate}
+            onCleanupOldData={handleCleanupOldData}
+            isCleaningUp={isCleaningUp}
+          />
+
+      <div className="mt-6">
         {/* Khối Nhận diện thông minh & Tự động xếp lịch */}
         {showSmartParser && (
           <SmartDocParserCard
@@ -343,11 +397,14 @@ export function DailyWordPage() {
                   setManualInitialDate(selectedDate)
                   setManualModalOpen(true)
                 }}
+                onDelete={() => void handleDeleteSelectedWord()}
               />
             </div>
           )}
         </div>
-      </main>
+      </div>
+        </main>
+      </div>
 
       {/* Modal Thêm hoặc Sửa từ vựng thủ công */}
       <ManualWordModal
@@ -368,6 +425,18 @@ export function DailyWordPage() {
           onConfirm={handleConfirmReschedule}
         />
       )}
+
+      {/* Modal xác nhận (xóa từ / dọn dẹp dữ liệu cũ) thay cho window.confirm */}
+      <ConfirmModal
+        open={confirmRequest !== null}
+        title={confirmRequest?.title ?? ''}
+        message={confirmRequest?.message ?? ''}
+        confirmLabel={confirmRequest?.confirmLabel}
+        danger={confirmRequest?.danger}
+        loading={confirmLoading}
+        onCancel={() => setConfirmRequest(null)}
+        onConfirm={() => void handleConfirmAction()}
+      />
     </div>
   )
 }

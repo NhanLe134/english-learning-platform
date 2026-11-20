@@ -734,6 +734,11 @@ export const openApiDocument = {
               total_lessons: { type: 'integer', minimum: 0, maximum: 100000 },
               thumbnail_url: { type: 'string', format: 'uri', nullable: true },
               status: { type: 'string', enum: ['published', 'archived'] },
+              teacher_ids: {
+                type: 'array',
+                items: { type: 'string', format: 'uuid' },
+                description: 'Danh sách ID profile vai trò TEACHER được phân công phụ trách khóa học (1..n). Bỏ trống trường này khi cập nhật thì giữ nguyên phân công cũ; khi tạo mới nếu bỏ trống thì gán tài khoản admin tạo khóa.',
+              },
             },
           },
           CourseStatusUpdateRequest: {

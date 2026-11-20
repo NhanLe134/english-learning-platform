@@ -45,12 +45,14 @@ const FALLBACK_WORDS: FlashcardItem[] = [
 function highlightKeyword(sentence: string, keyword: string) {
   if (!sentence || !keyword) return sentence
   const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const parts = sentence.split(new RegExp(`(${escaped})`, 'gi'))
+  // Bôi đỏ NGUYÊN CẢ TỪ chứa từ khóa (kể cả khi từ trong câu có thêm đuôi
+  // biến thể như handsome/handsom, accomplished/accomplish) thay vì chỉ đúng chuỗi khớp
+  const parts = sentence.split(new RegExp(`([A-Za-z']*${escaped}[A-Za-z']*)`, 'gi'))
   return (
     <>
       &ldquo;
       {parts.map((part, i) =>
-        part.toLowerCase() === keyword.toLowerCase() ? (
+        part.toLowerCase().includes(keyword.toLowerCase()) ? (
           <span
             key={i}
             className="rounded bg-red-100/90 px-1 py-0.5 font-bold text-brand-700 not-italic"
@@ -75,6 +77,25 @@ export const StudentDailyWordPopup: React.FC = () => {
       return true
     }
   })
+
+  // Mỗi lần học viên vào Trang chủ (/my-courses) thì popup luôn mở lại:
+  // xóa cờ "đã đóng trong phiên" để lần tải trang sau popup hiện diện tiếp.
+  useEffect(() => {
+    const pathname = window.location.pathname
+    const isStudentHome =
+      pathname === '/my-courses' ||
+      pathname === '/khoa-hoc-cua-toi' ||
+      pathname === '/student' ||
+      pathname.startsWith('/student/courses')
+    if (isStudentHome) {
+      try {
+        sessionStorage.removeItem('daily_word_dismissed')
+      } catch {
+        // Bỏ qua nếu storage bị chặn
+      }
+      setIsOpen(true)
+    }
+  }, [])
   const [isFlipped, setIsFlipped] = useState(false)
   const [currentIndex, setCurrentIndex] = useState(0)
   const [words, setWords] = useState<FlashcardItem[]>(FALLBACK_WORDS)
@@ -186,27 +207,20 @@ export const StudentDailyWordPopup: React.FC = () => {
     })
   }
 
-  // Đánh giá flashcard và chuyển từ tiếp theo
+  // Đánh giá flashcard: lưu mức ghi nhớ rồi đóng popup lại
   async function handleRateWord(e: React.MouseEvent, mucDo: 'chua_thuoc' | 'tam_thuoc' | 'da_thuoc') {
     e.stopPropagation()
     if (user?.id && currentWord?.tu_vung_id) {
       try {
         await dailyWordApi.danhGiaFlashcard(user.id, currentWord.tu_vung_id, mucDo)
       } catch {
-        // bỏ qua
+        // bỏ qua — vẫn đóng popup kể cả khi API lỗi
       }
     }
 
-    // Chuyển sang từ kế tiếp nếu có nhiều hơn 1 từ
-    if (words.length > 1) {
-      setIsFlipped(false)
-      setTimeout(() => {
-        setCurrentIndex((prev) => (prev + 1) % words.length)
-      }, 200)
-    } else {
-      // Lật lại mặt trước
-      setIsFlipped(false)
-    }
+    // Đóng popup sau khi đã đánh giá từ này (reset thẻ về mặt trước cho lần mở sau)
+    setIsFlipped(false)
+    setIsOpen(false)
   }
 
   // Điều hướng lướt sang từ khác

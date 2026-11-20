@@ -1,0 +1,72 @@
+import type { NextFunction, Request, Response } from 'express'
+import { LessonRequestError } from './lessons.errors.js'
+import { lessonsService } from './lessons.service.js'
+import type { AuthenticatedUser } from './lessons.types.js'
+
+function getAuthUser(response: Response): AuthenticatedUser {
+  const user = response.locals.authUser as { id?: unknown; role?: unknown } | undefined
+  if (!user?.id || !user?.role) {
+    throw new LessonRequestError('An authenticated user is required.', 401)
+  }
+  return {
+    id: String(user.id),
+    role: user.role as AuthenticatedUser['role'],
+  }
+}
+
+// Map LessonRequestError sang status code tương ứng; lỗi khác đưa cho errorHandler
+function handleError(error: unknown, res: Response, next: NextFunction): void {
+  if (error instanceof LessonRequestError) {
+    res.status(error.status).json({ success: false, error: error.message })
+    return
+  }
+  next(error)
+}
+
+export class LessonsController {
+  async getTopicsForCourse(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const user = getAuthUser(res)
+      const topics = await lessonsService.getTopicsForCourse(String(req.params.courseId || ''), user)
+      res.status(200).json({ success: true, data: topics })
+    } catch (error) {
+      handleError(error, res, next)
+    }
+  }
+
+  async createTopic(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const user = getAuthUser(res)
+      const courseId = String(req.params.courseId || '')
+      const topic = await lessonsService.createTopic(courseId, user, req.body)
+      res.status(201).json({ success: true, data: topic })
+    } catch (error) {
+      handleError(error, res, next)
+    }
+  }
+
+  async createLesson(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const user = getAuthUser(res)
+      const topicId = String(req.params.topicId || '')
+      const result = await lessonsService.createLesson(topicId, user, req.body)
+      res.status(201).json({ success: true, data: { topic: result.topic, lesson: result.lesson } })
+    } catch (error) {
+      handleError(error, res, next)
+    }
+  }
+
+  // Cập nhật bài giảng — mọi trường, kể cả chuyển chủ đề và đổi thứ tự
+  async updateLesson(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const user = getAuthUser(res)
+      const lessonId = String(req.params.lessonId || '')
+      const result = await lessonsService.updateLesson(lessonId, user, req.body)
+      res.status(200).json({ success: true, data: result })
+    } catch (error) {
+      handleError(error, res, next)
+    }
+  }
+}
+
+export const lessonsController = new LessonsController()

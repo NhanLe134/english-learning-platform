@@ -1,10 +1,25 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react'
-import { Archive, Check, Globe, ImagePlus, LoaderCircle, X } from 'lucide-react'
+import {
+  Archive,
+  Banknote,
+  BookOpen,
+  Check,
+  Globe,
+  Image as ImageIcon,
+  ImagePlus,
+  LoaderCircle,
+  Plus,
+  Save,
+  X,
+} from 'lucide-react'
+import type { UserProfile } from '../../quan_ly_nguoi_dung/types'
 import type { Course, CourseInput, CourseLevel } from '../types'
 
 interface CourseDrawerProps {
   /** null = tạo mới, Course = chỉnh sửa */
   course: Course | null
+  /** Danh sách giáo viên (vai trò TEACHER) cho trường phân công giảng dạy */
+  teachers: UserProfile[]
   saving: boolean
   onClose: () => void
   onSubmit: (input: CourseInput) => Promise<void>
@@ -21,17 +36,29 @@ function slugify(value: string): string {
     .slice(0, 180)
 }
 
+// Input theo style Daily Word: nền xám nhạt, bo tròn lớn, focus viền đỏ + ring
 const inputClass =
-  'h-[38px] w-full rounded border border-slate-300 bg-white px-3 text-xs text-ink-900 placeholder:text-ink-400 focus:border-brand-500 focus:outline-none'
+  'h-[38px] w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 text-xs font-medium text-ink-900 placeholder:font-normal placeholder:text-ink-400 outline-none focus:border-brand-600 focus:bg-white focus:ring-1 focus:ring-brand-600'
 
-const labelClass = 'text-[13px] font-semibold text-ink-900'
+const labelClass = 'text-xs font-bold text-ink-900'
 
-function FormSection({ title, children }: { title: string; children: ReactNode }) {
+function FormSection({
+  title,
+  icon: Icon,
+  children,
+}: {
+  title: string
+  icon: typeof BookOpen
+  children: ReactNode
+}) {
   return (
     <section>
-      <h3 className="border-b border-slate-100 pb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-400">
-        {title}
-      </h3>
+      <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3">
+        <span className="flex size-8 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+          <Icon className="size-4" />
+        </span>
+        <h3 className="text-sm font-extrabold text-ink-900">{title}</h3>
+      </div>
       <div className="mt-4 space-y-4">{children}</div>
     </section>
   )
@@ -39,16 +66,20 @@ function FormSection({ title, children }: { title: string; children: ReactNode }
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null
-  return <p className="mt-1 text-[11px] text-rose-600">{message}</p>
+  return <p className="mt-1 text-[11px] font-semibold text-rose-600">{message}</p>
 }
 
-export function CourseDrawer({ course, saving, onClose, onSubmit }: CourseDrawerProps) {
+export function CourseDrawer({ course, teachers, saving, onClose, onSubmit }: CourseDrawerProps) {
   const isEdit = course !== null
   const [title, setTitle] = useState(course?.title ?? '')
   const [slug, setSlug] = useState(course?.slug ?? '')
   const [slugTouched, setSlugTouched] = useState(isEdit)
   const [category, setCategory] = useState(course?.category ?? '')
   const [level, setLevel] = useState<CourseLevel>(course?.level ?? 'beginner')
+  // Phân công nhiều giáo viên: mặc định là giáo viên chính hiện tại của khóa
+  const [teacherIds, setTeacherIds] = useState<string[]>(
+    course?.teacher_ids ?? (course?.teacher_id ? [course.teacher_id] : [])
+  )
   const [description, setDescription] = useState(course?.description ?? '')
   const [targetAudience, setTargetAudience] = useState(course?.target_audience ?? '')
   const [price, setPrice] = useState(course ? String(course.price) : '')
@@ -80,6 +111,9 @@ export function CourseDrawer({ course, saving, onClose, onSubmit }: CourseDrawer
       errors.slug = 'Slug chỉ gồm chữ thường, số và dấu gạch ngang.'
     }
     if (!category.trim()) errors.category = 'Phân loại không được để trống.'
+    if (teachers.length > 0 && teacherIds.length === 0) {
+      errors.teacherIds = 'Vui lòng phân công ít nhất một giáo viên phụ trách.'
+    }
     if (!targetAudience.trim()) errors.targetAudience = 'Mô tả đối tượng học viên không được để trống.'
     const parsedPrice = Number(price)
     if (price.trim() === '' || !Number.isFinite(parsedPrice) || parsedPrice < 0) {
@@ -114,6 +148,7 @@ export function CourseDrawer({ course, saving, onClose, onSubmit }: CourseDrawer
       total_lessons: course?.total_lessons ?? 0,
       thumbnail_url: thumbnailUrl.trim() || null,
       status,
+      teacher_ids: teacherIds,
     }
     try {
       await onSubmit(input)
@@ -121,6 +156,8 @@ export function CourseDrawer({ course, saving, onClose, onSubmit }: CourseDrawer
       // onSubmit đã hiển thị toast lỗi — giữ drawer mở để người dùng sửa
     }
   }
+
+  const textareaClass = `mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 py-2.5 text-xs font-medium leading-relaxed text-ink-900 outline-none placeholder:font-normal placeholder:text-ink-400 focus:border-brand-600 focus:bg-white focus:ring-1 focus:ring-brand-600`
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end" role="presentation">
@@ -139,32 +176,38 @@ export function CourseDrawer({ course, saving, onClose, onSubmit }: CourseDrawer
         className="relative z-10 flex h-full w-full max-w-[640px] flex-col bg-white shadow-2xl"
       >
         {/* Header */}
-        <header className="flex items-center justify-between border-b border-slate-200 px-7 py-5">
-          <div>
-            <h2 className="text-lg font-semibold text-ink-900">
-              {isEdit ? 'Chỉnh sửa khóa học' : 'Thêm khóa học mới'}
-            </h2>
-            <p className="mt-1 text-xs text-ink-500">
-              {isEdit
-                ? 'Cập nhật thông tin và trạng thái xuất bản của khóa học.'
-                : 'Điền thông tin để xuất bản khóa học lên nền tảng.'}
-            </p>
+        <header className="flex items-center justify-between border-b border-slate-100 px-7 py-5">
+          <div className="flex items-center gap-2.5">
+            <span className="flex size-9 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+              <BookOpen className="size-4.5" />
+            </span>
+            <div>
+              <h2 className="text-base font-extrabold text-ink-900">
+                {isEdit ? 'Chỉnh sửa khóa học' : 'Thêm khóa học mới'}
+              </h2>
+              <p className="mt-0.5 text-xs text-ink-500">
+                {isEdit
+                  ? 'Cập nhật thông tin và trạng thái xuất bản của khóa học.'
+                  : 'Điền thông tin để xuất bản khóa học lên nền tảng.'}
+              </p>
+            </div>
           </div>
           <button
             type="button"
             aria-label="Đóng"
             disabled={saving}
             onClick={onClose}
-            className="flex size-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-ink-700 hover:bg-slate-50 disabled:opacity-40"
+            className="flex size-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-ink-700 disabled:opacity-40 cursor-pointer"
           >
-            <X size={16} />
+            <X className="size-4" />
           </button>
         </header>
 
         {/* Nội dung */}
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
           <div className="flex-1 space-y-7 overflow-y-auto px-7 py-6">
-            <FormSection title="Thông tin khóa học">
+            {/* Nhóm Thông tin khóa học: bỏ header vì trùng với tiêu đề drawer */}
+            <div className="space-y-4">
               <div>
                 <label htmlFor="course-title" className={labelClass}>Tên khóa học <span className="text-brand-600">*</span></label>
                 <input
@@ -185,12 +228,12 @@ export function CourseDrawer({ course, saving, onClose, onSubmit }: CourseDrawer
 
               <div>
                 <label htmlFor="course-slug" className={labelClass}>Đường dẫn (slug) <span className="text-brand-600">*</span></label>
-                <div className="mt-1.5 flex h-[38px] items-center rounded border border-slate-300 bg-slate-50 pl-3 focus-within:border-brand-500">
+                <div className="mt-1.5 flex h-[38px] items-center rounded-xl border border-slate-200 bg-slate-50/60 pl-3.5 outline-none focus-within:border-brand-600 focus-within:bg-white focus-within:ring-1 focus-within:ring-brand-600">
                   <span className="font-mono text-xs text-ink-400">/</span>
                   <input
                     id="course-slug"
                     type="text"
-                    className="h-full w-full border-none bg-transparent pl-1 font-mono text-xs text-ink-900 focus:outline-none"
+                    className="h-full w-full border-none bg-transparent pl-1 font-mono text-xs font-semibold text-ink-900 outline-none placeholder:font-normal placeholder:text-ink-400"
                     placeholder="ielts-intensive-speaking-writing-7-5"
                     value={slug}
                     maxLength={180}
@@ -221,7 +264,7 @@ export function CourseDrawer({ course, saving, onClose, onSubmit }: CourseDrawer
                   <label htmlFor="course-level" className={labelClass}>Trình độ</label>
                   <select
                     id="course-level"
-                    className={`${inputClass} mt-1.5`}
+                    className={`${inputClass} mt-1.5 cursor-pointer`}
                     value={level}
                     onChange={(event) => setLevel(event.target.value as CourseLevel)}
                   >
@@ -233,11 +276,54 @@ export function CourseDrawer({ course, saving, onClose, onSubmit }: CourseDrawer
               </div>
 
               <div>
+                <label htmlFor="course-teacher" className={labelClass}>Phân công giáo viên <span className="text-brand-600">*</span></label>
+                {teachers.length > 0 ? (
+                  <div className="mt-1.5 flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-slate-50/60 p-2.5">
+                    {teachers.map((teacher) => {
+                      const selected = teacherIds.includes(teacher.id)
+                      return (
+                        <button
+                          key={teacher.id}
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() =>
+                            setTeacherIds((prev) =>
+                              prev.includes(teacher.id)
+                                ? prev.filter((id) => id !== teacher.id)
+                                : [...prev, teacher.id]
+                            )
+                          }
+                          className={`inline-flex h-7 items-center gap-1 rounded-md border px-2.5 text-[11px] font-semibold transition-all duration-150 cursor-pointer ${
+                            selected
+                              ? 'border-brand-600 bg-brand-50 text-brand-700'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                          }`}
+                        >
+                          {selected && <Check className="size-3" />}
+                          {teacher.full_name}
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <div className="mt-1.5 rounded-xl border border-dashed border-slate-300 bg-slate-50/60 px-3.5 py-2.5 text-[11px] text-ink-400">
+                    Chưa có giáo viên nào trong hệ thống.
+                  </div>
+                )}
+                {teachers.length > 0 && teacherIds.length > 0 && (
+                  <p className="mt-1 text-[11px] text-ink-400">
+                    Đã chọn {teacherIds.length} giáo viên — giáo viên đầu tiên là giáo viên chính.
+                  </p>
+                )}
+                <FieldError message={fieldErrors.teacherIds} />
+              </div>
+
+              <div>
                 <label htmlFor="course-audience" className={labelClass}>Mô tả đối tượng học viên <span className="text-brand-600">*</span></label>
                 <textarea
                   id="course-audience"
                   rows={2}
-                  className="mt-1.5 w-full rounded border border-slate-300 bg-white px-3 py-2 text-xs leading-relaxed text-ink-900 placeholder:text-ink-400 focus:border-brand-500 focus:outline-none"
+                  className={textareaClass}
                   placeholder="VD: Nắm vững tiêu chí Lexical Resource & Grammatical Range để bứt phá band 8.0"
                   value={targetAudience}
                   maxLength={500}
@@ -251,15 +337,15 @@ export function CourseDrawer({ course, saving, onClose, onSubmit }: CourseDrawer
                 <textarea
                   id="course-description"
                   rows={3}
-                  className="mt-1.5 w-full rounded border border-slate-300 bg-white px-3 py-2 text-xs leading-relaxed text-ink-900 placeholder:text-ink-400 focus:border-brand-500 focus:outline-none"
+                  className={textareaClass}
                   placeholder="Mô tả ngắn về nội dung, lợi ích của khóa học (không bắt buộc)"
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
                 />
               </div>
-            </FormSection>
+            </div>
 
-            <FormSection title="Học phí">
+            <FormSection title="Học phí" icon={Banknote}>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="course-price" className={labelClass}>Giá khóa học (₫) <span className="text-brand-600">*</span></label>
@@ -292,7 +378,7 @@ export function CourseDrawer({ course, saving, onClose, onSubmit }: CourseDrawer
               </div>
             </FormSection>
 
-            <FormSection title="Ảnh bìa">
+            <FormSection title="Ảnh bìa" icon={ImageIcon}>
               <div>
                 <label htmlFor="course-thumbnail" className={labelClass}>URL ảnh bìa</label>
                 <input
@@ -307,11 +393,11 @@ export function CourseDrawer({ course, saving, onClose, onSubmit }: CourseDrawer
                   <img
                     src={previewUrl}
                     alt="Xem trước ảnh bìa"
-                    className="mt-3 h-40 w-full rounded-lg border border-slate-200 object-cover"
+                    className="mt-3 h-40 w-full rounded-xl border border-slate-200 object-cover"
                   />
                 ) : (
-                  <div className="mt-3 flex h-20 items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 text-[11px] text-ink-400">
-                    <ImagePlus size={15} />
+                  <div className="mt-3 flex h-20 items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50/60 text-[11px] text-ink-400">
+                    <ImagePlus className="size-4" />
                     Chưa có ảnh bìa
                   </div>
                 )}
@@ -319,74 +405,80 @@ export function CourseDrawer({ course, saving, onClose, onSubmit }: CourseDrawer
               </div>
             </FormSection>
 
-            <FormSection title="Trạng thái">
+            <FormSection title="Trạng thái" icon={Globe}>
               {/* Trạng thái: chỉ có Công khai và Lưu trữ */}
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
                   aria-pressed={status === 'published'}
                   onClick={() => setStatus('published')}
-                  className={`flex items-center gap-3 rounded-lg border px-3.5 py-3 text-left ${
+                  className={`flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-all duration-150 ${
                     status === 'published'
-                      ? 'border-emerald-300 bg-emerald-50'
-                      : 'border-slate-200 bg-white hover:bg-slate-50'
+                      ? 'border-emerald-300 bg-emerald-50 shadow-[0_1px_4px_rgba(16,185,129,0.15)]'
+                      : 'border-slate-200 bg-slate-50/60 hover:bg-slate-50'
                   }`}
                 >
                   <Globe size={17} className={status === 'published' ? 'text-emerald-600' : 'text-ink-400'} />
                   <span>
-                    <span className="block text-xs font-semibold text-ink-900">Công khai</span>
-                    <span className="block text-[11px] text-ink-500">Học viên thấy được khóa học</span>
+                    <span className="block text-xs font-extrabold text-ink-900">Công khai</span>
+                    <span className="block text-[11px] font-medium text-ink-500">Học viên thấy được khóa học</span>
                   </span>
-                  {status === 'published' && <Check size={15} className="ml-auto text-emerald-600" />}
+                  {status === 'published' && <Check className="ml-auto size-4 text-emerald-600" />}
                 </button>
                 <button
                   type="button"
                   aria-pressed={status === 'archived'}
                   onClick={() => setStatus('archived')}
-                  className={`flex items-center gap-3 rounded-lg border px-3.5 py-3 text-left ${
+                  className={`flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-all duration-150 ${
                     status === 'archived'
-                      ? 'border-slate-400 bg-slate-100'
-                      : 'border-slate-200 bg-white hover:bg-slate-50'
+                      ? 'border-slate-400 bg-slate-100 shadow-[0_1px_4px_rgba(71,85,105,0.15)]'
+                      : 'border-slate-200 bg-slate-50/60 hover:bg-slate-50'
                   }`}
                 >
                   <Archive size={17} className={status === 'archived' ? 'text-ink-700' : 'text-ink-400'} />
                   <span>
-                    <span className="block text-xs font-semibold text-ink-900">Lưu trữ</span>
-                    <span className="block text-[11px] text-ink-500">Ẩn khỏi danh mục công khai</span>
+                    <span className="block text-xs font-extrabold text-ink-900">Lưu trữ</span>
+                    <span className="block text-[11px] font-medium text-ink-500">Ẩn khỏi danh mục công khai</span>
                   </span>
-                  {status === 'archived' && <Check size={15} className="ml-auto text-ink-700" />}
+                  {status === 'archived' && <Check className="ml-auto size-4 text-ink-700" />}
                 </button>
               </div>
             </FormSection>
           </div>
 
           {/* Footer */}
-          <footer className="flex items-center justify-between gap-3 border-t border-slate-200 bg-slate-50/60 px-7 py-4">
-            {/* Số bài giảng là trường đếm, chỉ hiển thị ở chế độ chỉnh sửa; chưa kết nối đếm tự động nên hiển thị theo dữ liệu hiện có */}
+          <footer className="flex items-center justify-between gap-3 border-t border-slate-100 px-7 py-4">
+            {/* Số bài giảng là trường đếm, chỉ hiển thị ở chế độ chỉnh sửa; chưa kết nối đếm tự động */}
             {isEdit ? (
               <p className="text-xs text-ink-500">
-                Số bài giảng: <strong className="font-semibold text-ink-900">{course?.total_lessons ?? 0}</strong>
+                Số bài giảng: <strong className="font-extrabold text-ink-900">{course?.total_lessons ?? 0}</strong>
                 <span className="ml-1 text-ink-400">(tự động đếm — chưa khả dụng)</span>
               </p>
             ) : (
               <span />
             )}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={onClose}
                 disabled={saving}
-                className="h-[38px] rounded border border-slate-200 bg-white px-4 text-xs font-semibold text-ink-900 hover:bg-slate-50 disabled:opacity-40"
+                className="inline-flex h-7 items-center rounded-md border border-slate-200/90 bg-white px-2.5 text-[11px] font-semibold text-slate-700 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-98 disabled:opacity-50 cursor-pointer"
               >
                 Hủy
               </button>
               <button
                 type="submit"
                 disabled={saving}
-                className="flex h-[38px] items-center gap-2 rounded bg-brand-600 px-5 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
+                className="inline-flex h-7 items-center gap-1 rounded-md bg-gradient-to-r from-brand-600 to-brand-700 px-3 text-[11px] font-bold text-white shadow-[0_2px_8px_rgba(200,16,46,0.25)] ring-1 ring-brand-700/20 transition-all duration-150 ease-out hover:-translate-y-0.5 hover:from-brand-500 hover:to-brand-600 hover:shadow-[0_4px_12px_rgba(200,16,46,0.35)] active:translate-y-0 active:scale-98 disabled:opacity-60 disabled:hover:translate-y-0 cursor-pointer"
               >
-                {saving && <LoaderCircle size={13} className="animate-spin" />}
-                {isEdit ? 'Lưu thay đổi' : 'Tạo khóa học'}
+                {saving ? (
+                  <LoaderCircle className="size-3 animate-spin" />
+                ) : isEdit ? (
+                  <Save className="size-3" />
+                ) : (
+                  <Plus className="size-3" />
+                )}
+                <span>{isEdit ? 'Lưu thay đổi' : 'Tạo khóa học'}</span>
               </button>
             </div>
           </footer>

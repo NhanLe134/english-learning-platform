@@ -45,6 +45,7 @@ function mapManagedCourse(row: ManagedCourseRow): ManagedCourse {
     ...row,
     price: Number(row.price),
     discounted_price: row.discounted_price === null ? null : Number(row.discounted_price),
+    teacher_ids: [],
   }
 }
 
@@ -232,6 +233,8 @@ export class CourseRepository {
         thumbnail_url: c.thumbnail_url,
         status: 'published' as const,
         teacher_id: c.teacher?.id ?? 'c0a80101-0000-4000-8000-000000000010',
+        teacher_ids: [],
+        lesson_count: 0,
         created_at: c.created_at,
         updated_at: c.updated_at,
       }))
@@ -244,8 +247,20 @@ export class CourseRepository {
       }
     }
 
+    const items = rows.map(mapManagedCourse)
+    // Gắn danh sách giáo viên được phân công cho từng khóa
+    const teacherMap = await this.layTeacherIdsTheoKhoa(items.map((item) => item.id))
+    for (const item of items) {
+      item.teacher_ids = teacherMap.get(item.id) ?? [item.teacher_id]
+    }
+    // Gắn số bài giảng THẬT của từng khóa (đếm qua topics — cột total_lessons là tĩnh)
+    const lessonCountMap = await this.demBaiGiangTheoKhoa(items.map((item) => item.id))
+    for (const item of items) {
+      item.lesson_count = lessonCountMap.get(item.id) ?? 0
+    }
+
     return {
-      items: rows.map(mapManagedCourse),
+      items,
       total,
       page: filters.page,
       limit: filters.limit,
@@ -253,27 +268,102 @@ export class CourseRepository {
     }
   }
 
-  async createCourse(input: ManagedCourseInput, teacherId: string): Promise<ManagedCourse> {
+  // Đếm số bài giảng thật của từng khóa (qua bảng topics trung gian)
+  private async demBaiGiangTheoKhoa(courseIds: string[]): Promise<Map<string, number>> {
+    const map = new Map<string, number>()
+    if (courseIds.length === 0) return map
+    const { data, error } = await createSupabaseClient()
+      .from('lessons')
+      .select('id, topics!inner(course_id)')
+      .in('topics.course_id', courseIds)
+    if (error) return map
+    for (const row of data ?? []) {
+      const cid = (row as { topics?: { course_id?: string } }).topics?.course_id
+      if (cid) map.set(cid, (map.get(cid) ?? 0) + 1)
+    }
+    return map
+  }
+
+  // Lấy bảng phân bố khóa — giáo viên cho danh sách khóa
+  private async layTeacherIdsTheoKhoa(courseIds: string[]): Promise<Map<string, string[]>> {
+    const map = new Map<string, string[]>()
+    if (courseIds.length === 0) return map
+    const { data, error } = await createSupabaseClient()
+      .from('course_teachers')
+      .select('course_id, teacher_id')
+      .in('course_id', courseIds)
+    if (error) return map
+    for (const row of data ?? []) {
+      const list = map.get(row.course_id) ?? []
+      list.push(row.teacher_id)
+      map.set(row.course_id, list)
+    }
+    return map
+  }
+
+  // Ghi lại bảng phân công (xóa cũ - chèn mới)
+  private async luuDanhSachGiaoVien(courseId: string, teacherIds: string[]): Promise<void> {
+    await createSupabaseClient().from('course_teachers').delete().eq('course_id', courseId)
+    if (teacherIds.length === 0) return
+    await createSupabaseClient()
+      .from('course_teachers')
+      .insert(teacherIds.map((teacher_id) => ({ course_id: courseId, teacher_id })))
+  }
+
+  async createCourse(input: ManagedCourseInput, teacherIds: string[]): Promise<ManagedCourse> {
     const { data, error } = await createSupabaseClient()
       .from('courses')
-      .insert({ ...input, teacher_id: teacherId })
+      .insert({ ...input, teacher_id: teacherIds[0] })
       .select(MANAGED_COURSE_COLUMNS)
       .single()
 
     if (error) throw new Error(`Unable to create course: ${error.message}`, { cause: error })
-    return mapManagedCourse(data as unknown as ManagedCourseRow)
+    const course = mapManagedCourse(data as unknown as ManagedCourseRow)
+    await this.luuDanhSachGiaoVien(course.id, teacherIds)
+    course.teacher_ids = teacherIds
+    return course
   }
 
-  async updateCourse(id: string, input: ManagedCourseInput): Promise<ManagedCourse | null> {
+  async updateCourse(
+    id: string,
+    input: ManagedCourseInput,
+    teacherIds?: string[] | null
+  ): Promise<ManagedCourse | null> {
     const { data, error } = await createSupabaseClient()
       .from('courses')
-      .update({ ...input, updated_at: new Date().toISOString() })
+      .update({
+        ...input,
+        ...(teacherIds && teacherIds.length > 0 ? { teacher_id: teacherIds[0] } : {}),
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', id)
       .select(MANAGED_COURSE_COLUMNS)
       .maybeSingle()
 
     if (error) throw new Error(`Unable to update course: ${error.message}`, { cause: error })
-    return data ? mapManagedCourse(data as unknown as ManagedCourseRow) : null
+    if (!data) return null
+    const course = mapManagedCourse(data as unknown as ManagedCourseRow)
+    if (teacherIds) {
+      await this.luuDanhSachGiaoVien(id, teacherIds)
+      course.teacher_ids = teacherIds
+    } else {
+      const teacherMap = await this.layTeacherIdsTheoKhoa([id])
+      course.teacher_ids = teacherMap.get(id) ?? [course.teacher_id]
+    }
+    return course
+  }
+
+  // Kiểm tra toàn bộ ID đều là profile vai trò TEACHER (xác thực phân công giảng viên)
+  async isTeacherProfiles(profileIds: string[]): Promise<boolean> {
+    const uniqueIds = [...new Set(profileIds)]
+    if (uniqueIds.length === 0) return true
+    const { data, error } = await createSupabaseClient()
+      .from('profiles')
+      .select('id')
+      .in('id', uniqueIds)
+      .eq('role', 'TEACHER')
+    if (error) return false
+    return (data?.length ?? 0) === uniqueIds.length
   }
 
   async updateCourseStatus(

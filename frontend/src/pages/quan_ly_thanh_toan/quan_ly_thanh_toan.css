@@ -1,17 +1,13 @@
 /* ==========================================================================
    QUẢN LÝ THANH TOÁN - ADMIN
    Design System: figma.md (Your English Voice)
-   Brand Red: #C8102E (brand-600)
+   Brand Red: #F60005 (brand-600)
    Font: Be Vietnam Pro
+   Lưu ý: Màu brand (brand-*) KHÔNG được khai báo lại ở đây — nguồn duy nhất
+   là @theme trong src/index.css (#F60005). Khai báo lại sẽ ghi đè toàn app.
    ========================================================================== */
 
 :root {
-  /* Brand colors per figma.md */
-  --color-brand-50: #FEF1F2;
-  --color-brand-100: #FDE0E3;
-  --color-brand-600: #C8102E;
-  --color-brand-700: #A30D26;
-
   /* Ink colors per figma.md */
   --color-ink-900: #17181C;
   --color-ink-700: #3D4046;

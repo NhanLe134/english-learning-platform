@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react'
-import { Search, ChevronDown } from 'lucide-react'
+import { Search } from 'lucide-react'
 import type { UserFilterState, UserRole, UserStatus } from '../types'
 
 interface UserFilterBarProps {
@@ -31,7 +31,7 @@ export const UserFilterBar: React.FC<UserFilterBarProps> = ({
     <div className="user-filter-bar">
       {/* Search Input */}
       <div className="filter-search-wrapper">
-        <Search className="search-icon" size={18} />
+        <Search className="search-icon" size={15} />
         <input
           ref={searchInputRef}
           type="text"
@@ -49,33 +49,33 @@ export const UserFilterBar: React.FC<UserFilterBarProps> = ({
           onChange={(e) =>
             onFilterChange({ role: e.target.value as 'ALL' | UserRole, page: 1 })
           }
-          className="filter-select"
+          className="filter-select !h-7 !py-0 !text-[11px] !rounded-md"
         >
           <option value="ALL">Tất cả vai trò</option>
           <option value="STUDENT">Học viên</option>
           <option value="TEACHER">Giáo viên</option>
           <option value="ADMIN">Admin</option>
         </select>
-        <ChevronDown className="select-arrow" size={16} />
       </div>
 
+
       {/* Status Dropdown */}
-      <div className="filter-select-wrapper">
-        <select
-          value={filters.status}
-          onChange={(e) =>
-            onFilterChange({ status: e.target.value as 'ALL' | UserStatus, page: 1 })
-          }
-          className="filter-select"
-        >
-          <option value="ALL">Tất cả trạng thái</option>
-          <option value="active">Đang hoạt động</option>
-          <option value="locked">Bị khóa / Vi phạm</option>
-          <option value="pending">Chờ kích hoạt</option>
-          <option value="deactivated">Đã vô hiệu hóa</option>
-        </select>
-        <ChevronDown className="select-arrow" size={16} />
-      </div>
+        <div className="filter-select-wrapper">
+          <select
+            value={filters.status}
+            onChange={(e) =>
+              onFilterChange({ status: e.target.value as 'ALL' | UserStatus, page: 1 })
+            }
+            className="filter-select !h-7 !py-0 !text-[11px] !rounded-md"
+          >
+            <option value="ALL">Tất cả trạng thái</option>
+            <option value="active">Đang hoạt động</option>
+            <option value="locked">Bị khóa / Vi phạm</option>
+            <option value="pending">Chờ kích hoạt</option>
+            <option value="deactivated">Đã vô hiệu hóa</option>
+          </select>
+        </div>
+
 
       {/* Total user counter */}
       <div className="filter-counter">

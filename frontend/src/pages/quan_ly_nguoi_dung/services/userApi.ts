@@ -243,6 +243,24 @@ export const userApi = {
   },
 
   /**
+   * Cập nhật hồ sơ người dùng (mọi vai trò): họ tên, nickname, SĐT, avatar
+   * qua PATCH /users/:id/profile
+   */
+  async updateUserProfile(
+    id: string,
+    input: { full_name: string; nickname?: string; phone_number?: string; avatar_url?: string },
+    accessToken: string | null,
+    refreshAccessToken: () => Promise<string>
+  ): Promise<UserProfile> {
+    const response = await authenticatedFetch(`${API_BASE_URL}/users/${encodeURIComponent(id)}/profile`, {
+      method: 'PATCH', headers: { ...authHeaders(accessToken), 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+    }, accessToken, refreshAccessToken)
+    const json: ApiResponse<UserProfile> = await response.json()
+    if (!response.ok || !json.success || !json.data) throw new Error(json.message || 'Không cập nhật được hồ sơ người dùng')
+    return json.data
+  },
+
+  /**
    * Delete user from Supabase
    */
   async deleteUser(

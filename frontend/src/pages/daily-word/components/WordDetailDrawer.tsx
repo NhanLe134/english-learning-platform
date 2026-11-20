@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   X,
   Plus,
+  Trash2,
 } from 'lucide-react'
 import type { LichDangItem } from '../types/dailyWord.types'
 import { dailyWordApi } from '../services/dailyWordApi'
@@ -18,6 +19,7 @@ interface WordDetailDrawerProps {
   onOpenReschedule: () => void
   onOpenEdit: () => void
   onAddNewWord: () => void
+  onDelete: () => void
 }
 
 function formatDateDisplay(dateStr: string): { dayMonthYear: string; dayOfWeek: string } {
@@ -44,6 +46,7 @@ export const WordDetailDrawer: React.FC<WordDetailDrawerProps> = ({
   onOpenReschedule,
   onOpenEdit,
   onAddNewWord,
+  onDelete,
 }) => {
   const [playingAccent, setPlayingAccent] = useState<'us' | 'uk' | null>(null)
   const dateInfo = formatDateDisplay(selectedDate)
@@ -278,25 +281,37 @@ export const WordDetailDrawer: React.FC<WordDetailDrawerProps> = ({
         </div>
       </div>
 
-      {/* Footer 2 nút hành động: Chia đều 50% bằng grid, cùng chiều cao h-8 (32px), cân đối chuẩn xác */}
+      {/* Footer 3 nút hành động icon-only: Đổi ngày đăng / Chỉnh sửa nội dung / Xóa từ */}
       <div className="mt-4 border-t border-slate-100 pt-3.5">
-        <div className="grid grid-cols-2 gap-2.5 w-full">
+        <div className="flex items-center justify-end gap-2">
           <button
             type="button"
             onClick={onOpenReschedule}
-            className="group flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200/90 bg-white px-2 text-[11.5px] font-semibold text-slate-700 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:-translate-y-0.5 hover:border-slate-300 hover:bg-slate-50/80 hover:text-slate-900 hover:shadow-[0_3px_8px_rgba(0,0,0,0.06)] active:translate-y-0 active:scale-98 whitespace-nowrap cursor-pointer"
+            className="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:bg-slate-50 hover:text-ink-700 active:scale-98 cursor-pointer"
+            title="Đổi ngày đăng"
+            aria-label="Đổi ngày đăng"
           >
-            <Calendar className="size-3.5 text-slate-400 group-hover:text-slate-600 transition-colors shrink-0" />
-            <span>Đổi ngày đăng</span>
+            <Calendar className="size-4" />
           </button>
 
           <button
             type="button"
             onClick={onOpenEdit}
-            className="group flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-brand-600 bg-brand-600 px-2 text-[11.5px] font-semibold text-white shadow-xs shadow-brand-600/20 transition-all duration-150 ease-out hover:-translate-y-0.5 hover:bg-brand-700 hover:border-brand-700 hover:shadow-sm hover:shadow-brand-600/30 active:translate-y-0 active:scale-98 whitespace-nowrap cursor-pointer"
+            className="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:bg-slate-50 hover:text-ink-700 active:scale-98 cursor-pointer"
+            title="Chỉnh sửa nội dung"
+            aria-label="Chỉnh sửa nội dung"
           >
-            <Edit3 className="size-3.5 shrink-0" />
-            <span>Chỉnh sửa nội dung</span>
+            <Edit3 className="size-4" />
+          </button>
+
+          <button
+            type="button"
+            onClick={onDelete}
+            className="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:border-red-200 hover:bg-red-50/60 hover:text-red-600 active:scale-98 cursor-pointer"
+            title="Xóa từ vựng này"
+            aria-label="Xóa từ vựng này"
+          >
+            <Trash2 className="size-4" />
           </button>
         </div>
       </div>

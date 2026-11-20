@@ -114,6 +114,30 @@ export class UsersController {
   }
 
   /**
+   * PATCH /api/users/:id/profile
+   * Cập nhật hồ sơ người dùng (mọi vai trò): họ tên, nickname, SĐT, avatar
+   */
+  async updateProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const id = req.params.id ? String(req.params.id) : ''
+      if (!id) {
+        res.status(400).json({ success: false, message: 'User ID là bắt buộc' })
+        return
+      }
+      const updated = await usersService.updateProfile(id, {
+        full_name: typeof req.body?.full_name === 'string' ? req.body.full_name : undefined,
+        nickname: typeof req.body?.nickname === 'string' ? req.body.nickname : undefined,
+        phone_number: typeof req.body?.phone_number === 'string' ? req.body.phone_number : undefined,
+        avatar_url: typeof req.body?.avatar_url === 'string' ? req.body.avatar_url : undefined,
+      })
+      res.status(200).json({ success: true, message: 'Cập nhật hồ sơ thành công', data: updated })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Lỗi cập nhật hồ sơ'
+      res.status(400).json({ success: false, message })
+    }
+  }
+
+  /**
    * DELETE /api/users/:id
    * Delete user account
    */

@@ -1,5 +1,5 @@
 import React from 'react'
-import { Users, BookOpen, GraduationCap, BarChart3, Layers, CreditCard } from 'lucide-react'
+import { Users, BookOpen, GraduationCap, BarChart3, Layers, CreditCard, CalendarDays } from 'lucide-react'
 
 interface SidebarProps {
   activeTab?: string
@@ -10,36 +10,54 @@ export const Sidebar: React.FC<SidebarProps> = ({
   activeTab = 'quan_ly_nguoi_dung',
   onTabChange,
 }) => {
-  const menuItems = [
+  const menuItems: {
+    id: string
+    label: string
+    icon: typeof Users
+    badgeDot: boolean
+    href?: string
+  }[] = [
     {
       id: 'quan_ly_nguoi_dung',
       label: 'Quản lý người dùng',
       icon: Users,
       badgeDot: true,
+      href: '/admin/users',
     },
     {
       id: 'khoa_hoc_bai_tap',
       label: 'Khoá học & Bài tập',
       icon: BookOpen,
       badgeDot: false,
+      href: '/admin/courses',
+    },
+    {
+      id: 'daily_word',
+      label: 'Daily Word & Lịch đăng',
+      icon: CalendarDays,
+      badgeDot: false,
+      href: '/admin/daily-word',
     },
     {
       id: 'lop_hoc_giang_day',
       label: 'Lớp học & Giảng dạy',
       icon: GraduationCap,
       badgeDot: false,
+      // Chưa có trang — chưa gắn href
     },
     {
       id: 'bao_cao_thong_ke',
       label: 'Báo cáo & Thống kê',
       icon: BarChart3,
       badgeDot: false,
+      // Chưa có trang — chưa gắn href
     },
     {
       id: 'thanh_toan',
       label: 'Quản lý thanh toán',
       icon: CreditCard,
       badgeDot: false,
+      href: '/admin/payments',
     },
   ]
 
@@ -67,7 +85,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 type="button"
                 className={`sidebar-nav-item ${isActive ? 'active' : ''}`}
                 aria-current={isActive ? 'page' : undefined}
-                onClick={() => onTabChange?.(item.id)}
+                onClick={() => {
+                  if (item.href) window.location.assign(item.href)
+                  onTabChange?.(item.id)
+                }}
               >
                 <div className="nav-item-left">
                   <Icon size={18} className="nav-item-icon" />
