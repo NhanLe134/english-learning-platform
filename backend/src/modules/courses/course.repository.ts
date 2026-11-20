@@ -278,7 +278,7 @@ export class CourseRepository {
 
   async updateCourseStatus(
     id: string,
-    status: 'draft' | 'published'
+    status: 'published' | 'archived'
   ): Promise<ManagedCourse | null> {
     const { data, error } = await createSupabaseClient()
       .from('courses')

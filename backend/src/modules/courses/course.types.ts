@@ -58,7 +58,7 @@ export interface ManagedCourseInput {
   discounted_price: number | null
   total_lessons: number
   thumbnail_url: string | null
-  status: 'draft' | 'published'
+  status: 'published' | 'archived'
 }
 
 export interface CourseListFilters {

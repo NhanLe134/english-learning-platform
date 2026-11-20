@@ -133,8 +133,8 @@ export class CourseService {
       throw new CourseRequestError('Course status is required.', 400)
     }
     const status = value.status
-    if (status !== 'draft' && status !== 'published') {
-      throw new CourseRequestError('Course status must be draft or published.', 400)
+    if (status !== 'published' && status !== 'archived') {
+      throw new CourseRequestError('Course status must be published or archived.', 400)
     }
     const updated = await this.repository.updateCourseStatus(id, status)
     if (!updated) throw new CourseRequestError('Course not found.', 404)
@@ -286,8 +286,8 @@ export class CourseService {
         throw new CourseRequestError('Thumbnail must be a valid HTTP or HTTPS URL.', 400)
       }
     }
-    if (status !== 'draft' && status !== 'published') {
-      throw new CourseRequestError('Course status must be draft or published.', 400)
+    if (status !== 'published' && status !== 'archived') {
+      throw new CourseRequestError('Course status must be published or archived.', 400)
     }
 
     return {

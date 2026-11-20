@@ -1,7 +1,9 @@
 import { useEffect } from 'react'
 import { QuanLyNguoiDungPage } from './pages/quan_ly_nguoi_dung'
 import { QuanLyThanhToanPage } from './pages/quan_ly_thanh_toan'
-import QuanLyBaiGiangPage from './pages/quan_ly_bai_giang'
+import ThemBaiGiangPage from './pages/them_bai_giang'
+import { QuanLyBaiGiangKhoaHocPage } from './pages/quan_ly_bai_giang'
+import { QuanLyBaiTapPage } from './pages/quan_ly_bai_tap'
 import { HomePage } from './pages/home/HomePage'
 import { AboutPage } from './pages/about/AboutPage'
 import { EbooksPage } from './pages/ebooks/EbooksPage'
@@ -137,8 +139,17 @@ function AppRoutes() {
     case '/admin/courses':
       page = <CourseManagementPage />
       break
+    case '/admin/exercises':
+      page = <QuanLyBaiTapPage />
+      break
+    case '/admin/lessons':
+      // Quản lý bài giảng của một khóa học (?courseId=...)
+      page = <QuanLyBaiGiangKhoaHocPage />
+      break
+    case '/admin/lessons/new':
     case '/teacher/lessons/new':
-      page = <QuanLyBaiGiangPage />
+      // Trang "Thêm bài giảng & Bài tập" (giao diện tĩnh theo Figma)
+      page = <ThemBaiGiangPage />
       break
     case '/about':
     case '/ve-chung-toi':
