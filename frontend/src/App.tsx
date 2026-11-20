@@ -19,11 +19,13 @@ import { StudentCourseDetailPage } from './pages/courses/StudentCourseDetailPage
 import { CheckoutPage } from './pages/checkout/CheckoutPage'
 import { CheckoutSuccessPage } from './pages/checkout/CheckoutSuccessPage'
 import { WorkshopsPage } from './pages/workshops/WorkshopsPage'
+import { DailyWordPage } from './pages/daily-word/DailyWordPage'
 import { ContactPage } from './pages/contact/ContactPage'
 import { TeacherDashboardPage } from './pages/courses/TeacherDashboardPage'
 import { TeacherAccountActionPage } from './pages/auth/TeacherAccountActionPage'
 import { AuthProvider } from './pages/auth/AuthContext'
 import { useAuth } from './pages/auth/auth-context'
+import { StudentDailyWordPopup } from './components/daily-word/StudentDailyWordPopup'
 
 function AppRoutes() {
   const { initializationError, isInitializing, user } = useAuth()
@@ -146,6 +148,10 @@ function AppRoutes() {
       // Quản lý bài giảng của một khóa học (?courseId=...)
       page = <QuanLyBaiGiangKhoaHocPage />
       break
+    case '/daily-word':
+    case '/admin/daily-word':
+      page = <DailyWordPage />
+      break
     case '/admin/lessons/new':
     case '/teacher/lessons/new':
       // Trang "Thêm bài giảng & Bài tập" (giao diện tĩnh theo Figma)
@@ -231,6 +237,9 @@ function AppRoutes() {
         <div className="auth-global-error" role="alert">{initializationError}</div>
       )}
       {page}
+      {!isAdminRoute && !isTeacherArea && !isAuthPage && !isAuthCallback && pathname !== '/daily-word' && (
+        <StudentDailyWordPopup />
+      )}
     </>
   )
 }
