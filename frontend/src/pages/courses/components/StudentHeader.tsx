@@ -6,9 +6,10 @@ import { useAuth } from '../../auth/auth-context'
 interface StudentHeaderProps {
   student?: StudentProfile
   onLogout?: () => void
+  activePage?: 'my-courses' | 'other-courses'
 }
 
-export const StudentHeader: React.FC<StudentHeaderProps> = ({ student, onLogout }) => {
+export const StudentHeader: React.FC<StudentHeaderProps> = ({ student, onLogout, activePage = 'my-courses' }) => {
   const [showNotifications, setShowNotifications] = useState(false)
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const { user, logout } = useAuth()
@@ -55,11 +56,13 @@ export const StudentHeader: React.FC<StudentHeaderProps> = ({ student, onLogout 
 
         {/* Center Nav Links */}
         <nav className="student-navbar-links">
-          <a href="/my-courses" className="student-nav-link active">
-            Khóa học
+          <a href="/my-courses" className={`student-nav-link${activePage === 'my-courses' ? ' active' : ''}`} aria-current={activePage === 'my-courses' ? 'page' : undefined}>
+            {'Kh\u00F3a h\u1ECDc'}
           </a>
-          <a href="/workshops" className="student-nav-link">
-            Workshop
+          <a href="/workshops" className="student-nav-link">Workshop</a>
+          <a href="/ebooks" className="student-nav-link">Ebook</a>
+          <a href="/courses" className={`student-nav-link${activePage === 'other-courses' ? ' active' : ''}`} aria-current={activePage === 'other-courses' ? 'page' : undefined}>
+            {'C\u00E1c kh\u00F3a h\u1ECDc kh\u00E1c'}
           </a>
         </nav>
 

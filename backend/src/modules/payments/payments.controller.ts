@@ -503,13 +503,20 @@ export class PaymentController {
         return
       }
 
+      let courseDetails: Awaited<ReturnType<typeof paymentService.getCourseDetails>> = null
+      try {
+        courseDetails = await paymentService.getCourseDetails(order.courseId)
+      } catch {
+        // Keep order details available if course metadata cannot be loaded.
+      }
+
       // Log the admin view action (audit)
       const user = response.locals.authUser as { id?: string } | undefined
       await paymentService.recordAdminView(orderId, String(user?.id ?? ''))
 
       response.status(200).json({
         success: true,
-        data: order,
+        data: { ...order, courseDetails },
       })
     } catch (error) {
       next(error)

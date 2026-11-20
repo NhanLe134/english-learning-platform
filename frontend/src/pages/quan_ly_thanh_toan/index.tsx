@@ -52,9 +52,11 @@ export const QuanLyThanhToanPage: React.FC = () => {
   const [detailModal, setDetailModal] = useState<{
     isOpen: boolean
     order: AdminPaymentOrder | null
+    loading: boolean
   }>({
     isOpen: false,
     order: null,
+    loading: false,
   })
 
   // State for toast
@@ -130,15 +132,36 @@ export const QuanLyThanhToanPage: React.FC = () => {
   }, [])
 
   // Handle view detail
+  const loadOrderDetail = useCallback(async (
+    orderId: string,
+    fallbackOrder: AdminPaymentOrder | null = null
+  ) => {
+    setDetailModal({ isOpen: true, order: fallbackOrder, loading: true })
+    try {
+      const detailedOrder = await paymentApi.getOrderDetail(
+        orderId,
+        accessToken,
+        async () => (await refreshSession()).accessToken
+      )
+      if (new URLSearchParams(window.location.search).get('orderId') === orderId) {
+        setDetailModal({ isOpen: true, order: detailedOrder, loading: false })
+      }
+    } catch {
+      if (new URLSearchParams(window.location.search).get('orderId') === orderId) {
+        setDetailModal({ isOpen: true, order: fallbackOrder, loading: false })
+      }
+    }
+  }, [accessToken, refreshSession])
+
   const handleViewDetail = useCallback((order: AdminPaymentOrder) => {
-    setDetailModal({ isOpen: true, order })
     const url = new URL(window.location.href)
     url.searchParams.set('orderId', order.orderId)
     window.history.replaceState({}, '', url.toString())
-  }, [])
+    void loadOrderDetail(order.orderId, order)
+  }, [loadOrderDetail])
 
   const handleCloseDetail = useCallback(() => {
-    setDetailModal({ isOpen: false, order: null })
+    setDetailModal({ isOpen: false, order: null, loading: false })
     const url = new URL(window.location.href)
     if (url.searchParams.has('orderId')) {
       url.searchParams.delete('orderId')
@@ -157,30 +180,11 @@ export const QuanLyThanhToanPage: React.FC = () => {
     handledInitialOrderIdRef.current = true
     const found = orders.find((o) => o.orderId === targetOrderId)
     if (found) {
-      queueMicrotask(() => {
-        setDetailModal({ isOpen: true, order: found })
-      })
+      queueMicrotask(() => void loadOrderDetail(targetOrderId, found))
     } else {
-      paymentApi
-        .getOrderDetail(
-          targetOrderId,
-          accessToken,
-          async () => (await refreshSession()).accessToken
-        )
-        .then((fetchedOrder) => {
-          setDetailModal({ isOpen: true, order: fetchedOrder })
-        })
-        .catch(() => {
-          // If order not found, ignore
-        })
+      queueMicrotask(() => void loadOrderDetail(targetOrderId))
     }
-  }, [accessToken, orders, refreshSession])
-
-  // Handle reconcile success from modal
-  const handleReconcileSuccess = useCallback((orderId: string) => {
-    showToast('success', `Đã khôi phục đăng ký khóa học cho đơn hàng ${orderId.slice(0, 8)}…`)
-    void loadOrders()
-  }, [loadOrders])
+  }, [accessToken, loadOrderDetail, orders])
 
   // Handle selection
   const handleSelectAll = useCallback((checked: boolean) => {
@@ -351,10 +355,8 @@ export const QuanLyThanhToanPage: React.FC = () => {
       <OrderDetailModal
         isOpen={detailModal.isOpen}
         order={detailModal.order}
-        accessToken={accessToken}
-        refreshAccessToken={async () => (await refreshSession()).accessToken}
+        loading={detailModal.loading}
         onClose={handleCloseDetail}
-        onReconcileSuccess={handleReconcileSuccess}
       />
     </div>
   )

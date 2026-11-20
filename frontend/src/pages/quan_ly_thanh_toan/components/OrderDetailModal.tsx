@@ -1,27 +1,18 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect } from 'react'
 import {
   Receipt,
-  ShieldCheck,
   Hash,
   User,
   GraduationCap,
-  Printer,
-  FileCheck,
-  X,
-  RefreshCw,
   AlertCircle,
-  CheckCircle2,
 } from 'lucide-react'
-import type { AdminPaymentOrder, ReconcileResult } from '../types'
-import { paymentApi } from '../services/paymentApi'
+import type { AdminPaymentOrder } from '../types'
 
 interface OrderDetailModalProps {
   isOpen: boolean
   order: AdminPaymentOrder | null
-  accessToken: string | null
-  refreshAccessToken: () => Promise<string>
+  loading?: boolean
   onClose: () => void
-  onReconcileSuccess: (orderId: string) => void
 }
 
 function formatOrderCode(orderId?: string | null): string {
@@ -131,20 +122,10 @@ function getBankResponseCode(order?: AdminPaymentOrder | null): string {
 export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
   isOpen,
   order,
-  accessToken,
-  refreshAccessToken,
+  loading = false,
   onClose,
-  onReconcileSuccess,
 }) => {
-  const [reconciling, setReconciling] = useState<boolean>(false)
-  const [reconcileError, setReconcileError] = useState<string | null>(null)
-  const [reconcileSuccess, setReconcileSuccess] = useState<ReconcileResult | null>(null)
-
-  const handleClose = useCallback(() => {
-    setReconcileError(null)
-    setReconcileSuccess(null)
-    onClose()
-  }, [onClose])
+  const handleClose = useCallback(() => onClose(), [onClose])
 
   // Close on Escape key
   useEffect(() => {
@@ -158,33 +139,18 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [isOpen, handleClose])
 
-  const handlePrint = useCallback(() => {
-    window.print()
-  }, [])
-
-  const handleReconcile = useCallback(async () => {
-    if (!order || !accessToken) return
-    setReconciling(true)
-    setReconcileError(null)
-    setReconcileSuccess(null)
-    try {
-      const result = await paymentApi.reconcileOrder(
-        order.orderId,
-        accessToken,
-        refreshAccessToken
-      )
-      setReconcileSuccess(result)
-      onReconcileSuccess(order.orderId)
-    } catch (err: unknown) {
-      setReconcileError(
-        err instanceof Error ? err.message : 'Khôi phục đăng ký thất bại.'
-      )
-    } finally {
-      setReconciling(false)
-    }
-  }, [order, accessToken, refreshAccessToken, onReconcileSuccess])
-
   if (!isOpen) return null
+
+  if (loading) {
+    return (
+      <div className="order-invoice-modal-overlay" role="dialog" aria-modal="true" aria-busy="true">
+        <div className="order-invoice-modal-container order-invoice-loading">
+          <span className="order-invoice-loading-spinner" aria-hidden="true" />
+          <p>Đang tải thông tin hóa đơn…</p>
+        </div>
+      </div>
+    )
+  }
 
   // Missing order state
   if (!order) {
@@ -215,7 +181,7 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
             onClick={handleClose}
             className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm transition-colors cursor-pointer"
           >
-            Quay lại danh sách
+            Đóng
           </button>
         </div>
       </div>
@@ -233,11 +199,10 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
   const studentInitials = getStudentInitials(order.studentName)
   const studentCode = formatStudentCode(order.studentId)
   const studentPhone = formatPhoneNumber(order.studentPhone)
-  const studentAddress = order.studentAddress || 'Cầu Giấy, Hà Nội'
   const courseCode = formatCourseCode(order.courseSlug, order.courseId)
-  const courseTitle = order.courseTitle || 'Tiếng Anh Giao Tiếp Cơ Bản & Đột Phá Phản Xạ (B1)'
-  const instructorName = order.courseInstructor || 'ThS. Hoàng Mai Anh'
-  const instructorCredentials = 'TESOL International, 8.5 Speaking'
+  const course = order.courseDetails
+  const productTitle = course?.title?.trim() || order.courseTitle?.trim() || 'Chưa có thông tin khóa học'
+  const instructorName = course?.teacher?.full_name?.trim() || order.courseInstructor?.trim()
 
   return (
     <div
@@ -279,58 +244,14 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
                   </span>
                 )}
               </div>
-              <p className="order-invoice-subtitle">
-                Tạo bởi học viên qua Mobile App VNPay
-              </p>
+              <p className="order-invoice-subtitle">Thông tin thanh toán khóa học đã đăng ký</p>
             </div>
           </div>
 
-          {/* Close Button */}
-          <button
-            type="button"
-            className="order-invoice-close-btn"
-            onClick={handleClose}
-            aria-label="Đóng"
-          >
-            <X size={18} />
-          </button>
         </div>
 
         {/* Modal Body / Scrollable Content */}
         <div className="order-invoice-body">
-          {/* Real-time Match Banner */}
-          <div className="order-invoice-banner">
-            <div className="order-invoice-banner-icon" aria-hidden="true">
-              <ShieldCheck size={20} />
-            </div>
-            <p className="order-invoice-banner-text">
-              <strong>Giao dịch đã khớp lệnh thời gian thực:</strong> Mã tham chiếu
-              ngân hàng Vietcombank đã đối soát 100% thành công với IPN Webhook từ cổng
-              VNPay.
-            </p>
-          </div>
-
-          {/* Reconcile alerts if any */}
-          {reconcileSuccess && (
-            <div className="order-invoice-alert alert-success">
-              <CheckCircle2 size={18} className="shrink-0 text-emerald-600" />
-              <div>
-                <strong>Đã đối soát phân quyền thành công!</strong>
-                <p className="text-xs mt-0.5">{reconcileSuccess.message}</p>
-              </div>
-            </div>
-          )}
-
-          {reconcileError && (
-            <div className="order-invoice-alert alert-error">
-              <AlertCircle size={18} className="shrink-0 text-rose-600" />
-              <div>
-                <strong>Lỗi đối soát phân quyền:</strong>
-                <p className="text-xs mt-0.5">{reconcileError}</p>
-              </div>
-            </div>
-          )}
-
           {/* Section 1: Thông tin đơn hàng */}
           <div className="order-invoice-section">
             <div className="order-invoice-section-header">
@@ -345,6 +266,10 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
               <div className="grid-item">
                 <span className="item-label">Thời gian tạo:</span>
                 <span className="item-value">{createdAtFormatted}</span>
+              </div>
+              <div className="grid-item">
+                <span className="item-label">Số tiền thanh toán:</span>
+                <span className="item-value">{order.amount.toLocaleString('vi-VN')} ₫</span>
               </div>
               <div className="grid-item">
                 <span className="item-label">Cổng xử lý:</span>
@@ -401,75 +326,75 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
                 <span className="item-label">Số điện thoại liên hệ:</span>
                 <span className="item-value">{studentPhone}</span>
               </div>
-              <div className="grid-item">
-                <span className="item-label">Địa chỉ học viên:</span>
-                <span className="item-value">{studentAddress}</span>
-              </div>
             </div>
           </div>
 
-          {/* Section 3: Chi tiết khóa học đăng ký */}
+          {/* Section 3: Registered product */}
           <div className="order-invoice-section">
             <div className="order-invoice-section-header">
               <div className="section-title-wrapper">
                 <GraduationCap size={18} className="section-icon" />
-                <h3 className="section-title">Chi tiết khóa học đăng ký</h3>
+                <h3 className="section-title">Sản phẩm đã đăng ký</h3>
               </div>
-              <span className="course-code-tag">Mã KH: {courseCode}</span>
+              <span className="course-code-tag">Mã khóa học: {courseCode}</span>
             </div>
 
-            {/* Inner White Course Card */}
             <div className="course-detail-card">
-              <h4 className="course-title">{courseTitle}</h4>
-              <p className="instructor-line">
-                Giảng viên phụ trách:{' '}
-                <strong className="instructor-name">{instructorName}</strong>{' '}
-                <span className="instructor-credentials">
-                  ({instructorCredentials})
-                </span>
-              </p>
+              {course?.thumbnail_url ? (
+                <img className="course-detail-thumbnail" src={course.thumbnail_url} alt={`Ảnh bìa ${productTitle}`} />
+              ) : (
+                <div className="course-detail-thumbnail-placeholder">Khóa học</div>
+              )}
+              <div className="course-detail-copy">
+                <h4 className="course-title">{productTitle}</h4>
+                {!course?.description && <p className="course-detail-description">Chưa có mô tả chi tiết cho khóa học này.</p>}
+                {course?.description && <p className="course-detail-description">{course.description}</p>}
+                <div className="course-detail-meta">
+                  {course?.category && <span>Danh mục: {course.category}</span>}
+                  {course?.level && <span>Trình độ: {course.level}</span>}
+                  {typeof course?.total_lessons === 'number' && <span>{course.total_lessons} bài học</span>}
+                </div>
+                {course?.target_audience && (
+                  <p className="course-detail-audience"><strong>Đối tượng:</strong> {course.target_audience}</p>
+                )}
+                <p className="course-detail-price">
+                  <strong>Giá khóa học:</strong>{' '}
+                  {(course?.discounted_price ?? course?.price ?? order.amount).toLocaleString('vi-VN')} ₫
+                  {course?.discounted_price != null && course.discounted_price < course.price && (
+                    <span className="course-detail-original-price">{course.price.toLocaleString('vi-VN')} ₫</span>
+                  )}
+                </p>
+              </div>
+              {instructorName && (
+                <p className="instructor-line">
+                  Giảng viên phụ trách: <strong className="instructor-name">{instructorName}</strong>
+                </p>
+              )}
             </div>
+            {course?.topics?.length ? (
+              <div className="course-topic-list">
+                <h4>Nội dung khóa học</h4>
+                {course.topics.map((topic, index) => (
+                  <section className="course-topic-item" key={topic.id}>
+                    <h5>{index + 1}. {topic.title}</h5>
+                    {topic.description && <p>{topic.description}</p>}
+                    {topic.lessons.length > 0 && (
+                      <ul>
+                        {topic.lessons.map((lesson) => <li key={lesson.id}>{lesson.title}</li>)}
+                      </ul>
+                    )}
+                  </section>
+                ))}
+              </div>
+            ) : null}
           </div>
         </div>
 
         {/* Modal Footer */}
-        <div className="order-invoice-footer">
-          <button
-            type="button"
-            className="btn-print-invoice"
-            onClick={handlePrint}
-          >
-            <Printer size={16} />
-            In hóa đơn / Biên lai
+        <div className="order-invoice-footer order-invoice-footer-close-only">
+          <button type="button" className="btn-close-modal" onClick={handleClose}>
+            Đóng
           </button>
-
-          <div className="footer-right-actions">
-            <button
-              type="button"
-              className="btn-close-modal"
-              onClick={handleClose}
-            >
-              Đóng
-            </button>
-            <button
-              type="button"
-              className="btn-reconcile-action"
-              onClick={handleReconcile}
-              disabled={reconciling}
-            >
-              {reconciling ? (
-                <>
-                  <RefreshCw size={16} className="animate-spin" />
-                  Đang đối soát…
-                </>
-              ) : (
-                <>
-                  <FileCheck size={16} />
-                  Đối soát phân quyền
-                </>
-              )}
-            </button>
-          </div>
         </div>
       </div>
     </div>

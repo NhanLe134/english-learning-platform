@@ -255,7 +255,7 @@
 
 .filter-row-1 {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: minmax(260px, 2fr) repeat(3, minmax(0, 1fr));
   gap: 16px;
   align-items: flex-end;
   margin-bottom: 0;
@@ -266,12 +266,20 @@
   .filter-row-1 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .filter-row-1 > .filter-group:first-child {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 640px) {
   .filter-row-1 {
     grid-template-columns: minmax(0, 1fr);
     gap: 12px;
+  }
+
+  .filter-row-1 > .filter-group:first-child {
+    grid-column: auto;
   }
 }
 
@@ -299,9 +307,11 @@
 .filter-search-wrapper {
   position: relative;
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   width: 100%;
   height: 42px;
+  min-width: 0;
 }
 
 .filter-search-icon {
@@ -319,10 +329,12 @@
 .filter-search-input {
   width: 100%;
   height: 42px;
+  min-width: 0;
   padding: 0 14px 0 42px;
   border: 1px solid var(--color-border, #E2E8F0);
   border-radius: 8px;
-  font-size: 14px;
+  font-size: 13.5px;
+  font-weight: 500;
   font-family: var(--font-sans);
   background: #FFFFFF;
   color: #0F172A;
@@ -648,6 +660,10 @@
   background-color: var(--color-gray-50);
 }
 
+.order-table tbody tr.order-row {
+  cursor: pointer;
+}
+
 .order-table tbody tr:last-child td {
   border-bottom: none;
 }
@@ -674,24 +690,11 @@
   width: 130px;
 }
 
-.th-method {
-  width: 140px;
-}
-
 .th-date {
   width: 150px;
 }
 
 .th-status {
-  width: 120px;
-}
-
-.th-enrollment {
-  width: 120px;
-}
-
-.th-actions {
-  text-align: center;
   width: 120px;
 }
 
@@ -764,145 +767,41 @@
   white-space: nowrap;
 }
 
-.td-method .payment-method {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--color-ink-900);
-}
-
-.method-icon {
-  color: var(--color-brand-600);
-  flex-shrink: 0;
-}
-
 .td-date {
   font-size: 13px;
   color: var(--color-ink-900);
   font-family: var(--font-mono);
 }
 
-/* Status Badges */
-.order-status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
+.order-status-label {
+  display: inline-block;
+  padding: 5px 10px;
+  border: 1px solid transparent;
   border-radius: 9999px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  font-family: var(--font-sans);
-  white-space: nowrap;
 }
 
-.order-status-badge .status-icon {
-  flex-shrink: 0;
-}
-
-.order-status-badge.status-paid {
-  background-color: var(--color-success-light);
+.order-status-label.status-paid {
   color: var(--color-success);
+  background: var(--color-success-light);
 }
 
-.order-status-badge.status-pending {
-  background-color: var(--color-warning-light);
+.order-status-label.status-pending {
   color: var(--color-warning);
+  background: var(--color-warning-light);
 }
 
-.order-status-badge.status-failed {
-  background-color: var(--color-error-light);
+.order-status-label.status-failed,
+.order-status-label.status-expired {
   color: var(--color-error);
+  background: var(--color-error-light);
 }
 
-.order-status-badge.status-refunded {
-  background-color: var(--color-gray-100);
+.order-status-label.status-cancelled,
+.order-status-label.status-refunded {
   color: var(--color-ink-700);
-}
-
-/* Enrollment badges */
-.enrollment-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 9999px;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  font-family: var(--font-sans);
-  white-space: nowrap;
-}
-
-.enrollment-badge .enrollment-icon {
-  flex-shrink: 0;
-}
-
-.enrollment-badge.enrollment-granted {
-  background-color: var(--color-success-light);
-  color: var(--color-success);
-}
-
-.enrollment-badge.enrollment-pending {
-  background-color: var(--color-gray-100);
-  color: var(--color-ink-700);
-}
-
-.enrollment-badge.enrollment-revoked {
-  background-color: var(--color-error-light);
-  color: var(--color-error);
-}
-
-/* Actions */
-.th-actions {
-  text-align: center !important;
-  vertical-align: middle !important;
-  width: 130px;
-}
-
-.order-table td.td-actions {
-  text-align: center !important;
-  vertical-align: middle !important;
-  padding: 14px 16px;
-}
-
-.action-buttons-group {
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 8px;
-  margin: 0 auto;
-  vertical-align: middle !important;
-}
-
-.action-btn-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border: 1px solid var(--color-gray-200);
-  border-radius: 8px;
-  background: #FFFFFF;
-  color: var(--color-ink-700);
-  cursor: pointer;
-  transition: all 0.2s;
-  flex-shrink: 0;
-}
-
-.action-btn-icon:hover {
-  border-color: var(--color-brand-600);
-  color: var(--color-brand-600);
-  background-color: var(--color-brand-50, #fef2f2);
-}
-
-.action-btn-icon svg {
-  width: 16px;
-  height: 16px;
+  background: var(--color-gray-100);
 }
 
 /* Empty & Loading States */
@@ -1065,13 +964,38 @@
   border-radius: 20px;
   box-shadow: 0 20px 45px -12px rgba(15, 23, 42, 0.25);
   width: 100%;
-  max-width: 680px;
+  max-width: 840px;
   max-height: calc(100vh - 32px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   border: 1px solid rgba(226, 232, 240, 0.85);
   animation: modalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.order-invoice-loading {
+  min-height: 180px;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #475569;
+}
+
+.order-invoice-loading p {
+  margin: 0;
+}
+
+.order-invoice-loading-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #c8102e;
+  border-radius: 50%;
+  animation: invoice-spin 0.8s linear infinite;
+}
+
+@keyframes invoice-spin {
+  to { transform: rotate(360deg); }
 }
 
 @keyframes modalFadeIn {
@@ -1147,26 +1071,6 @@
 .order-invoice-status-chip.status-failed {
   background-color: #fee2e2;
   color: #b91c1c;
-}
-
-.order-invoice-close-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 9999px;
-  background: #f1f5f9;
-  border: none;
-  color: #64748b;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-}
-
-.order-invoice-close-btn:hover {
-  background: #e2e8f0;
-  color: #0f172a;
 }
 
 .order-invoice-body {
@@ -1408,10 +1312,36 @@
   border: 1px solid #edf0f3;
   border-radius: 12px;
   padding: 14px 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+  align-items: start;
+  gap: 14px 18px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.course-detail-thumbnail,
+.course-detail-thumbnail-placeholder {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border-radius: 9px;
+  object-fit: cover;
+}
+
+.course-detail-thumbnail-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.course-detail-copy {
+  grid-column: 2;
+  min-width: 0;
 }
 
 .course-title {
@@ -1423,7 +1353,89 @@
   font-family: var(--font-sans);
 }
 
+.course-detail-description {
+  margin: 8px 0 12px;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-line;
+}
+
+.course-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.course-detail-meta span {
+  padding: 4px 8px;
+  border-radius: 9999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.course-detail-audience,
+.course-detail-price {
+  margin: 10px 0 0;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.course-detail-original-price {
+  margin-left: 8px;
+  color: #94a3b8;
+  text-decoration: line-through;
+}
+
+.course-topic-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.course-topic-list > h4 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.course-topic-item {
+  padding: 12px 14px;
+  border: 1px solid #edf0f3;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.course-topic-item h5 {
+  margin: 0;
+  color: #1e293b;
+  font-size: 13px;
+}
+
+.course-topic-item p,
+.course-topic-item li {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.course-topic-item p {
+  margin: 5px 0;
+}
+
+.course-topic-item ul {
+  display: grid;
+  gap: 3px;
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
 .instructor-line {
+  grid-column: 2;
   font-size: 13px;
   color: #475569;
   margin: 0;
@@ -1446,36 +1458,8 @@
   border-top: 1px solid #f1f5f9;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
-}
-
-.btn-print-invoice {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 18px;
-  border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  background: #ffffff;
-  color: #1e293b;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-  font-family: var(--font-sans);
-}
-
-.btn-print-invoice:hover {
-  background: #f8fafc;
-  border-color: #94a3b8;
-}
-
-.footer-right-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
 }
 
 .btn-close-modal {
@@ -1496,32 +1480,6 @@
   color: #0f172a;
 }
 
-.btn-reconcile-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 20px;
-  border-radius: 10px;
-  border: none;
-  background: #c8102e;
-  color: #ffffff;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow: 0 2px 8px rgba(200, 16, 46, 0.25);
-  font-family: var(--font-sans);
-}
-
-.btn-reconcile-action:hover:not(:disabled) {
-  background: #a30d26;
-}
-
-.btn-reconcile-action:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
-}
-
 /* Modal responsive */
 @media (max-width: 640px) {
   .order-invoice-header {
@@ -1534,28 +1492,32 @@
 
   .order-invoice-footer {
     padding: 14px 18px;
-    flex-direction: column-reverse;
-    align-items: stretch;
+    justify-content: stretch;
   }
 
-  .btn-print-invoice {
-    justify-content: center;
+  .btn-close-modal {
     width: 100%;
-  }
-
-  .footer-right-actions {
-    width: 100%;
-    flex-direction: column-reverse;
-  }
-
-  .footer-right-actions button {
-    width: 100%;
-    justify-content: center;
   }
 
   .order-invoice-grid {
     grid-template-columns: 1fr;
     gap: 12px;
+  }
+
+  .course-detail-card {
+    grid-template-columns: 1fr;
+  }
+
+  .course-detail-thumbnail,
+  .course-detail-thumbnail-placeholder,
+  .course-detail-copy,
+  .course-detail-card .instructor-line {
+    grid-column: 1;
+  }
+
+  .course-detail-thumbnail,
+  .course-detail-thumbnail-placeholder {
+    grid-row: auto;
   }
 
   .order-invoice-title {
@@ -1577,7 +1539,6 @@
   .order-filter-bar,
   .table-section,
   .order-pagination,
-  .order-invoice-close-btn,
   .order-invoice-footer {
     display: none !important;
   }

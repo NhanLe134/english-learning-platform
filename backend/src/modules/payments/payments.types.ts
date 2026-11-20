@@ -1,3 +1,5 @@
+import type { CourseCatalogEntry } from '../courses/course.types.js'
+
 export type PaymentOrderStatus = 'pending' | 'paid' | 'failed' | 'expired' | 'cancelled'
 
 export interface PaymentOrder {
@@ -126,6 +128,7 @@ export interface AdminOrderDetail extends AdminOrderListItem {
   providerOrderId: string | null
   expiredAt: string | null
   updatedAt: string
+  courseDetails?: CourseCatalogEntry | null
 }
 
 export interface AdminOrderQueryParams {

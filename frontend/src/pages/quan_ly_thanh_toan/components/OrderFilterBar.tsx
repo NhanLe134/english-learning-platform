@@ -84,15 +84,15 @@ export const OrderFilterBar: React.FC<OrderFilterBarProps> = ({
           </select>
         </div>
 
-        {/* Course */}
+        {/* Product */}
         <div className="filter-group">
-          <label className="filter-label">Khóa học</label>
+          <label className="filter-label">Sản phẩm (ebook, khóa học, workshop)</label>
           <select
             value={filters.courseId ?? ''}
             onChange={(e) => handleCourseChange(e.target.value)}
             className="filter-select"
           >
-            <option value="">Tất cả khóa học</option>
+            <option value="">Tất cả sản phẩm</option>
           </select>
         </div>
 

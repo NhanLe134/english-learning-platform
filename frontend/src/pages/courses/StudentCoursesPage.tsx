@@ -1,17 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Search, ArrowRight, BookOpen } from 'lucide-react'
+import { Search, BookOpen } from 'lucide-react'
 import { StudentHeader } from './components/StudentHeader'
 import { MyCourseCard } from './components/MyCourseCard'
 import { OtherCourseCard } from './components/OtherCourseCard'
-import { DailyWordWidget } from './components/DailyWordWidget'
-import { ImprovementAreasWidget } from './components/ImprovementAreasWidget'
 import { useAuth } from '../auth/auth-context'
 import {
   CURRENT_STUDENT,
   MY_COURSES,
   OTHER_COURSES,
-  DAILY_WORD,
-  IMPROVEMENT_ISSUES,
   type MyCourse,
   type OtherCourse,
   type StudentProfile,
@@ -99,10 +95,10 @@ function mapBackendEnrolledCourse(item: BackendEnrolledCourse): MyCourse {
 
 export const StudentCoursesPage: React.FC = () => {
   const { user, accessToken } = useAuth()
+  const isOtherCoursesPage = window.location.pathname === '/courses' || window.location.pathname === '/khoa-hoc'
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'in_progress' | 'completed'>('all')
   const [sortBy, _setSortBy] = useState<'recent' | 'progress' | 'title'>('recent')
-  const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [myCoursesLoading, setMyCoursesLoading] = useState(false)
   const [myCoursesError, setMyCoursesError] = useState<string | null>(null)
 
@@ -113,11 +109,6 @@ export const StudentCoursesPage: React.FC = () => {
     return []
   })
   const [catalogCourses, setCatalogCourses] = useState<OtherCourse[]>(() => OTHER_COURSES)
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg)
-    setTimeout(() => setToastMessage(null), 3500)
-  }
 
   // Fetch real catalog courses and enrolled courses
   useEffect(() => {
@@ -218,9 +209,11 @@ export const StudentCoursesPage: React.FC = () => {
 
     return catalogCourses.filter(
       (course) =>
-        !enrolledSlugs.has(course.slug.toLowerCase()) && !enrolledIds.has(course.id)
+        !enrolledSlugs.has(course.slug.toLowerCase()) &&
+        !enrolledIds.has(course.id) &&
+        (!searchQuery.trim() || `${course.title} ${course.tagBadge} ${course.instructor}`.toLocaleLowerCase('vi').includes(searchQuery.trim().toLocaleLowerCase('vi')))
     )
-  }, [catalogCourses, myCourses])
+  }, [catalogCourses, myCourses, searchQuery])
 
   const handleContinueCourse = (course: MyCourse) => {
     window.location.assign(`/student/courses/${encodeURIComponent(course.slug)}`)
@@ -232,16 +225,8 @@ export const StudentCoursesPage: React.FC = () => {
 
   return (
     <div className="student-portal-page">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-ink-900 text-white text-xs font-semibold px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
-          <span className="w-2 h-2 rounded-full bg-brand-600 animate-ping" />
-          <span>{toastMessage}</span>
-        </div>
-      )}
-
       {/* Header */}
-      <StudentHeader student={studentProfile} />
+      <StudentHeader student={studentProfile} activePage={isOtherCoursesPage ? 'other-courses' : 'my-courses'} />
 
       {/* Main Container */}
       <main className="student-portal-content">
@@ -264,11 +249,11 @@ export const StudentCoursesPage: React.FC = () => {
         </section>
 
         {/* Two-column Main Grid */}
-        <div className="student-layout-grid">
+        <div className="student-layout-grid student-layout-grid-single">
           {/* Left Column (Main Content) */}
           <div className="left-main-column">
             {/* Section 1: Khóa Học Của Tôi */}
-            <section aria-labelledby="my-courses-heading">
+            {!isOtherCoursesPage && <section aria-labelledby="my-courses-heading">
               <div className="section-header-row">
                 <div className="section-title-group">
                   <h2 id="my-courses-heading">Khóa Học Của Tôi</h2>
@@ -371,32 +356,35 @@ export const StudentCoursesPage: React.FC = () => {
                   </div>
                 )}
               </div>
-            </section>
+            </section>}
 
             {/* Section 2: Các Khóa Học Khác */}
-            <section aria-labelledby="other-courses-heading">
+            {isOtherCoursesPage && <section aria-labelledby="other-courses-heading">
               <div className="section-header-row">
                 <div className="section-title-group">
-                  <h2 id="other-courses-heading">Các Khóa Học Khác</h2>
-                  <p>Những khóa học chuyên sâu chuẩn giọng & phản xạ giúp bạn mở rộng vốn kỹ năng tiếng Anh</p>
+                  <h2 id="other-courses-heading">{'C\u00E1c kh\u00F3a h\u1ECDc kh\u00E1c'}</h2>
+                  <p>{'Kh\u00E1m ph\u00E1 c\u00E1c kh\u00F3a h\u1ECDc v\u00E0 l\u1EF1a ch\u1ECDn l\u1ED9 tr\u00ECnh ph\u00F9 h\u1EE3p v\u1EDBi b\u1EA1n.'}</p>
                 </div>
-
-                <a href="/courses" className="view-all-courses-link">
-                  <span>Xem tất cả khóa học</span>
-                  <ArrowRight size={13} />
-                </a>
+                <div className="search-input-wrapper">
+                  <Search size={14} className="search-input-icon" />
+                  <input
+                    type="search"
+                    placeholder={'T\u00ECm ki\u1EBFm kh\u00F3a h\u1ECDc...'}
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    className="course-search-input"
+                  />
+                </div>
               </div>
-
-              {/* Other Courses Stack */}
               <div className="course-cards-stack">
                 {displayedOtherCourses.length > 0 ? (
                   displayedOtherCourses.map((course) => (
                     <OtherCourseCard
                       key={course.id}
                       course={course}
-                      onEnroll={(c) => {
+                      onEnroll={(selectedCourse) => {
                         window.location.assign(
-                          `/checkout?courseId=${encodeURIComponent(c.id || c.slug)}&slug=${encodeURIComponent(c.slug)}`
+                          `/checkout?courseId=${encodeURIComponent(selectedCourse.id || selectedCourse.slug)}&slug=${encodeURIComponent(selectedCourse.slug)}`
                         )
                       }}
                     />
@@ -404,26 +392,13 @@ export const StudentCoursesPage: React.FC = () => {
                 ) : (
                   <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center text-ink-500 text-sm">
                     <BookOpen size={32} className="mx-auto mb-2 text-ink-400" />
-                    Hiện tại chưa có thêm khóa học khác.
+                    {'Hi\u1EC7n t\u1EA1i ch\u01B0a c\u00F3 kh\u00F3a h\u1ECDc kh\u00E1c.'}
                   </div>
                 )}
               </div>
-            </section>
+            </section>}
           </div>
 
-          {/* Right Column (Sidebar Widgets) */}
-          <aside className="right-sidebar-column">
-            {/* Daily Word Widget */}
-            <DailyWordWidget
-              data={DAILY_WORD}
-              onPracticeAI={(word) => {
-                showToast(`Đã mở phòng luyện phát âm AI với từ "${word}"!`)
-              }}
-            />
-
-            {/* Areas for Improvement Widget */}
-            <ImprovementAreasWidget issues={IMPROVEMENT_ISSUES} />
-          </aside>
         </div>
       </main>
     </div>
