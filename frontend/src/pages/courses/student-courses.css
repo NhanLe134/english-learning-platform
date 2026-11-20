@@ -6,7 +6,7 @@
 
 .student-portal-page {
   min-height: 100vh;
-  background-color: #F8F9FA;
+  background-color: #FAF8FF;
   font-family: var(--font-sans, "Be Vietnam Pro", Inter, sans-serif);
   color: var(--color-ink-900, #17181C);
   display: flex;
@@ -64,11 +64,11 @@
 .student-navbar-links {
   display: flex;
   align-items: center;
-  gap: 28px;
+  gap: 20px;
 }
 
 .student-nav-link {
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--color-ink-700, #3D4046);
   text-decoration: none;
@@ -84,6 +84,16 @@
 .student-nav-link.active {
   color: var(--color-brand-600, #C8102E);
   font-weight: 700;
+}
+
+.student-nav-link.active::after {
+  position: absolute;
+  right: 0;
+  bottom: -12px;
+  left: 0;
+  height: 2px;
+  background: var(--color-brand-600, #C8102E);
+  content: '';
 }
 
 .student-navbar-actions {
@@ -231,6 +241,10 @@
   grid-template-columns: 1fr 360px;
   gap: 28px;
   align-items: start;
+}
+
+.student-layout-grid-single {
+  grid-template-columns: 1fr;
 }
 
 @media (max-width: 1080px) {
@@ -1124,6 +1138,16 @@
 @media (max-width: 768px) {
   .student-navbar-container {
     padding: 0 16px;
+    gap: 10px;
+  }
+
+  .student-navbar-links {
+    gap: 12px;
+  }
+
+  .student-nav-link {
+    font-size: 10px;
+    white-space: nowrap;
   }
 
   .student-portal-content {
@@ -1140,13 +1164,14 @@
 
   .my-course-card,
   .other-course-card {
-    flex-direction: column;
+    flex-direction: row;
   }
 
   .my-course-thumb-box,
   .other-course-thumb-box {
-    width: 100%;
-    height: 180px;
+    width: 122px;
+    min-width: 122px;
+    height: 118px;
   }
 
   .course-search-input {
@@ -1172,5 +1197,61 @@
   .btn-review-course {
     width: 100%;
     justify-content: center;
+  }
+}
+
+@media (max-width: 560px) {
+  .my-course-card,
+  .other-course-card {
+    flex-direction: column;
+  }
+
+  .my-course-thumb-box,
+  .other-course-thumb-box {
+    width: 100%;
+    min-width: 0;
+    height: 180px;
+  }
+}
+
+@media (max-width: 640px) {
+  .student-navbar-container {
+    height: auto;
+    min-height: 64px;
+    padding: 10px 14px 0;
+    flex-wrap: wrap;
+  }
+
+  .student-navbar-brand {
+    order: 1;
+  }
+
+  .student-navbar-brand-name {
+    font-size: 14px;
+  }
+
+  .student-navbar-actions {
+    order: 2;
+    gap: 8px;
+  }
+
+  .student-navbar-links {
+    order: 3;
+    width: 100%;
+    justify-content: flex-start;
+    gap: 20px;
+    overflow-x: auto;
+    padding: 8px 0 0;
+    scrollbar-width: none;
+  }
+
+  .student-navbar-links::-webkit-scrollbar {
+    display: none;
+  }
+
+  .student-nav-link {
+    flex: 0 0 auto;
+    padding: 8px 0 10px;
+    font-size: 11px;
   }
 }

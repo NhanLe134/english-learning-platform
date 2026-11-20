@@ -1,11 +1,4 @@
 import React from 'react'
-import {
-  CheckCircle2,
-  Clock,
-  Eye,
-  FileText,
-  MoreHorizontal,
-} from 'lucide-react'
 import type { AdminPaymentOrder, PaymentOrderStatus } from '../types'
 
 interface OrderTableProps {
@@ -38,33 +31,16 @@ const formatDateTime = (dateStr: string | null) => {
   }
 }
 
-const renderPaymentStatusBadge = (status: PaymentOrderStatus) => {
-  const config: Record<
-    PaymentOrderStatus,
-    { label: string; icon: React.FC<{ size?: number }> }
-  > = {
-    pending: { label: 'Chưa thanh toán', icon: Clock },
-    paid: { label: 'Đã thanh toán', icon: CheckCircle2 },
-    failed: { label: 'Thất bại', icon: Clock },
-    expired: { label: 'Thất bại', icon: Clock },
-    cancelled: { label: 'Đã hủy', icon: Clock },
-    refunded: { label: 'Đã hoàn tiền', icon: Clock },
+const getStatusLabel = (status: PaymentOrderStatus) => {
+  const labels: Record<PaymentOrderStatus, string> = {
+    pending: 'Pending',
+    paid: 'Paid',
+    failed: 'Failed',
+    expired: 'Expired',
+    cancelled: 'Cancelled',
+    refunded: 'Refunded',
   }
-  const Icon = config[status]?.icon || Clock
-  const badgeClass =
-    status === 'paid'
-      ? 'order-status-badge status-paid'
-      : status === 'pending'
-        ? 'order-status-badge status-pending'
-        : status === 'failed' || status === 'expired'
-          ? 'order-status-badge status-failed'
-          : 'order-status-badge status-refunded'
-  return (
-    <span className={badgeClass}>
-      <span className="status-icon"><Icon size={12} /></span>
-      {config[status]?.label || status}
-    </span>
-  )
+  return labels[status]
 }
 
 export const OrderTable: React.FC<OrderTableProps> = ({
@@ -113,12 +89,10 @@ export const OrderTable: React.FC<OrderTableProps> = ({
               </th>
               <th className="th-order">MÃ ĐƠN HÀNG</th>
               <th className="th-student">HỌC VIÊN</th>
-              <th className="th-course">KHÓA HỌC</th>
+              <th className="th-course">SẢN PHẨM</th>
               <th className="th-amount">SỐ TIỀN (VND)</th>
-              <th className="th-method">CỔNG THANH TOÁN</th>
               <th className="th-date">THỜI GIAN</th>
               <th className="th-status">TRẠNG THÁI</th>
-              <th className="th-actions text-center">THAO TÁC</th>
             </tr>
           </thead>
           <tbody>
@@ -128,6 +102,18 @@ export const OrderTable: React.FC<OrderTableProps> = ({
                 <tr
                   key={order.orderId}
                   className={`order-row ${isSelected ? 'bg-brand-50' : ''}`}
+                  tabIndex={0}
+                  onClick={(event) => {
+                    if ((event.target as HTMLElement).closest('input, button, a')) return
+                    onViewDetail(order)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.target !== event.currentTarget) return
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      onViewDetail(order)
+                    }
+                  }}
                 >
                   {/* 1. Checkbox */}
                   <td className="td-checkbox text-center">
@@ -135,6 +121,7 @@ export const OrderTable: React.FC<OrderTableProps> = ({
                       type="checkbox"
                       className="checkbox-all"
                       checked={isSelected}
+                      onClick={(event) => event.stopPropagation()}
                       onChange={(e) => onSelectOrder?.(order.orderId, e.target.checked)}
                     />
                   </td>
@@ -142,21 +129,9 @@ export const OrderTable: React.FC<OrderTableProps> = ({
                   {/* 2. Order ID */}
                   <td className="td-order">
                     <div className="order-info-group">
-                      <span
-                        className="order-id cursor-pointer hover:underline hover:text-brand-600 transition-colors"
-                        onClick={() => onViewDetail(order)}
-                        role="button"
-                        tabIndex={0}
-                        title="Xem chi tiết đơn hàng"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            onViewDetail(order)
-                          }
-                        }}
-                      >
+                      <span className="order-id">
                         {order.orderId}
                       </span>
-                      <span className="order-transfer">Mã: {order.transferContent}</span>
                     </div>
                   </td>
 
@@ -180,61 +155,15 @@ export const OrderTable: React.FC<OrderTableProps> = ({
                     <span className="order-amount">{formatCurrency(order.amount)}</span>
                   </td>
 
-                  {/* 6. Payment Method */}
-                  <td className="td-method">
-                    <span className="payment-method">
-                      {order.providerTransactionId ? (
-                        <>
-                          <FileText size={12} className="method-icon" />
-                          SePay
-                        </>
-                      ) : (
-                        <>
-                          <FileText size={12} className="method-icon" />
-                          Chuyển khoản
-                        </>
-                      )}
-                    </span>
-                  </td>
-
-                  {/* 7. Date */}
+                  {/* Date */}
                   <td className="td-date">
                     {formatDateTime(order.createdAt)}
                   </td>
 
-                  {/* 8. Payment Status */}
                   <td className="td-status">
-                    {renderPaymentStatusBadge(order.status)}
-                  </td>
-
-                  {/* 9. Actions */}
-                  <td className="td-actions text-center align-middle">
-                    <div className="action-buttons-group">
-                      <button
-                        type="button"
-                        className="action-btn-icon"
-                        title="Xem chi tiết đơn hàng"
-                        onClick={() => onViewDetail(order)}
-                      >
-                        <Eye size={16} />
-                      </button>
-
-                      <button
-                        type="button"
-                        className="action-btn-icon"
-                        title="Xem thông tin giao dịch"
-                      >
-                        <FileText size={16} />
-                      </button>
-
-                      <button
-                        type="button"
-                        className="action-btn-icon"
-                        title="Thao tác thêm"
-                      >
-                        <MoreHorizontal size={16} />
-                      </button>
-                    </div>
+                    <span className={`order-status-label status-${order.status}`}>
+                      {getStatusLabel(order.status)}
+                    </span>
                   </td>
                 </tr>
               )

@@ -116,17 +116,17 @@ export class UsersService {
       }
       clean.full_name = fullName
     }
-    if (payload.nickname !== undefined) {
+    if (payload.nickname != null) {
       const nickname = payload.nickname.trim()
       if (nickname.length > 60) throw new Error('Nickname tối đa 60 ký tự')
       clean.nickname = nickname
     }
-    if (payload.phone_number !== undefined) {
+    if (payload.phone_number != null) {
       const phone = payload.phone_number.trim()
       if (phone && phone.length > 32) throw new Error('Số điện thoại tối đa 32 ký tự')
       clean.phone_number = phone
     }
-    if (payload.avatar_url !== undefined) {
+    if (payload.avatar_url != null) {
       const avatarUrl = payload.avatar_url.trim()
       if (avatarUrl) {
         try {

@@ -2,6 +2,26 @@ export type PaymentOrderStatus = 'pending' | 'paid' | 'failed' | 'expired' | 'ca
 
 export type EnrollmentStatus = 'active' | 'completed' | 'cancelled' | null
 
+export interface AdminPaymentCourseDetails {
+  id: string
+  title: string
+  description: string | null
+  category: string
+  level: string
+  target_audience: string
+  price: number
+  discounted_price: number | null
+  total_lessons: number
+  thumbnail_url: string | null
+  teacher: { full_name: string; avatar_url: string | null } | null
+  topics: {
+    id: string
+    title: string
+    description: string | null
+    lessons: { id: string; title: string; description: string | null }[]
+  }[]
+}
+
 export interface AdminPaymentOrder {
   orderId: string
   studentId: string
@@ -27,6 +47,7 @@ export interface AdminPaymentOrder {
   needsAttention: boolean
   studentAddress?: string | null
   courseInstructor?: string | null
+  courseDetails?: AdminPaymentCourseDetails | null
 }
 
 export interface PaymentOrderQueryParams {
