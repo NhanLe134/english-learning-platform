@@ -74,7 +74,10 @@ export function LessonInfoSection({
                   onChange={(event) => onTopicChange(event.target.value)}
                   className="h-[42px] w-full appearance-none rounded border border-slate-300 bg-white px-3.5 py-2.5 pr-9 text-sm text-ink-900 focus:border-brand-500 focus:outline-none"
                 >
-                  <option value="">— Chọn chủ đề —</option>
+                  <option value="__none__">Không chia chủ đề</option>
+                  <option value="" disabled>
+                    — Chọn chủ đề —
+                  </option>
                   {topics.map((topic) => (
                     <option key={topic.id} value={topic.id}>
                       {topic.title} ({topic.lessons.length} bài)

@@ -29,10 +29,15 @@ export interface UpdateLessonProgressInput {
 
 export interface LessonItem {
   id: string
-  topic_id: string
+  /** null = bài không chia chủ đề */
+  topic_id: string | null
+  course_id: string
   title: string
   description: string | null
-  video_url: string | null
+  /** Học viên: undefined (thay bằng video_token) */
+  video_url?: string | null
+  /** Chỉ có trong response dành cho học viên: video_url đã xáo trộn */
+  video_token?: string
   duration_seconds: number | null
   sort_order: number
   status: LessonStatus
@@ -41,7 +46,8 @@ export interface LessonItem {
 }
 
 export interface LessonTopic {
-  id: string
+  /** null = nhóm ảo "Không chia chủ đề" (gom các bài không thuộc chủ đề nào) */
+  id: string | null
   course_id: string
   title: string
   description: string | null

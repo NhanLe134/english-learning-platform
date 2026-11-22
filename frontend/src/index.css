@@ -29,6 +29,59 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* --------------------------------------------------------------------------
+   Màn hình chuyển hướng (Đang chuyển đến trang quản trị / học viên...)
+   Thay trang trắng trần: logo thương hiệu nhấp nháy + spinner + dòng chữ
+   -------------------------------------------------------------------------- */
+.auth-route-status {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-ink-700);
+}
+
+.auth-route-status::before {
+  content: '';
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--color-brand-600), var(--color-brand-700));
+  box-shadow: 0 4px 14px rgba(246, 0, 5, 0.3);
+  animation: route-logo-pulse 1.2s ease-in-out infinite;
+}
+
+.auth-route-status::after {
+  content: '';
+  width: 26px;
+  height: 26px;
+  border: 3px solid var(--color-brand-100);
+  border-top-color: var(--color-brand-600);
+  border-radius: 50%;
+  animation: route-spinner 0.8s linear infinite;
+}
+
+@keyframes route-logo-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.12);
+  }
+}
+
+@keyframes route-spinner {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 * {
   box-sizing: border-box;
 }

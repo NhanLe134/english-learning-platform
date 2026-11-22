@@ -1,4 +1,4 @@
-import { HardDrive, Link2, Upload, Video } from 'lucide-react'
+import { HardDrive, Link2, Video } from 'lucide-react'
 import { SectionCard } from './SectionCard'
 
 export type VideoSource = 'youtube' | 'drive'
@@ -9,6 +9,8 @@ interface VideoSourceSectionProps {
   source: VideoSource
   onSourceChange: (source: VideoSource) => void
   validationError?: string
+  /** Thông báo hợp lệ (hiển thị màu xanh) */
+  validationSuccess?: string
   onValidate: () => void
 }
 
@@ -23,6 +25,7 @@ export function VideoSourceSection({
   source,
   onSourceChange,
   validationError,
+  validationSuccess,
   onValidate,
 }: VideoSourceSectionProps) {
   const tabs: { id: VideoSource; icon: typeof Video; label: string }[] = [
@@ -70,11 +73,6 @@ export function VideoSourceSection({
               {tab.label}
             </button>
           ))}
-          {/* Chức năng tải video trực tiếp — hoàn thiện sau (cần Supabase Storage) */}
-          <span className="flex cursor-not-allowed items-center gap-2 whitespace-nowrap border-b-2 border-transparent pb-2 text-xs font-medium text-ink-400" title="Đang hoàn thiện — cần cấu hình lưu trữ video">
-            <Upload className="size-3.5 shrink-0" aria-hidden />
-            Tải video trực tiếp (MP4 / WebM)
-          </span>
         </div>
 
         {/* Thanh nhập URL + nút kiểm tra */}
@@ -103,12 +101,14 @@ export function VideoSourceSection({
             </button>
           </div>
           {validationError ? (
-            <p className="text-[11px] font-semibold text-rose-600">{validationError}</p>
+            <p className="text-[11px] font-semibold leading-relaxed text-rose-600">{validationError}</p>
+          ) : validationSuccess ? (
+            <p className="text-[11px] font-semibold leading-relaxed text-emerald-700">{validationSuccess}</p>
           ) : (
-            <p className="text-[11px] text-ink-400">
+            <p className="text-[11px] leading-relaxed text-ink-400">
               {source === 'youtube'
-                ? 'Liên kết video YouTube (youtube.com/watch, youtu.be) — học viên xem nhúng trực tiếp.'
-                : 'Liên kếp chia sẻ Google Drive ở chế độ công khai — hệ thống nhúng trình xem Drive.'}
+                ? 'Video YouTube nên đặt "Không liệt kê (Unlisted)" — miễn phí, không hiện trên kênh/tìm kiếm, nhúng phát bình thường. Riêng tư (Private) sẽ KHÔNG phát được.'
+                : 'File Google Drive phải bật chia sẻ "Bất kỳ ai có liên kết" — để ở chế độ Riêng tư học viên sẽ không xem được.'}
             </p>
           )}
         </div>

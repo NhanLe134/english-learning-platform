@@ -1,4 +1,5 @@
 import { createSupabaseClient } from '../../config/supabase.js'
+import { layNgayHomNayVN, layNgayMaiVN } from './thoi-gian-vn.js'
 import type {
   TuVungHangNgay,
   LichDangTuVung,
@@ -8,21 +9,15 @@ import type {
   HangDoiOnTapTuVung,
 } from './daily-word.types.js'
 
-// Ngày hôm nay theo múi giờ máy chủ, định dạng YYYY-MM-DD
-function layNgayHomNay(): string {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-}
-
 /**
- * Suy ra trạng thái phát hành ĐỘNG theo ngày hiện tại thay vì tin cậy cột
+ * Suy ra trạng thái phát hành ĐỘNG theo ngày hiện tại (giờ VN) thay vì tin cậy cột
  * trang_thai trong DB (không có tiến trình nào cập nhật trạng thái theo thời gian,
  * nên các lịch đã qua ngày vẫn kẹt ở 'cho_phat_hanh' và làm sai thống kê).
  * Trạng thái 'tam_dung' (tạm dừng thủ công) được giữ nguyên.
  */
 function suyRaTrangThai(ngayPhatHanh: string, trangThaiDb: string): TrangThaiLichDang {
   if (trangThaiDb === 'tam_dung') return 'tam_dung'
-  const homNay = layNgayHomNay()
+  const homNay = layNgayHomNayVN()
   if (ngayPhatHanh < homNay) return 'da_qua'
   if (ngayPhatHanh === homNay) return 'dang_hoat_dong'
   return 'cho_phat_hanh'
@@ -175,7 +170,7 @@ export class DailyWordRepository {
         {
           tu_vung_id: tuVungMoi.id,
           ngay_phat_hanh: payload.ngay_phat_hanh,
-          gio_phat_hanh: payload.gio_phat_hanh || '07:00:00',
+          gio_phat_hanh: payload.gio_phat_hanh || '03:00:00',
           trang_thai: 'cho_phat_hanh',
           nguon_du_lieu: 'thu_cong',
         },
@@ -353,10 +348,8 @@ export class DailyWordRepository {
     // Tạm thuộc -> vị trí thứ 7
     const viTri = mucDoGhiNho === 'chua_thuoc' ? 3 : 7
 
-    // Ngày ôn tập tiếp theo: ngày mai
-    const tomorrow = new Date()
-    tomorrow.setDate(tomorrow.getDate() + 1)
-    const ngayOnTap = tomorrow.toISOString().split('T')[0] ?? ''
+    // Ngày ôn tập tiếp theo: ngày mai theo giờ Việt Nam
+    const ngayOnTap = layNgayMaiVN()
 
     await client
       .from('hang_doi_on_tap_tu_vung')

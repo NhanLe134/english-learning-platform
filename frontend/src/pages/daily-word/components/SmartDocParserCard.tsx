@@ -56,7 +56,7 @@ export const SmartDocParserCard: React.FC<SmartDocParserCardProps> = ({
   const [fileName, setFileName] = useState<string>('')
   const [parsedWords, setParsedWords] = useState<TuVungBocTach[]>([])
   const [startDate, setStartDate] = useState<string>(getTodayDateStr)
-  const [publishTime, setPublishTime] = useState<string>('07:00')
+  const [publishTime, setPublishTime] = useState<string>('03:00')
 
   // Xử lý khi chọn file (chỉ hỗ trợ DOCX, DOC, TXT)
   async function handleFileSelected(file: File) {

@@ -70,32 +70,35 @@ function highlightKeyword(sentence: string, keyword: string) {
 
 export const StudentDailyWordPopup: React.FC = () => {
   const { user } = useAuth()
-  const [isOpen, setIsOpen] = useState(() => {
-    try {
-      return sessionStorage.getItem('daily_word_dismissed') !== 'true'
-    } catch {
-      return true
-    }
-  })
+  const [isOpen, setIsOpen] = useState(false)
 
-  // Mỗi lần học viên vào Trang chủ (/my-courses) thì popup luôn mở lại:
-  // xóa cờ "đã đóng trong phiên" để lần tải trang sau popup hiện diện tiếp.
-  useEffect(() => {
-    const pathname = window.location.pathname
-    const isStudentHome =
-      pathname === '/my-courses' ||
-      pathname === '/khoa-hoc-cua-toi' ||
-      pathname === '/student' ||
-      pathname.startsWith('/student/courses')
-    if (isStudentHome) {
-      try {
-        sessionStorage.removeItem('daily_word_dismissed')
-      } catch {
-        // Bỏ qua nếu storage bị chặn
-      }
-      setIsOpen(true)
+  // Ngày hôm nay theo múi giờ máy học viên, định dạng YYYY-MM-DD
+  function todayStr(): string {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  }
+
+  // Trạng thái "đã xem" lưu theo user: { ngày, ID từ hôm nay đã hiển thị }.
+  // Popup hiện lại khi: sang ngày mới, HOẶC admin đăng TỪ MỚI trong ngày
+  // (ID từ hôm nay khác ID đã xem lần trước).
+  function seenKey(): string {
+    return `daily_word_seen_${user?.id ?? 'guest'}`
+  }
+  function readSeen(): { date: string; wordId: string } | null {
+    try {
+      const raw = localStorage.getItem(seenKey())
+      return raw ? (JSON.parse(raw) as { date: string; wordId: string }) : null
+    } catch {
+      return null
     }
-  }, [])
+  }
+  function writeSeen(wordId: string) {
+    try {
+      localStorage.setItem(seenKey(), JSON.stringify({ date: todayStr(), wordId }))
+    } catch {
+      // Bỏ qua nếu storage bị chặn
+    }
+  }
   const [isFlipped, setIsFlipped] = useState(false)
   const [currentIndex, setCurrentIndex] = useState(0)
   const [words, setWords] = useState<FlashcardItem[]>(FALLBACK_WORDS)
@@ -156,8 +159,20 @@ export const StudentDailyWordPopup: React.FC = () => {
           }
         }
 
-        if (isMounted && wordList.length > 0) {
-          setWords(wordList)
+        if (isMounted) {
+          const list = wordList.length > 0 ? wordList : FALLBACK_WORDS
+          setWords(list)
+
+          // Quyết định hiển thị: hiện khi có TỪ MỚI trong ngày
+          // (ID từ hôm nay khác ID đã xem lần trước) hoặc sang ngày mới
+          const today = todayStr()
+          const todayWordId = list.find((w) => w.la_tu_hom_nay)?.id ?? 'fallback'
+          const seen = readSeen()
+          const shouldShow = !seen || seen.date !== today || seen.wordId !== todayWordId
+          if (shouldShow) {
+            setIsOpen(true)
+            writeSeen(todayWordId) // Ghi nhận ngay khi hiển thị — mỗi từ chỉ hiện 1 lần
+          }
         }
       } catch (err) {
         console.warn('Lỗi tải từ vựng học viên:', err)
@@ -207,20 +222,26 @@ export const StudentDailyWordPopup: React.FC = () => {
     })
   }
 
-  // Đánh giá flashcard: lưu mức ghi nhớ rồi đóng popup lại
+  // Đánh giá flashcard: lưu mức ghi nhớ rồi CHUYỂN SANG THẺ TIẾP THEO.
+  // Chỉ đóng popup khi thẻ hiện tại là thẻ CUỐI (đã duyệt hết bộ thẻ) —
+  // đóng bằng X vẫn hoạt động ở bất kỳ lúc nào.
   async function handleRateWord(e: React.MouseEvent, mucDo: 'chua_thuoc' | 'tam_thuoc' | 'da_thuoc') {
     e.stopPropagation()
     if (user?.id && currentWord?.tu_vung_id) {
       try {
         await dailyWordApi.danhGiaFlashcard(user.id, currentWord.tu_vung_id, mucDo)
       } catch {
-        // bỏ qua — vẫn đóng popup kể cả khi API lỗi
+        // bỏ qua — vẫn chuyển thẻ kể cả khi API lỗi
       }
     }
 
-    // Đóng popup sau khi đã đánh giá từ này (reset thẻ về mặt trước cho lần mở sau)
     setIsFlipped(false)
-    setIsOpen(false)
+    if (currentIndex >= words.length - 1) {
+      // Đây là thẻ cuối → đóng popup (đã duyệt hết)
+      markShownToday()
+    } else {
+      setCurrentIndex((prev) => prev + 1)
+    }
   }
 
   // Điều hướng lướt sang từ khác
@@ -257,13 +278,16 @@ export const StudentDailyWordPopup: React.FC = () => {
     setTouchStartX(null)
   }
 
-  function handleClose() {
+  // Đóng popup: ghi nhận từ hôm nay đã xem — trong ngày không hiện lại từ này.
+  // Nếu admin đăng từ mới (ID khác) popup sẽ hiện thêm một lần nữa.
+  function markShownToday() {
+    const todayWordId = words.find((w) => w.la_tu_hom_nay)?.id ?? 'fallback'
+    writeSeen(todayWordId)
     setIsOpen(false)
-    try {
-      sessionStorage.setItem('daily_word_dismissed', 'true')
-    } catch {
-      // ignore
-    }
+  }
+
+  function handleClose() {
+    markShownToday()
   }
 
   // Khi tắt là sẽ không thấy nữa

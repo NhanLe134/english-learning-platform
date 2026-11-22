@@ -39,6 +39,7 @@ export default function ThemBaiGiangPage() {
   const [videoUrl, setVideoUrl] = useState('')
   const [videoSource, setVideoSource] = useState<VideoSource>('youtube')
   const [videoError, setVideoError] = useState<string | null>(null)
+  const [videoSuccess, setVideoSuccess] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [saving, setSaving] = useState(false)
@@ -88,9 +89,13 @@ export default function ThemBaiGiangPage() {
     }
   }
 
+  // Kiểm tra định dạng liên kết (validate tại chỗ — chọn phương án Unlisted
+  // YouTube / Drive "Bất kỳ ai có liên kết"; endpoint /check-video vẫn giữ
+  // trong backend nếu sau này muốn bật kiểm tra sâu)
   function handleValidateVideo() {
-    setVideoError(validateVideoUrl())
-    if (!validateVideoUrl()) showToast('success', 'Định dạng liên kết hợp lệ.')
+    const err = validateVideoUrl()
+    setVideoError(err)
+    setVideoSuccess(err ? null : '✓ Định dạng liên kết hợp lệ. Nhớ đặt video ở chế độ Unlisted (YouTube) hoặc "Bất kỳ ai có liên kết" (Drive) rồi lưu bài giảng.')
   }
 
   // Lưu bài giảng (status: draft hoặc published) — tự tạo chủ đề mới nếu đang ở chế độ đó
@@ -104,6 +109,7 @@ export default function ThemBaiGiangPage() {
     const videoErr = validateVideoUrl()
     if (videoErr) {
       setVideoError(videoErr)
+      setVideoSuccess(null)
       setFormError(videoErr)
       return
     }
@@ -112,28 +118,51 @@ export default function ThemBaiGiangPage() {
       return
     }
     if (!newTopicMode && !topicId) {
-      setFormError('Vui lòng chọn chủ đề cho bài giảng.')
+      setFormError('Vui lòng chọn chủ đề cho bài giảng, hoặc chọn "Không chia chủ đề".')
       return
     }
 
     setSaving(true)
     try {
-      let targetTopicId = topicId
       if (newTopicMode) {
         const topic = await lessonApi.createTopic(courseId, newTopicTitle.trim(), accessToken, async () => (await refreshSession()).accessToken)
-        targetTopicId = topic.id
+        await lessonApi.createLesson(
+          {
+            topicId: topic.id,
+            title: title.trim(),
+            description: description.trim() || null,
+            videoUrl: videoUrl.trim(),
+            status,
+          },
+          accessToken,
+          async () => (await refreshSession()).accessToken
+        )
+      } else if (topicId === '__none__') {
+        // Không chia chủ đề — backend tự gắn vào chủ đề mặc định "Bài giảng"
+        await lessonApi.createLessonInCourse(
+          {
+            courseId,
+            title: title.trim(),
+            description: description.trim() || null,
+            videoUrl: videoUrl.trim(),
+            status,
+          },
+          accessToken,
+          async () => (await refreshSession()).accessToken
+        )
+      } else {
+        await lessonApi.createLesson(
+          {
+            topicId,
+            title: title.trim(),
+            description: description.trim() || null,
+            videoUrl: videoUrl.trim(),
+            status,
+          },
+          accessToken,
+          async () => (await refreshSession()).accessToken
+        )
       }
-      await lessonApi.createLesson(
-        {
-          topicId: targetTopicId,
-          title: title.trim(),
-          description: description.trim() || null,
-          videoUrl: videoUrl.trim(),
-          status,
-        },
-        accessToken,
-        async () => (await refreshSession()).accessToken
-      )
       showToast('success', status === 'published' ? 'Đã xuất bản bài giảng.' : 'Đã lưu bài giảng vào bản nháp.')
       window.location.assign(`/admin/lessons?courseId=${courseId}`)
     } catch (error) {
@@ -262,10 +291,12 @@ export default function ThemBaiGiangPage() {
                   onVideoUrlChange={(value) => {
                     setVideoUrl(value)
                     setVideoError(null)
+                    setVideoSuccess(null)
                   }}
                   source={videoSource}
                   onSourceChange={setVideoSource}
                   validationError={videoError ?? undefined}
+                  validationSuccess={videoSuccess ?? undefined}
                   onValidate={handleValidateVideo}
                 />
 

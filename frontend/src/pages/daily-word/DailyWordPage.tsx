@@ -168,7 +168,7 @@ export function DailyWordPage() {
         vi_du_tieng_anh: wordData.vi_du_tieng_anh,
         vi_du_tieng_viet: wordData.vi_du_tieng_viet,
         ngay_phat_hanh: date,
-        gio_phat_hanh: '07:00:00',
+        gio_phat_hanh: '03:00:00',
       })
       await taiDuLieuThang(currentYear, currentMonth)
       setSelectedDate(date)

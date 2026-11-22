@@ -51,6 +51,16 @@ export class CourseController {
     }
   }
 
+  // GET /api/courses/admin/categories — danh sách phân loại riêng biệt (dropdown)
+  async getCategories(_request: Request, response: Response, next: NextFunction): Promise<void> {
+    try {
+      const categories = await courseService.getDistinctCategories()
+      response.status(200).json({ success: true, data: categories })
+    } catch (error) {
+      next(error)
+    }
+  }
+
   async listManagedCourses(
     request: Request,
     response: Response,

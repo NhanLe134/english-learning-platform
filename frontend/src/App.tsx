@@ -20,12 +20,12 @@ import { CheckoutPage } from './pages/checkout/CheckoutPage'
 import { CheckoutSuccessPage } from './pages/checkout/CheckoutSuccessPage'
 import { WorkshopsPage } from './pages/workshops/WorkshopsPage'
 import { DailyWordPage } from './pages/daily-word/DailyWordPage'
+// Popup Daily Word KHÔNG render toàn cục nữa — chỉ trong StudentCoursesPage (/my-courses)
 import { ContactPage } from './pages/contact/ContactPage'
 import { TeacherDashboardPage } from './pages/courses/TeacherDashboardPage'
 import { TeacherAccountActionPage } from './pages/auth/TeacherAccountActionPage'
 import { AuthProvider } from './pages/auth/AuthContext'
 import { useAuth } from './pages/auth/auth-context'
-import { StudentDailyWordPopup } from './components/daily-word/StudentDailyWordPopup'
 
 function AppRoutes() {
   const { initializationError, isInitializing, user } = useAuth()
@@ -239,9 +239,6 @@ function AppRoutes() {
         <div className="auth-global-error" role="alert">{initializationError}</div>
       )}
       {page}
-      {!isAdminRoute && !isTeacherArea && !isAuthPage && !isAuthCallback && pathname !== '/daily-word' && (
-        <StudentDailyWordPopup />
-      )}
     </>
   )
 }

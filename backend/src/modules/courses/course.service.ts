@@ -40,6 +40,11 @@ export interface ValidatedCourseIds {
 export class CourseService {
   constructor(private readonly repository: CourseRepository = courseRepository) {}
 
+  // Danh sách phân loại riêng biệt (cho dropdown trong form thêm/sửa khóa)
+  async getDistinctCategories(): Promise<string[]> {
+    return this.repository.findDistinctCategories()
+  }
+
   async listManagedCourses(query: Record<string, unknown>): Promise<ManagedCoursePage> {
     const page = this.parsePositiveInteger(query.page, 1, 'page', 1_000_000)
     const limit = this.parsePositiveInteger(query.limit, 10, 'limit', 100)

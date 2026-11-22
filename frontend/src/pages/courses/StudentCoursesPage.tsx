@@ -3,6 +3,7 @@ import { Search, BookOpen, LoaderCircle } from 'lucide-react'
 import { StudentHeader } from './components/StudentHeader'
 import { MyCourseCard } from './components/MyCourseCard'
 import { OtherCourseCard } from './components/OtherCourseCard'
+import { StudentDailyWordPopup } from '../../components/daily-word/StudentDailyWordPopup'
 import { useAuth } from '../auth/auth-context'
 import type {
   MyCourse,
@@ -392,6 +393,9 @@ export const StudentCoursesPage: React.FC = () => {
           </div>
         </div>
       </main>
+
+      {/* Popup Daily Word — chỉ hiển thị tại trang này, 1 lần/ngày cho từng học viên */}
+      <StudentDailyWordPopup />
     </div>
   )
 }

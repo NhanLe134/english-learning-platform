@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Check, ChevronDown, Edit3, ExternalLink, Layers, LoaderCircle, Save, X } from 'lucide-react'
+import { Check, ChevronDown, Edit3, ExternalLink, Layers, LoaderCircle, Save, Trash2, X } from 'lucide-react'
+import { ConfirmModal } from '../../daily-word/components/ConfirmModal'
 import type { LessonTopicItem } from '../../them_bai_giang/services/lessonApi'
 
 interface LessonPreviewDrawerProps {
@@ -17,6 +18,8 @@ interface LessonPreviewDrawerProps {
     status: 'draft' | 'published'
     sortOrder: number
   }) => Promise<void>
+  /** Xóa bài giảng — trang cha xử lý API + reload danh sách */
+  onDelete: () => Promise<void>
 }
 
 /** Chuyển URL YouTube/Drive thành link nhúng (embed) — trả null nếu không nhận diện được */
@@ -56,9 +59,12 @@ export function LessonPreviewDrawer({
   lesson,
   onClose,
   onSaveEdit,
+  onDelete,
 }: LessonPreviewDrawerProps) {
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
   // Form chỉnh sửa
@@ -363,6 +369,16 @@ export function LessonPreviewDrawer({
             <div className="flex items-center justify-end gap-2">
               <button
                 type="button"
+                onClick={() => setConfirmDelete(true)}
+                disabled={deleting}
+                className="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200/90 bg-white text-slate-500 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:border-red-200 hover:bg-red-50/60 hover:text-red-600 active:scale-98 disabled:opacity-50 cursor-pointer"
+                title="Xóa bài giảng"
+                aria-label="Xóa bài giảng"
+              >
+                {deleting ? <LoaderCircle className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+              </button>
+              <button
+                type="button"
                 onClick={() => setEditing(true)}
                 className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200/90 bg-white px-3.5 text-[11.5px] font-semibold text-slate-700 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:-translate-y-0.5 hover:bg-slate-50 hover:text-slate-900 active:translate-y-0 active:scale-98 cursor-pointer"
               >
@@ -405,6 +421,30 @@ export function LessonPreviewDrawer({
               </button>
             </div>
           )}
+
+          {/* Modal xác nhận xóa bài giảng */}
+          <ConfirmModal
+            open={confirmDelete}
+            title="Xóa bài giảng này?"
+            message={`Xóa vĩnh viễn bài giảng "${lesson.title}" khỏi chủ đề "${topicTitle}"? Hành động không thể hoàn tác.`}
+            confirmLabel="Xác nhận xóa"
+            danger
+            loading={deleting}
+            error={formError ?? undefined}
+            onCancel={() => setConfirmDelete(false)}
+            onConfirm={() => void (async () => {
+              setDeleting(true)
+              try {
+                await onDelete()
+                setConfirmDelete(false)
+                onClose()
+              } catch (err) {
+                setFormError(err instanceof Error ? err.message : 'Không thể xóa bài giảng.')
+              } finally {
+                setDeleting(false)
+              }
+            })()}
+          />
         </footer>
       </aside>
     </div>

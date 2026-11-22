@@ -95,6 +95,7 @@ export function CourseManagementPage() {
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null)
   const [actionLoading, setActionLoading] = useState(false)
   const [teachers, setTeachers] = useState<UserProfile[]>([])
+  const [allCategories, setAllCategories] = useState<string[]>([])
   const latestRequest = useRef(0)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -108,6 +109,23 @@ export function CourseManagementPage() {
     if (toastTimer.current) clearTimeout(toastTimer.current)
     latestRequest.current += 1
   }, [])
+
+  // Danh sách phân loại riêng biệt của mọi khóa (dropdown trong drawer)
+  const loadCategories = useCallback(async () => {
+    try {
+      const categories = await courseApi.getCategories(
+        accessToken,
+        async () => (await refreshSession()).accessToken
+      )
+      setAllCategories(categories)
+    } catch {
+      // Bỏ qua — drawer vẫn dùng danh sách từ các khóa đang hiển thị
+    }
+  }, [accessToken, refreshSession])
+
+  useEffect(() => {
+    void loadCategories()
+  }, [loadCategories])
 
   const loadCourses = useCallback(async () => {
     const requestId = ++latestRequest.current
@@ -185,6 +203,7 @@ export function CourseManagementPage() {
       }
       setEditingCourse(undefined)
       await loadCourses()
+      await loadCategories()
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Không thể lưu khóa học.'
       showToast('error', message)
@@ -619,6 +638,7 @@ export function CourseManagementPage() {
           key={editingCourse?.id ?? 'new-course'}
           course={editingCourse}
           teachers={teachers}
+          categories={allCategories}
           saving={saving}
           onClose={() => {
             if (!saving) setEditingCourse(undefined)

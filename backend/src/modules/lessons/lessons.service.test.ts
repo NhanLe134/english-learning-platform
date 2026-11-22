@@ -137,6 +137,7 @@ describe('LessonsService - Student access & lesson retrieval', () => {
     repo.mockLessons = [
       {
         id: publishedLessonId,
+        course_id: courseId,
         topic_id: topicId,
         title: 'Bài 1: Phát âm cơ bản',
         description: 'Nắm vững 44 âm IPA',
@@ -148,6 +149,7 @@ describe('LessonsService - Student access & lesson retrieval', () => {
       },
       {
         id: draftLessonId,
+        course_id: courseId,
         topic_id: topicId,
         title: 'Bài 2: Bản nháp chưa công bố',
         description: 'Đang soạn',
@@ -353,6 +355,7 @@ describe('LessonsService - Student access & lesson retrieval', () => {
     const secondLessonId = 'e0a80101-0000-4000-8000-000000000003'
     repo.mockLessons.push({
       id: secondLessonId,
+      course_id: courseId,
       topic_id: topicId,
       title: 'Bài 2: Nguyên âm đôi',
       description: 'Thực hành nguyên âm đôi',
