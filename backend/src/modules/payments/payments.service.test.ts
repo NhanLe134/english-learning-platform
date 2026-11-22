@@ -310,6 +310,7 @@ describe('SePay pending order reuse', () => {
         discounted_price: null,
       }),
       findStudentSummary: async () => ({ id: STUDENT_ID, fullName: 'Student', email: 'student@example.test', phoneNumber: null }),
+      hasActiveEnrollment: async () => false,
       createOrReusePendingOrder: async () => { createCalls += 1; return pendingOrder },
     }
     try {
@@ -327,6 +328,115 @@ describe('SePay pending order reuse', () => {
         sepayAccountName: original.accountName,
       })
     }
+  })
+
+  it('rejects order creation with 409 when student already has an active enrollment', async () => {
+    const repository = {
+      findPublishedCourse: async () => ({
+        id: COURSE_ID,
+        title: 'English course',
+        slug: 'english-course',
+        description: null,
+        thumbnail_url: null,
+        price: 50000,
+        discounted_price: null,
+      }),
+      findStudentSummary: async () => ({ id: STUDENT_ID, fullName: 'Student', email: 'student@example.test', phoneNumber: null }),
+      hasActiveEnrollment: async () => true,
+    }
+    await assert.rejects(
+      new PaymentService(repository as never).createOrder({ studentId: STUDENT_ID, courseId: COURSE_ID }),
+      (error: unknown) => error instanceof Error && 'statusCode' in error && (error as { statusCode: number }).statusCode === 409,
+    )
+  })
+
+  it('rejects order creation with 404 when course or student is missing and validates discounted prices', async () => {
+    const missingCourseRepo = { findPublishedCourse: async () => null }
+    await assert.rejects(
+      new PaymentService(missingCourseRepo as never).createOrder({ studentId: STUDENT_ID, courseId: COURSE_ID }),
+      (error: unknown) => error instanceof Error && 'statusCode' in error && (error as { statusCode: number }).statusCode === 404,
+    )
+
+    const missingStudentRepo = {
+      findPublishedCourse: async () => ({
+        id: COURSE_ID,
+        title: 'English course',
+        slug: 'english-course',
+        description: null,
+        thumbnail_url: null,
+        price: 50000,
+        discounted_price: null,
+      }),
+      findStudentSummary: async () => null,
+    }
+    await assert.rejects(
+      new PaymentService(missingStudentRepo as never).createOrder({ studentId: STUDENT_ID, courseId: COURSE_ID }),
+      (error: unknown) => error instanceof Error && 'statusCode' in error && (error as { statusCode: number }).statusCode === 404,
+    )
+
+    let capturedAmount = 0
+    const discountRepo: {
+      findPublishedCourse: () => Promise<{
+        id: string
+        title: string
+        slug: string
+        description: string | null
+        thumbnail_url: string | null
+        price: number
+        discounted_price: number | null
+      }>
+      findStudentSummary: () => Promise<{ id: string; fullName: string; email: string; phoneNumber: string | null }>
+      hasActiveEnrollment: () => Promise<boolean>
+      createOrReusePendingOrder: (input: { amount: number }) => Promise<PaymentOrder>
+    } = {
+      findPublishedCourse: async () => ({
+        id: COURSE_ID,
+        title: 'English course',
+        slug: 'english-course',
+        description: null,
+        thumbnail_url: null,
+        price: 100000,
+        discounted_price: 75000,
+      }),
+      findStudentSummary: async () => ({ id: STUDENT_ID, fullName: 'Student', email: 'student@example.test', phoneNumber: null }),
+      hasActiveEnrollment: async () => false,
+      createOrReusePendingOrder: async (input: { amount: number }) => {
+        capturedAmount = input.amount
+        return { ...createOrder('pending'), amount: input.amount }
+      },
+    }
+    const previousMode = env.sepayCheckoutMode
+    Object.assign(env, { sepayCheckoutMode: 'direct_qr' })
+    try {
+      const discountedResult = await new PaymentService(discountRepo as never).createOrder({ studentId: STUDENT_ID, courseId: COURSE_ID })
+      assert.equal(capturedAmount, 75000)
+      assert.equal(discountedResult.course.price, 75000)
+      assert.equal(discountedResult.course.originalPrice, 100000)
+
+      discountRepo.findPublishedCourse = async () => ({
+        id: COURSE_ID,
+        title: 'English course',
+        slug: 'english-course',
+        description: null,
+        thumbnail_url: null,
+        price: 100000,
+        discounted_price: 120000,
+      })
+      await new PaymentService(discountRepo as never).createOrder({ studentId: STUDENT_ID, courseId: COURSE_ID })
+      assert.equal(capturedAmount, 100000)
+    } finally {
+      Object.assign(env, { sepayCheckoutMode: previousMode })
+    }
+  })
+
+  it('rejects guest checkout with 403 when email is not a verified student account', async () => {
+    const repository = {
+      findVerifiedStudentByEmail: async () => null,
+    }
+    await assert.rejects(
+      new PaymentService(repository as never).createGuestOrder({ email: 'unverified@example.test', courseId: COURSE_ID }),
+      (error: unknown) => error instanceof Error && 'statusCode' in error && (error as { statusCode: number }).statusCode === 403,
+    )
   })
 })
 

@@ -98,19 +98,23 @@ export function RegisterPage() {
     }
 
     setSubmitting(true)
+    const normalizedFullName = String(formData.get('fullName') ?? '').trim()
     const normalizedEmail = String(formData.get('email') ?? '').trim()
+    const normalizedPhoneNumber = String(formData.get('phoneNumber') ?? '').trim()
     const validCourseId = course?.id && UUID_REGEX.test(course.id) ? [course.id] : []
     try {
       const registration = await authApi.register(
-        String(formData.get('fullName') ?? '').trim(),
+        normalizedFullName,
         String(formData.get('dateOfBirth') ?? ''),
         normalizedEmail,
-        String(formData.get('phoneNumber') ?? '').trim(),
+        normalizedPhoneNumber,
         password,
         confirmPassword,
         validCourseId,
         googleAccessToken || undefined
       )
+      setFullName(normalizedFullName)
+      setPhoneNumber(normalizedPhoneNumber)
       setEmail(registration.email)
       try {
         const result = await authApi.requestRegistrationOtp(registration.email)

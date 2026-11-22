@@ -62,6 +62,7 @@ export default function SePayVietQR({ courseId, studentEmail, onPaymentError, on
         onOrderReady(createdOrder)
       })
       .catch((cause: unknown) => {
+        orderRequestRef.current = null
         if (!active) return
         const message = cause instanceof Error ? cause.message : 'Không thể tạo đơn thanh toán.'
         setError(message)

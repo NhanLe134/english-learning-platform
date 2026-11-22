@@ -78,7 +78,7 @@ export class AuthRepository {
         `SELECT p.id, p.email, p.full_name
          FROM public.profiles AS p
          JOIN public.auth_registration_details AS details ON details.user_id = p.id
-         WHERE lower(p.email) = $1 AND p.status = 'active' AND p.is_verified = false
+         WHERE lower(p.email) = $1 AND p.status = 'pending' AND p.is_verified = false
          FOR UPDATE OF p`,
         [email]
       )
@@ -169,7 +169,7 @@ export class AuthRepository {
                 p.avatar_url, p.status, p.is_verified, p.created_at, p.updated_at
          FROM public.profiles AS p
          JOIN public.auth_registration_details AS details ON details.user_id = p.id
-         WHERE lower(p.email) = $1 AND p.status = 'active'
+         WHERE lower(p.email) = $1 AND p.status = 'pending'
          FOR UPDATE OF p`,
         [email]
       )
@@ -236,7 +236,7 @@ export class AuthRepository {
       const { rows: verifiedRows } = await client.query(
         `UPDATE public.profiles
          SET is_verified = true, status = 'pending', updated_at = $2
-         WHERE id = $1 AND is_verified = false
+         WHERE id = $1 AND is_verified = false AND status = 'pending'
          RETURNING id, email, full_name, nickname, phone_number, role,
                    avatar_url, status, is_verified, created_at, updated_at`,
         [profile.id, now]

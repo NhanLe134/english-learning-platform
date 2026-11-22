@@ -24,10 +24,11 @@ export class PaymentOrderRepository {
   constructor(private readonly clientFactory: typeof createSupabaseClient = createSupabaseClient) {}
 
   async findVerifiedStudentByEmail(email: string): Promise<{ id: string; fullName: string; email: string; phoneNumber: string | null } | null> {
-    const { data, error } = await createSupabaseClient()
+    const { data, error } = await this.clientFactory()
       .from('profiles')
-      .select('id,email,full_name,phone_number,status,is_verified')
+      .select('id,email,full_name,phone_number,role,status,is_verified')
       .eq('email', email.trim().toLowerCase())
+      .eq('role', 'STUDENT')
       .eq('is_verified', true)
       .in('status', ['pending', 'active'])
       .maybeSingle()
@@ -67,7 +68,7 @@ export class PaymentOrderRepository {
     price: number
     discounted_price: number | null
   } | null> {
-    const { data, error } = await createSupabaseClient()
+    const { data, error } = await this.clientFactory()
       .from('courses')
       .select('id,title,slug,description,thumbnail_url,price,discounted_price')
       .eq('id', courseId)
@@ -87,7 +88,7 @@ export class PaymentOrderRepository {
   }
 
   async findStudentSummary(studentId: string): Promise<{ id: string; fullName: string; email: string; phoneNumber: string | null } | null> {
-    const { data, error } = await createSupabaseClient()
+    const { data, error } = await this.clientFactory()
       .from('profiles')
       .select('id,full_name,email,phone_number')
       .eq('id', studentId)
@@ -103,7 +104,7 @@ export class PaymentOrderRepository {
   }
 
   async findCourseTitle(courseId: string): Promise<string | null> {
-    const { data, error } = await createSupabaseClient()
+    const { data, error } = await this.clientFactory()
       .from('courses')
       .select('title')
       .eq('id', courseId)
@@ -125,7 +126,7 @@ export class PaymentOrderRepository {
   }
 
   async findOrderById(orderId: string): Promise<PaymentOrder | null> {
-    const { data, error } = await createSupabaseClient()
+    const { data, error } = await this.clientFactory()
       .from('course_orders')
       .select(COURSE_ORDER_COLUMNS)
       .eq('id', orderId)
@@ -137,7 +138,7 @@ export class PaymentOrderRepository {
   }
 
   async findOrderByTransferContent(transferContent: string): Promise<PaymentOrder | null> {
-    const { data, error } = await createSupabaseClient()
+    const { data, error } = await this.clientFactory()
       .from('course_orders')
       .select(COURSE_ORDER_COLUMNS)
       .eq('transfer_content', transferContent)
@@ -180,7 +181,7 @@ export class PaymentOrderRepository {
   }
 
   async markOrderExpired(orderId: string): Promise<PaymentOrder | null> {
-    const { data, error } = await createSupabaseClient()
+    const { data, error } = await this.clientFactory()
       .from('course_orders')
       .update({ status: 'expired', updated_at: new Date().toISOString() })
       .eq('id', orderId)

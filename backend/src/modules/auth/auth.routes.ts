@@ -23,7 +23,7 @@ authRouter.post(
 authRouter.post(
   '/register/verification/resend',
   requireTrustedOrigin,
-  authRateLimit(env.authResetRateLimit),
+  authRateLimit(env.authResetRateLimit, { countAllRequests: true }),
   (request, response, next) => authController.resendRegistrationOtp(request, response, next)
 )
 authRouter.post(
@@ -70,7 +70,7 @@ authRouter.post(
 authRouter.post(
   '/forgot-password',
   requireTrustedOrigin,
-  authRateLimit(env.authResetRateLimit),
+  authRateLimit(env.authResetRateLimit, { countAllRequests: true }),
   (request, response, next) => authController.forgotPassword(request, response, next)
 )
 authRouter.post(

@@ -354,7 +354,7 @@ describe('authentication HTTP endpoints', () => {
         date_of_birth: dateOfBirth,
         registration_course_ids: selectedCourseIds,
         role: 'STUDENT',
-        status: 'active',
+        status: 'pending',
         is_verified: false,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -988,17 +988,23 @@ describe('authentication HTTP endpoints', () => {
   })
 
   it('applies the configured login rate limit', async () => {
+    const previousNodeEnv = env.nodeEnv
+    Object.assign(env, { nodeEnv: 'test' })
     const statuses: number[] = []
-    for (let attempt = 0; attempt <= env.authResetRateLimit; attempt += 1) {
-      const response = await fetch(`${baseUrl}/api/auth/forgot-password`, {
-        method: 'POST',
-        headers: {
-          Origin: frontendOrigin,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email: 'invalid' }),
-      })
-      statuses.push(response.status)
+    try {
+      for (let attempt = 0; attempt <= env.authResetRateLimit; attempt += 1) {
+        const response = await fetch(`${baseUrl}/api/auth/forgot-password`, {
+          method: 'POST',
+          headers: {
+            Origin: frontendOrigin,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email: 'invalid' }),
+        })
+        statuses.push(response.status)
+      }
+    } finally {
+      Object.assign(env, { nodeEnv: previousNodeEnv })
     }
 
     const firstLimitedAttempt = statuses.indexOf(429)

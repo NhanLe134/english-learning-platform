@@ -119,7 +119,7 @@ class FakeUsers {
       email,
       full_name: fullName,
       phone_number: phoneNumber,
-      status: 'active',
+      status: 'pending' as const,
       is_verified: false,
     }
     this.createdRegistrationDetails = { fullName, dateOfBirth, phoneNumber, selectedCourseIds }
@@ -268,7 +268,7 @@ class FakeStore {
     cooldownMs: number
   ): Promise<RegistrationOtpIssueResult> {
     const user = [...this.users.users.values()].find((item) => item.email === email)
-    if (!user || user.is_verified || !this.users.registrationDetails.has(user.id)) {
+    if (!user || user.status !== 'pending' || user.is_verified || !this.users.registrationDetails.has(user.id)) {
       return { status: 'not_registered' }
     }
     const existing = this.registrationOtps.get(user.id)
@@ -305,7 +305,9 @@ class FakeStore {
     maxAttempts: number
   ): Promise<RegistrationOtpVerifyResult> {
     const user = [...this.users.users.values()].find((item) => item.email === email)
-    if (!user || !this.users.registrationDetails.has(user.id)) return { status: 'not_registered' }
+    if (!user || user.status !== 'pending' || !this.users.registrationDetails.has(user.id)) {
+      return { status: 'not_registered' }
+    }
     if (user.is_verified) return { status: 'already_verified' }
     const stored = this.registrationOtps.get(user.id)
     if (!stored) return { status: 'invalid' }
@@ -787,6 +789,8 @@ describe('authentication service', () => {
     const user = [...users.users.values()].find((item) => item.email === registration.email)
     assert.ok(user)
     assert.equal(user.is_verified, false)
+    assert.equal(user.status, 'pending')
+    user.status = 'active'
 
     await service.forgotPassword(registration.email)
 
@@ -1532,5 +1536,62 @@ describe('authentication service', () => {
         }),
       403
     )
+  })
+
+  it('prevents pending students from bypassing course payment via forgotPassword', async () => {
+    const { users, service } = setup(async () => undefined)
+    const registration = await register(
+      service,
+      'pending.recovery@example.test',
+      'A-long-password-123'
+    )
+    const user = [...users.users.values()].find((item) => item.email === registration.email)
+    assert.ok(user)
+    user.is_verified = true
+    assert.equal(user.status, 'pending')
+
+    await service.forgotPassword(registration.email)
+
+    assert.equal(users.updatedPassword, undefined)
+  })
+
+  it('enforces strict student status transitions across registration, OTP verification, and payment activation', async () => {
+    let lastSentOtp = ''
+    const { users, service } = setup(
+      async () => undefined,
+      undefined,
+      async (mail) => {
+        const match = mail.html.match(/\b(\d{6})\b/)
+        if (match?.[1]) lastSentOtp = match[1]
+      }
+    )
+    const email = 'lifecycle.student@example.test'
+    const password = 'LifecyclePassword123!'
+    const registration = await register(service, email, password)
+    const user = [...users.users.values()].find((item) => item.email === registration.email)
+    assert.ok(user)
+    assert.equal(user.is_verified, false)
+    assert.equal(user.status, 'pending')
+
+    // (is_verified = false, status = pending) -> 401
+    await expectAuthError(() => service.login(email, password), 401)
+
+    // Resend & verify OTP while status = pending
+    const challenge = await service.requestRegistrationOtp(email)
+    assert.equal(challenge.status, 'sent')
+    assert.ok(lastSentOtp)
+    await service.verifyRegistrationOtp(email, lastSentOtp)
+    assert.equal(user.is_verified, true)
+    assert.equal(user.status, 'pending')
+
+    // (is_verified = true, status = pending) -> 403
+    await expectAuthError(() => service.login(email, password), 403)
+
+    // After payment webhook sets status = active -> 200
+    user.status = 'active'
+    const session = await service.login(email, password)
+    assert.equal(session.user.email, email)
+    assert.equal(session.user.status, 'active')
+    assert.equal(session.user.is_verified, true)
   })
 })

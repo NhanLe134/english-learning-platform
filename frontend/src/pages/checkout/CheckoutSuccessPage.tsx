@@ -58,7 +58,7 @@ function CheckoutSuccessView({ initialOrder }: { initialOrder?: CreateOrderRespo
     enrollmentExists: false,
   } : null)
   const [orderStatus, setOrderStatus] = useState<string | null>(initialOrder?.status ?? null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => Boolean(orderId))
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
   const [timedOut, setTimedOut] = useState(false)
@@ -206,23 +206,23 @@ function CheckoutSuccessView({ initialOrder }: { initialOrder?: CreateOrderRespo
       <main className="checkout-success-main checkout-success-missing">
         <section className={`payment-success-empty${paid ? ' is-paid' : ''}${terminalError || error || missingOrderInfo ? ' has-error' : ''}`} aria-live="polite">
           <span className="payment-success-state-icon">
-            {paid ? <CheckCircle2 size={32} /> : terminalError ? <XCircle size={32} /> : timedOut || error ? <AlertTriangle size={32} /> : loading || pending ? <Loader2 className="sepay-loader" size={30} /> : <Clock3 size={32} />}
+            {paid ? <CheckCircle2 size={32} /> : terminalError ? <XCircle size={32} /> : timedOut || error || missingOrderInfo ? <AlertTriangle size={32} /> : loading || pending ? <Loader2 className="sepay-loader" size={30} /> : <Clock3 size={32} />}
           </span>
-          <span className={`payment-success-status-pill${paid ? ' paid' : terminalError ? ' failed' : ''}`}>
-            {paid ? 'Đã xác nhận' : pending ? 'Đang chờ thanh toán' : terminalError ? 'Chưa hoàn tất' : 'Đang kiểm tra'}
+          <span className={`payment-success-status-pill${paid ? ' paid' : terminalError || missingOrderInfo ? ' failed' : ''}`}>
+            {paid ? 'Đã xác nhận' : pending ? 'Đang chờ thanh toán' : terminalError ? 'Chưa hoàn tất' : missingOrderInfo ? 'Thiếu thông tin' : 'Đang kiểm tra'}
           </span>
-          {!missingOrderInfo && <h1>{timedOut ? 'Chưa xác nhận được thanh toán' : loading || pending ? 'Đang xác nhận thanh toán' : title}</h1>}
-          {!missingOrderInfo && <p>
-            {paid
-              ? `Cảm ơn${user?.fullName ? ` ${user.fullName}` : ''} đã chọn Your English Voice. SePay đã xác nhận thanh toán và đăng ký ${order?.courseTitle ?? 'khóa học'} của bạn đã hoàn tất.`
-              : timedOut
-                ? 'Hệ thống chưa nhận được xác nhận thanh toán. Nếu bạn đã chuyển khoản, vui lòng liên hệ bộ phận hỗ trợ để được kiểm tra.'
-                : expired || failed || cancelled
-                ? `${expired ? 'Đơn hàng đã hết hạn.' : failed ? 'SePay chưa xác nhận thanh toán thành công.' : 'Thanh toán đã bị hủy.'} Bạn có thể quay lại khóa học để tạo đơn mới.`
-                : error || (missingOrderInfo
-                  ? 'Không tìm thấy thông tin đơn hàng. Vui lòng đăng nhập lại hoặc quay lại thanh toán.'
-                  : 'Nếu bạn đã thanh toán, vui lòng chờ IPN từ SePay. Trạng thái sẽ tự cập nhật; bạn không cần thanh toán lần nữa.')}
-          </p>}
+          <h1>{missingOrderInfo ? 'Không tìm thấy mã đơn hàng' : timedOut ? 'Chưa xác nhận được thanh toán' : loading || pending ? 'Đang xác nhận thanh toán' : title}</h1>
+          <p>
+            {missingOrderInfo
+              ? 'Liên kết không chứa mã đơn hàng. Vui lòng kiểm tra lại từ trang thanh toán hoặc danh sách khóa học.'
+              : paid
+                ? `Cảm ơn${user?.fullName ? ` ${user.fullName}` : ''} đã chọn Your English Voice. SePay đã xác nhận thanh toán và đăng ký ${order?.courseTitle ?? 'khóa học'} của bạn đã hoàn tất.`
+                : timedOut
+                  ? 'Hệ thống chưa nhận được xác nhận thanh toán. Nếu bạn đã chuyển khoản, vui lòng liên hệ bộ phận hỗ trợ để được kiểm tra.'
+                  : expired || failed || cancelled
+                    ? `${expired ? 'Đơn hàng đã hết hạn.' : failed ? 'SePay chưa xác nhận thanh toán thành công.' : 'Thanh toán đã bị hủy.'} Bạn có thể quay lại khóa học để tạo đơn mới.`
+                    : error || 'Nếu bạn đã thanh toán, vui lòng chờ IPN từ SePay. Trạng thái sẽ tự cập nhật; bạn không cần thanh toán lần nữa.'}
+          </p>
           {order && (
             <div className="payment-success-details">
               <dl className="payment-success-metadata">
@@ -241,7 +241,7 @@ function CheckoutSuccessView({ initialOrder }: { initialOrder?: CreateOrderRespo
               </dl>
             </div>
           )}
-          {!order && <div className="payment-success-details">
+          {!order && !missingOrderInfo && <div className="payment-success-details">
             <dl className="payment-success-metadata">
               <div><dt>Order ID</dt><dd>{orderId}</dd></div>
               {savedInstructions && <>

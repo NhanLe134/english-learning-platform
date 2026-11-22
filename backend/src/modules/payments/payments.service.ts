@@ -59,11 +59,20 @@ export class PaymentService {
     }
   }> {
     const course = await this.repository.findPublishedCourse(input.courseId)
-    if (!course) throw new Error('Course not found or no longer available.')
+    if (!course) throw new PaymentWebhookError('Course not found or no longer available.', 404)
     const customer = await this.repository.findStudentSummary(input.studentId)
-    if (!customer) throw new Error('Student account was not found.')
-    const amount = course.discounted_price ?? course.price
-    if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error('Course price is invalid.')
+    if (!customer) throw new PaymentWebhookError('Student account was not found.', 404)
+    const alreadyEnrolled = await this.repository.hasActiveEnrollment(input.studentId, input.courseId)
+    if (alreadyEnrolled) throw new PaymentWebhookError('You are already enrolled in this course.', 409)
+    const amount =
+      course.discounted_price !== null &&
+      course.discounted_price > 0 &&
+      course.discounted_price < course.price
+        ? course.discounted_price
+        : course.price
+    if (!Number.isSafeInteger(amount) || amount <= 0) {
+      throw new PaymentWebhookError('Course price is invalid.', 422)
+    }
     const sepay = env.sepayCheckoutMode === 'hosted' ? getSePayClient() : null
     const id = randomUUID()
     const order = await this.repository.createOrReusePendingOrder({

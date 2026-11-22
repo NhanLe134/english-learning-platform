@@ -42,6 +42,7 @@ const tags = [
   { name: 'Authentication' },
   { name: 'Courses', description: 'Public course selection and ADMIN-only course management.' },
   { name: 'User Management', description: 'ADMIN-only user administration endpoints.' },
+  { name: 'Payments', description: 'Course payment orders, public status lookup, SSE updates, and SePay webhooks.' },
   { name: 'Payment Management', description: 'ADMIN-only payment order management, reconciliation, and audit.' },
   { name: 'Lessons', description: 'Curriculum topics, lessons, and learning material endpoints.' },
 ]
@@ -489,7 +490,7 @@ export const openApiDocument = {
         tags: ['Authentication'],
         summary: 'Register a student account',
         description:
-          'Creates an unverified PostgreSQL student profile and stores its bcrypt password hash in the private auth_credentials table. Selected course IDs must identify published courses. Request a verification code using the resend endpoint, then verify it to receive an authenticated session. The role is always assigned server-side as STUDENT; a client-supplied role is ignored. Requires the database auth and registration profile migrations.',
+          'Creates a pending, unverified PostgreSQL student profile (is_verified = false, status = pending) and stores its bcrypt password hash in the private auth_credentials table. Selected course IDs must identify published courses. Request a verification code using the resend endpoint, then verify it (sets is_verified = true while keeping status pending) and complete course payment before logging in. The role is always assigned server-side as STUDENT; a client-supplied role is ignored. Requires the database auth and registration profile migrations.',
         operationId: 'register',
         requestBody: jsonBody('RegisterRequest'),
         responses: {
@@ -524,7 +525,7 @@ export const openApiDocument = {
         tags: ['Authentication'],
         summary: 'Verify a registration email',
         description:
-          'Consumes a valid, unexpired six-digit code and marks the account verified. Verification does not authenticate the user or issue tokens; the user must log in afterward. All unsuccessful verification states return the same generic 400 response.',
+          'Consumes a valid, unexpired six-digit code and marks the pending account verified (is_verified = true, status = pending). Verification does not authenticate the user or issue tokens; the student proceeds to checkout and must complete SePay payment activation before logging in. All unsuccessful verification states return the same generic 400 response.',
         operationId: 'verifyRegistrationOtp',
         requestBody: jsonBody('RegistrationOtpVerifyRequest'),
         responses: {
@@ -677,6 +678,137 @@ export const openApiDocument = {
             $ref: '#/components/schemas/CurrentUserResponse',
           }),
           ...errorResponses,
+        },
+      },
+    },
+    '/api/payment/orders': {
+      post: {
+        tags: ['Payments'],
+        summary: 'Create or reuse a pending course payment order for the signed-in user',
+        operationId: 'createPaymentOrder',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['courseId'],
+                properties: {
+                  courseId: { type: 'string', format: 'uuid' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '201': jsonResponse('Pending order created or reused with SePay checkout payload'),
+          '404': jsonResponse('Course or student profile not found', { $ref: '#/components/schemas/ErrorResponse' }),
+          '409': jsonResponse('Student is already enrolled in this course', { $ref: '#/components/schemas/ErrorResponse' }),
+          '422': jsonResponse('Course pricing is invalid', { $ref: '#/components/schemas/ErrorResponse' }),
+          ...errorResponses,
+        },
+      },
+    },
+    '/api/payment/orders/guest': {
+      post: {
+        tags: ['Payments'],
+        summary: 'Create or reuse a pending course order for a verified pre-login STUDENT email',
+        description: 'Validates against PostgreSQL/Supabase that email belongs to an email-verified STUDENT account (status pending or active) without trusting client sessionStorage. Enforces trusted Origin and rate limits.',
+        operationId: 'createGuestPaymentOrder',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['courseId', 'email'],
+                properties: {
+                  courseId: { type: 'string', format: 'uuid' },
+                  email: { type: 'string', format: 'email' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          ...errorResponses,
+          '201': jsonResponse('Pending order created or reused with SePay checkout payload'),
+          '403': jsonResponse('Email is not verified or Origin is not allowed', { $ref: '#/components/schemas/ErrorResponse' }),
+          '404': jsonResponse('Course or student profile not found', { $ref: '#/components/schemas/ErrorResponse' }),
+          '409': jsonResponse('Student is already enrolled in this course', { $ref: '#/components/schemas/ErrorResponse' }),
+          '422': jsonResponse('Course pricing is invalid', { $ref: '#/components/schemas/ErrorResponse' }),
+        },
+      },
+    },
+    '/api/payment/orders/{orderId}': {
+      get: {
+        tags: ['Payments'],
+        summary: 'Get authenticated student order status and course details',
+        operationId: 'getPaymentOrderStatus',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: 'path', name: 'orderId', required: true, schema: { type: 'string', format: 'uuid' } }],
+        responses: {
+          ...errorResponses,
+          '200': jsonResponse('Order status payload'),
+          '403': jsonResponse('Order belongs to another user', { $ref: '#/components/schemas/ErrorResponse' }),
+          '404': jsonResponse('Order not found', { $ref: '#/components/schemas/ErrorResponse' }),
+        },
+      },
+    },
+    '/api/payment/orders/{orderId}/public': {
+      get: {
+        tags: ['Payments'],
+        summary: 'Get public order status for pre-login checkout/success polling',
+        operationId: 'getPublicPaymentOrderStatus',
+        parameters: [{ in: 'path', name: 'orderId', required: true, schema: { type: 'string', format: 'uuid' } }],
+        responses: {
+          ...errorResponses,
+          '200': jsonResponse('Public order status payload'),
+          '404': jsonResponse('Order not found', { $ref: '#/components/schemas/ErrorResponse' }),
+        },
+      },
+    },
+    '/api/payment/orders/{orderId}/events': {
+      get: {
+        tags: ['Payments'],
+        summary: 'Subscribe to Server-Sent Events for authenticated student order status changes',
+        operationId: 'streamPaymentOrderStatus',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ in: 'path', name: 'orderId', required: true, schema: { type: 'string', format: 'uuid' } }],
+        responses: {
+          ...errorResponses,
+          '200': { description: 'SSE event stream for order status updates' },
+        },
+      },
+    },
+    '/api/payment/sepay-webhook': {
+      post: {
+        tags: ['Payments'],
+        summary: 'SePay Hosted Gateway IPN webhook',
+        description: 'Authenticated via X-Secret-Key header. Atomically confirms payment, activates the student profile (status = active), and upserts course enrollment via confirm_course_order_payment RPC.',
+        operationId: 'sepayWebhook',
+        responses: {
+          ...errorResponses,
+          '200': jsonResponse('Webhook acknowledged'),
+          '401': jsonResponse('Invalid X-Secret-Key', { $ref: '#/components/schemas/ErrorResponse' }),
+          '404': jsonResponse('Order not found', { $ref: '#/components/schemas/ErrorResponse' }),
+          '422': jsonResponse('Invalid payment state, currency, or amount', { $ref: '#/components/schemas/ErrorResponse' }),
+        },
+      },
+    },
+    '/api/payment/sepay-bank-webhook': {
+      post: {
+        tags: ['Payments'],
+        summary: 'SePay Direct Bank Transfer VietQR webhook',
+        description: 'Authenticated via X-SePay-Timestamp and X-SePay-Signature HMAC-SHA256 over raw body. Atomically confirms payment, activates the student profile (status = active), and upserts course enrollment.',
+        operationId: 'sepayBankWebhook',
+        responses: {
+          ...errorResponses,
+          '200': jsonResponse('Bank transfer notification processed'),
+          '401': jsonResponse('Invalid SePay HMAC signature or stale timestamp', { $ref: '#/components/schemas/ErrorResponse' }),
+          '404': jsonResponse('Order not found', { $ref: '#/components/schemas/ErrorResponse' }),
+          '422': jsonResponse('Invalid account, amount, or transfer direction', { $ref: '#/components/schemas/ErrorResponse' }),
         },
       },
     },

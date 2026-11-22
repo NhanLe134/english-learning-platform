@@ -121,7 +121,7 @@ export function LoginPage() {
         String(formData.get('email') ?? '').trim(),
         String(formData.get('password') ?? '')
       )
-      handleAuthSuccess(session)
+      await handleAuthSuccess(session)
     } catch (error) {
       setErrorMessage(getErrorMessage(error))
     } finally {

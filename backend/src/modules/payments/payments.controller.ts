@@ -95,7 +95,11 @@ export class PaymentController {
         },
       })
     } catch (error) {
-      next(error)
+      if (error instanceof PaymentWebhookError) {
+        response.status(error.statusCode).json({ success: false, message: error.message })
+      } else {
+        next(error)
+      }
     }
   }
 
@@ -373,8 +377,9 @@ export class PaymentController {
   ): Promise<void> {
     try {
       const expectedSecret = env.sepayIpnSecretKey
-      if (!expectedSecret || request.header('X-Secret-Key') !== expectedSecret) {
-        console.warn('[SePayWebhook] rejected authentication', { configured: Boolean(expectedSecret), headerPresent: Boolean(request.header('X-Secret-Key')) })
+      const providedSecret = request.header('X-Secret-Key')
+      if (!expectedSecret || typeof providedSecret !== 'string' || !isTimingSafeStringMatch(providedSecret, expectedSecret)) {
+        console.warn('[SePayWebhook] rejected authentication', { configured: Boolean(expectedSecret), headerPresent: Boolean(providedSecret) })
         response.status(401).json({ success: false, message: 'Invalid IPN secret key.' })
         return
       }
@@ -672,6 +677,13 @@ export class PaymentController {
       raw: record,
     }
   }
+}
+
+function isTimingSafeStringMatch(actual: string, expected: string): boolean {
+  const actualBuf = Buffer.from(actual, 'utf8')
+  const expectedBuf = Buffer.from(expected, 'utf8')
+  if (actualBuf.length !== expectedBuf.length) return false
+  return timingSafeEqual(actualBuf, expectedBuf)
 }
 
 function maskDiagnosticValue(value: string): string {
