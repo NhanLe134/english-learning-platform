@@ -135,6 +135,17 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
   // Course and Lesson API state
   const [course, setCourse] = useState<CourseReference | null>(null)
   const [lessonsList, setLessonsList] = useState<StudentLessonItem[]>([])
+
+  // Giải mã video_token học viên nhận từ API thành URL video thật.
+  // Token = base64 của chuỗi URL đảo ngược (khớp maHoaVideoToken backend).
+  function giaiMaVideoToken(token?: string | null): string {
+    if (!token) return ''
+    try {
+      return atob(token).split('').reverse().join('')
+    } catch {
+      return ''
+    }
+  }
   const [activeLessonId, setActiveLessonId] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -623,7 +634,7 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
               lessonNumber: numberCounter++,
               title: l.title,
               description: l.description,
-              videoUrl: l.video_url,
+              videoUrl: giaiMaVideoToken(l.video_token ?? l.video_url),
               thumbnailUrl: l.thumbnail_url || null,
               duration: formatLessonDuration(l.duration_seconds),
               durationSeconds: l.duration_seconds || 0,

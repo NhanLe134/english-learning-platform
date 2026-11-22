@@ -61,6 +61,8 @@ function mapCatalogCourse(row: CourseCatalogRow): CourseCatalogEntry {
           video_url: lesson.video_url ?? null,
         })),
     }))
+    // Chủ đề không có bài giảng nào thì không hiển thị
+    .filter((topic) => topic.lessons.length > 0)
     .sort((first, second) => first.sort_order - second.sort_order)
 
   const actualLessonsCount = topics.reduce((acc, t) => acc + (t.lessons?.length || 0), 0)
@@ -258,6 +260,22 @@ export class CourseRepository {
       if (cid) map.set(cid, (map.get(cid) ?? 0) + 1)
     }
     return map
+  }
+
+  // Danh sách phân loại riêng biệt của mọi khóa (cho dropdown chọn phân loại)
+  async findDistinctCategories(): Promise<string[]> {
+    const { data, error } = await this.clientFactory()
+      .from('courses')
+      .select('category')
+    if (error || !data) return []
+    const categories = [
+      ...new Set(
+        data
+          .map((row) => (row as { category?: string }).category?.trim())
+          .filter((c): c is string => Boolean(c))
+      ),
+    ]
+    return categories.sort((a, b) => a.localeCompare(b, 'vi'))
   }
 
   // Lấy bảng phân bố khóa — giáo viên cho danh sách khóa

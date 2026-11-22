@@ -29,6 +29,13 @@ lessonsRouter.post(
   (req, res, next) => lessonsController.createTopic(req, res, next)
 )
 
+// Tạo bài giảng KHÔNG chia chủ đề — tự gắn vào chủ đề mặc định "Bài giảng"
+lessonsRouter.post(
+  '/courses/:courseId/lessons',
+  authorize('ADMIN', 'TEACHER'),
+  (req, res, next) => lessonsController.createLessonInCourse(req, res, next)
+)
+
 // Tạo bài giảng mới trong một chủ đề
 lessonsRouter.post(
   '/topics/:topicId/lessons',
@@ -41,6 +48,18 @@ lessonsRouter.patch(
   '/lessons/:lessonId',
   authorize('ADMIN', 'TEACHER'),
   (req, res, next) => lessonsController.updateLesson(req, res, next)
+)
+
+// Xóa bài giảng
+lessonsRouter.delete(
+  '/lessons/:lessonId',
+  authorize('ADMIN', 'TEACHER'),
+  (req, res, next) => lessonsController.deleteLesson(req, res, next)
+)
+
+// Kiểm tra video (YouTube/Drive) có phát được cho học viên không — kể cả video riêng tư
+lessonsRouter.get('/check-video', authorize('ADMIN', 'TEACHER'), (req, res, next) =>
+  lessonsController.kiemTraVideo(req, res, next)
 )
 
 // Cập nhật tiến độ bài học của học viên khi xem video

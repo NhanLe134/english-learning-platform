@@ -4,6 +4,7 @@ import {
   Banknote,
   BookOpen,
   Check,
+  ChevronDown,
   Globe,
   Image as ImageIcon,
   ImagePlus,
@@ -20,6 +21,8 @@ interface CourseDrawerProps {
   course: Course | null
   /** Danh sách giáo viên (vai trò TEACHER) cho trường phân công giảng dạy */
   teachers: UserProfile[]
+  /** Danh sách phân loại đã tồn tại (cho dropdown chọn, tránh gõ tay sai chính tả) */
+  categories: string[]
   saving: boolean
   onClose: () => void
   onSubmit: (input: CourseInput) => Promise<void>
@@ -69,12 +72,16 @@ function FieldError({ message }: { message?: string }) {
   return <p className="mt-1 text-[11px] font-semibold text-rose-600">{message}</p>
 }
 
-export function CourseDrawer({ course, teachers, saving, onClose, onSubmit }: CourseDrawerProps) {
+export function CourseDrawer({ course, teachers, categories, saving, onClose, onSubmit }: CourseDrawerProps) {
   const isEdit = course !== null
   const [title, setTitle] = useState(course?.title ?? '')
   const [slug, setSlug] = useState(course?.slug ?? '')
   const [slugTouched, setSlugTouched] = useState(isEdit)
   const [category, setCategory] = useState(course?.category ?? '')
+  const [newCategoryMode, setNewCategoryMode] = useState(
+    // Khóa đang sửa có phân loại không nằm trong danh sách → giữ nguyên giá trị đó
+    Boolean(course?.category && !categories.includes(course.category))
+  )
   const [level, setLevel] = useState<CourseLevel>(course?.level ?? 'beginner')
   // Phân công nhiều giáo viên: mặc định là giáo viên chính hiện tại của khóa
   const [teacherIds, setTeacherIds] = useState<string[]>(
@@ -249,15 +256,67 @@ export function CourseDrawer({ course, teachers, saving, onClose, onSubmit }: Co
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="course-category" className={labelClass}>Phân loại <span className="text-brand-600">*</span></label>
-                  <input
-                    id="course-category"
-                    type="text"
-                    className={`${inputClass} mt-1.5`}
-                    placeholder="VD: IELTS, TOEIC, Phát âm"
-                    value={category}
-                    maxLength={100}
-                    onChange={(event) => setCategory(event.target.value)}
-                  />
+                  {!newCategoryMode ? (
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <select
+                          id="course-category"
+                          className={`${inputClass} cursor-pointer appearance-none pr-8`}
+                          value={category}
+                          onChange={(event) => setCategory(event.target.value)}
+                        >
+                          <option value="" disabled={categories.length > 0}>
+                            — Chọn phân loại —
+                          </option>
+                          {categories.map((cat) => (
+                            <option key={cat} value={cat}>
+                              {cat}
+                            </option>
+                          ))}
+                          {/* Khóa đang sửa có phân loại ngoài danh sách → giữ hiển thị */}
+                          {category && !categories.includes(category) && (
+                            <option value={category}>{category}</option>
+                          )}
+                        </select>
+                        <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-ink-400" aria-hidden />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewCategoryMode(true)
+                          setCategory('')
+                        }}
+                        title="Tạo phân loại mới"
+                        className="inline-flex h-[38px] shrink-0 cursor-pointer items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-ink-900 transition-colors hover:bg-slate-50"
+                      >
+                        <Plus className="size-3.5" aria-hidden />
+                        Mới
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <input
+                        id="course-category"
+                        type="text"
+                        className={`${inputClass} flex-1`}
+                        placeholder="Tên phân loại mới (VD: IELTS, TOEIC, Phát âm)"
+                        value={category}
+                        maxLength={100}
+                        autoFocus
+                        onChange={(event) => setCategory(event.target.value)}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewCategoryMode(false)
+                          setCategory(course?.category ?? '')
+                        }}
+                        className="h-[38px] shrink-0 cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-50 hover:text-ink-900"
+                      >
+                        Hủy
+                      </button>
+                    </div>
+                  )}
                   <FieldError message={fieldErrors.category} />
                 </div>
                 <div>

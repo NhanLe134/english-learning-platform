@@ -22,7 +22,9 @@ export interface LessonItemDetails {
   topic_id: string
   title: string
   description: string | null
-  video_url: string | null
+  /** Học viên: undefined — thay bằng video_token (video_url đã xáo trộn) */
+  video_url?: string | null
+  video_token?: string | null
   thumbnail_url?: string | null
   duration_seconds: number | null
   sort_order: number
@@ -186,6 +188,42 @@ async function authenticatedRequest<T>(
 }
 
 export const lessonApi = {
+  /**
+   * Kiểm tra video (YouTube/Drive) có phát được cho học viên không —
+   * backend hỏi YouTube oEmbed / thử tải Drive, phát hiện video riêng tư
+   */
+  async checkVideo(
+    url: string,
+    accessToken: string | null,
+    refreshAccessToken: () => Promise<string>
+  ): Promise<{ accessible: boolean; provider: string; title?: string; message: string }> {
+    return authenticatedRequest<{
+      accessible: boolean
+      provider: string
+      title?: string
+      message: string
+    }>(
+      `/check-video?url=${encodeURIComponent(url)}`,
+      { method: 'GET' },
+      accessToken,
+      refreshAccessToken
+    )
+  },
+
+  /** Xóa bài giảng */
+  async deleteLesson(
+    lessonId: string,
+    accessToken: string | null,
+    refreshAccessToken: () => Promise<string>
+  ): Promise<void> {
+    return authenticatedRequest<void>(
+      `/lessons/${encodeURIComponent(lessonId)}`,
+      { method: 'DELETE' },
+      accessToken,
+      refreshAccessToken
+    )
+  },
+
   /** Danh sách chủ đề + bài giảng của khóa học (gồm cả bản nháp với Admin/Teacher, chỉ published với Student) */
   async getTopics(
     courseId: string,
@@ -234,6 +272,38 @@ export const lessonApi = {
   },
 
   /** Tạo bài giảng mới trong một chủ đề */
+  /**
+   * Tạo bài giảng KHÔNG chia chủ đề — backend tự gắn vào chủ đề mặc định
+   * "Bài giảng" của khóa (tự tạo nếu khóa chưa có)
+   */
+  async createLessonInCourse(
+    input: {
+      courseId: string
+      title: string
+      description: string | null
+      videoUrl: string
+      status: 'draft' | 'published'
+    },
+    accessToken: string | null,
+    refreshAccessToken: () => Promise<string>
+  ): Promise<{ topic: CreatedTopic; lesson: CreatedLesson }> {
+    return authenticatedRequest<{ topic: CreatedTopic; lesson: CreatedLesson }>(
+      `/courses/${encodeURIComponent(input.courseId)}/lessons`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: input.title,
+          description: input.description,
+          video_url: input.videoUrl,
+          status: input.status,
+        }),
+      },
+      accessToken,
+      refreshAccessToken
+    )
+  },
+
   async createLesson(
     input: {
       topicId: string

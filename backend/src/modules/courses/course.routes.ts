@@ -18,6 +18,9 @@ coursesRouter.get('/', (request, response, next) =>
 )
 
 coursesRouter.use('/admin', authenticate, authorize('ADMIN'))
+coursesRouter.get('/admin/categories', (request, response, next) =>
+  courseController.getCategories(request, response, next)
+)
 coursesRouter.get('/admin', (request, response, next) =>
   courseController.listManagedCourses(request, response, next)
 )

@@ -81,13 +81,14 @@ export function QuanLyBaiGiangKhoaHocPage() {
     }
   })
 
-  const totalLessons = topics.reduce((sum, topic) => sum + topic.lessons.length, 0)
-  const previewData = preview
-    ? {
-        topicTitle: preview.topicTitle,
-        lesson: topics.find((topic) => topic.title === preview.topicTitle)?.lessons[preview.lessonIndex],
-      }
+  // Chủ đề không có bài giảng nào thì không hiển thị
+  const visibleTopics = topics.filter((topic) => topic.lessons.length > 0)
+  const totalLessons = visibleTopics.reduce((sum, topic) => sum + topic.lessons.length, 0)
+  const previewTopic = preview
+    ? (visibleTopics.find((topic) => topic.title === preview.topicTitle) ?? null)
     : null
+  const previewLesson =
+    previewTopic && preview ? previewTopic.lessons[preview.lessonIndex] ?? null : null
 
   const navigateAdmin = (tab: string) => {
     if (tab === 'quan_ly_nguoi_dung') window.location.assign('/admin/users')
@@ -129,7 +130,7 @@ export function QuanLyBaiGiangKhoaHocPage() {
                   )}
                   <span className="flex items-center gap-1 text-xs text-ink-500">
                     <Layers size={13} className="text-ink-400" />
-                    {totalLessons} bài giảng trong {topics.length} chủ đề
+                    {totalLessons} bài giảng trong {visibleTopics.length} chủ đề
                   </span>
                 </div>
               </div>
@@ -150,9 +151,9 @@ export function QuanLyBaiGiangKhoaHocPage() {
                 <LoaderCircle size={16} className="animate-spin" />
                 Đang tải bài giảng…
               </div>
-            ) : topics.length > 0 ? (
+            ) : visibleTopics.length > 0 ? (
               <div className="flex flex-col gap-6">
-                {topics.map((topic, topicIndex) => (
+                {visibleTopics.map((topic, topicIndex) => (
                   <section
                     key={topic.id}
                     className="overflow-hidden rounded-lg border border-slate-200 bg-white"
@@ -233,15 +234,20 @@ export function QuanLyBaiGiangKhoaHocPage() {
         </main>
       </div>
 
-      {/* Drawer xem trước / chỉnh sửa bài giảng */}
-      {previewData?.lesson && (
+      {/* Drawer xem trước / chỉnh sửa / xóa bài giảng */}
+      {previewLesson && previewTopic && (
         <LessonPreviewDrawer
           topics={topics}
-          topicTitle={previewData.topicTitle}
-          lesson={previewData.lesson}
+          topicTitle={previewTopic.title}
+          lesson={previewLesson}
           onClose={() => setPreview(null)}
           onSaveEdit={async (input) => {
             await lessonApi.updateLesson(input, accessToken, async () => (await refreshSession()).accessToken)
+            await loadTopics()
+            setPreview(null)
+          }}
+          onDelete={async () => {
+            await lessonApi.deleteLesson(previewLesson.id, accessToken, async () => (await refreshSession()).accessToken)
             await loadTopics()
             setPreview(null)
           }}

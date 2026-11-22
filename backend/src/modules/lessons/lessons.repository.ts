@@ -7,6 +7,15 @@ import type {
   LessonTopic,
 } from './lessons.types.js'
 
+/**
+ * Xáo trộn URL video cho học viên: base64 của chuỗi ĐẢO NGƯỢC.
+ * F12 đọc JSON API chỉ thấy chuỗi vô nghĩa; FE giải mã ngay lúc tạo player.
+ * Đây là biện pháp cản trở thông thường — không phải mã hóa bảo mật tuyệt đối.
+ */
+function maHoaVideoToken(url: string): string {
+  return Buffer.from(url.split('').reverse().join('')).toString('base64')
+}
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export { UUID_PATTERN }
@@ -85,82 +94,108 @@ export class LessonsRepository {
 
     if (error || !topics) return []
 
-    const topicIds = topics.map((topic) => topic.id)
-    const lessonsByTopic = new Map<string, LessonItem[]>()
-    if (topicIds.length > 0) {
-      let query = client
-        .from('lessons')
-        .select(
-          'id, topic_id, title, description, video_url, duration_seconds, sort_order, status'
-        )
-        .in('topic_id', topicIds)
-        .order('sort_order', { ascending: true })
+    // Bài giảng của khóa: gồm cả bài KHÔNG thuộc chủ đề nào (topic_id null)
+    let lessonQuery = client
+      .from('lessons')
+      .select(
+        'id, topic_id, course_id, title, description, video_url, duration_seconds, sort_order, status'
+      )
+      .eq('course_id', courseId)
+      .order('sort_order', { ascending: true })
 
-      if (publishedOnly) {
-        query = query.eq('status', 'published')
+    if (publishedOnly) {
+      lessonQuery = lessonQuery.eq('status', 'published')
+    }
+
+    const { data: lessons } = await lessonQuery
+
+    const lessonIds = (lessons ?? []).map((l) => l.id)
+    const materialsByLesson = new Map<string, Array<{ id: string; name: string; file_url: string; file_type: string }>>()
+    const progressByLesson = new Map<string, LessonProgressData>()
+
+    if (lessonIds.length > 0) {
+      try {
+        const { data: materials } = await client
+          .from('lesson_materials')
+          .select('id, lesson_id, file_name, file_url, file_type, status')
+          .in('lesson_id', lessonIds)
+          .eq('status', 'published')
+
+        for (const mat of materials ?? []) {
+          const list = materialsByLesson.get(mat.lesson_id) ?? []
+          list.push({
+            id: mat.id,
+            name: mat.file_name,
+            file_url: mat.file_url,
+            file_type: mat.file_type || 'pdf',
+          })
+          materialsByLesson.set(mat.lesson_id, list)
+        }
+      } catch {
+        // ignore
       }
 
-      const { data: lessons } = await query
-
-      const lessonIds = (lessons ?? []).map((l) => l.id)
-      const materialsByLesson = new Map<string, Array<{ id: string; name: string; file_url: string; file_type: string }>>()
-      const progressByLesson = new Map<string, LessonProgressData>()
-
-      if (lessonIds.length > 0) {
+      if (studentId) {
         try {
-          const { data: materials } = await client
-            .from('lesson_materials')
-            .select('id, lesson_id, file_name, file_url, file_type, status')
+          const { data: progressList } = await client
+            .from('lesson_progress')
+            .select('lesson_id, last_position_seconds, progress_percent, is_completed')
+            .eq('student_id', studentId)
             .in('lesson_id', lessonIds)
-            .eq('status', 'published')
 
-          for (const mat of materials ?? []) {
-            const list = materialsByLesson.get(mat.lesson_id) ?? []
-            list.push({
-              id: mat.id,
-              name: mat.file_name,
-              file_url: mat.file_url,
-              file_type: mat.file_type || 'pdf',
+          for (const p of progressList ?? []) {
+            progressByLesson.set(p.lesson_id, {
+              last_position_seconds: p.last_position_seconds ?? 0,
+              progress_percent: Number(p.progress_percent ?? 0),
+              is_completed: Boolean(p.is_completed),
             })
-            materialsByLesson.set(mat.lesson_id, list)
           }
         } catch {
           // ignore
         }
-
-        if (studentId) {
-          try {
-            const { data: progressList } = await client
-              .from('lesson_progress')
-              .select('lesson_id, last_position_seconds, progress_percent, is_completed')
-              .eq('student_id', studentId)
-              .in('lesson_id', lessonIds)
-
-            for (const p of progressList ?? []) {
-              progressByLesson.set(p.lesson_id, {
-                last_position_seconds: p.last_position_seconds ?? 0,
-                progress_percent: Number(p.progress_percent ?? 0),
-                is_completed: Boolean(p.is_completed),
-              })
-            }
-          } catch {
-            // ignore
-          }
-        }
-      }
-
-      for (const lesson of lessons ?? []) {
-        const list = lessonsByTopic.get(lesson.topic_id) ?? []
-        list.push({
-          ...(lesson as LessonItem),
-          materials: materialsByLesson.get(lesson.id) ?? [],
-          progress: progressByLesson.get(lesson.id),
-        })
-        lessonsByTopic.set(lesson.topic_id, list)
       }
     }
 
-    return topics.map((topic) => ({
+    const lessonsByTopic = new Map<string | null, LessonItem[]>()
+    const topiclessLessons: LessonItem[] = []
+
+    for (const lesson of lessons ?? []) {
+      const base = lesson as LessonItem
+      let item: LessonItem & { video_token?: string; progress?: LessonProgressData }
+      if (studentId) {
+        // Học viên: KHÔNG trả video_url thô (F12 đọc JSON không thấy link) —
+        // thay bằng video_token xáo trộn, FE giải mã ngay lúc tạo player
+        item = {
+          id: base.id,
+          topic_id: base.topic_id,
+          course_id: base.course_id,
+          title: base.title,
+          description: base.description,
+          video_url: undefined,
+          video_token: base.video_url ? maHoaVideoToken(base.video_url) : undefined,
+          duration_seconds: base.duration_seconds,
+          sort_order: base.sort_order,
+          status: base.status,
+          materials: materialsByLesson.get(base.id) ?? [],
+          progress: progressByLesson.get(base.id),
+        }
+      } else {
+        item = {
+          ...base,
+          materials: materialsByLesson.get(base.id) ?? [],
+          progress: progressByLesson.get(base.id),
+        }
+      }
+      if (base.topic_id === null) {
+        topiclessLessons.push(item)
+      } else {
+        const list = lessonsByTopic.get(base.topic_id) ?? []
+        list.push(item)
+        lessonsByTopic.set(base.topic_id, list)
+      }
+    }
+
+    const result = topics.map((topic) => ({
       id: topic.id,
       course_id: topic.course_id,
       title: topic.title,
@@ -168,6 +203,19 @@ export class LessonsRepository {
       sort_order: topic.sort_order,
       lessons: lessonsByTopic.get(topic.id) ?? [],
     }))
+
+    // Bài không chia chủ đề → gom thành nhóm ảo đặt CUỐI danh sách
+    if (topiclessLessons.length > 0) {
+      result.push({
+        id: null,
+        course_id: courseId,
+        title: 'Không chia chủ đề',
+        description: null,
+        sort_order: 9999,
+        lessons: topiclessLessons,
+      })
+    }
+    return result
   }
 
   async findLessonProgress(
@@ -254,15 +302,38 @@ export class LessonsRepository {
     return typeof max === 'number' ? max + 1 : 1
   }
 
-  async nextLessonSortOrder(topicId: string): Promise<number> {
-    const { data } = await this.getClient()
+  /** Số thứ tự kế tiếp trong một chủ đề (topicId null = nhóm không chia chủ đề của khóa) */
+  async nextLessonSortOrder(courseId: string, topicId: string | null): Promise<number> {
+    let query = this.getClient()
       .from('lessons')
       .select('sort_order')
-      .eq('topic_id', topicId)
-      .order('sort_order', { ascending: false })
-      .limit(1)
+      .eq('course_id', courseId)
+    query = topicId === null ? query.is('topic_id', null) : query.eq('topic_id', topicId)
+    const { data } = await query.order('sort_order', { ascending: false }).limit(1)
     const max = data?.[0]?.sort_order
     return typeof max === 'number' ? max + 1 : 1
+  }
+
+  // Tìm chủ đề theo tên trong khóa (dùng cho chủ đề mặc định "Bài giảng")
+  async findTopicByTitle(courseId: string, title: string): Promise<LessonTopic | null> {
+    const { data, error } = await this.getClient()
+      .from('topics')
+      .select('id, course_id, title, description, sort_order')
+      .eq('course_id', courseId)
+      .eq('title', title)
+      .order('sort_order', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (error || !data) return null
+    return {
+      id: data.id,
+      course_id: data.course_id,
+      title: data.title,
+      description: data.description,
+      sort_order: data.sort_order,
+      lessons: [],
+    }
   }
 
   async findTopicById(topicId: string): Promise<LessonTopic | null> {
@@ -304,7 +375,8 @@ export class LessonsRepository {
   }
 
   async insertLesson(payload: {
-    topic_id: string
+    course_id: string
+    topic_id: string | null
     title: string
     description: string | null
     video_url: string
@@ -315,7 +387,7 @@ export class LessonsRepository {
       .from('lessons')
       .insert(payload)
       .select(
-        'id, topic_id, title, description, video_url, duration_seconds, sort_order, status'
+        'id, topic_id, course_id, title, description, video_url, duration_seconds, sort_order, status'
       )
       .single()
 
@@ -331,7 +403,7 @@ export class LessonsRepository {
     const { data, error } = await this.getClient()
       .from('lessons')
       .select(
-        'id, topic_id, title, description, video_url, duration_seconds, sort_order, status'
+        'id, topic_id, course_id, title, description, video_url, duration_seconds, sort_order, status'
       )
       .eq('id', lessonId)
       .maybeSingle()
@@ -347,19 +419,11 @@ export class LessonsRepository {
     const client = this.getClient()
     const { data: lesson, error } = await client
       .from('lessons')
-      .select('id, topic_id, title, description, video_url, duration_seconds, sort_order, status')
+      .select('id, topic_id, course_id, title, description, video_url, duration_seconds, sort_order, status')
       .eq('id', lessonId)
       .maybeSingle()
 
     if (error || !lesson) return null
-
-    const { data: topic } = await client
-      .from('topics')
-      .select('course_id')
-      .eq('id', lesson.topic_id)
-      .maybeSingle()
-
-    if (!topic) return null
 
     let materials: Array<{ id: string; name: string; file_url: string; file_type: string }> = []
     try {
@@ -397,20 +461,52 @@ export class LessonsRepository {
       }
     }
 
+    const base = lesson as LessonItem
+    const lessonOut: LessonItem = studentId
+      ? {
+          id: base.id,
+          topic_id: base.topic_id,
+          course_id: base.course_id,
+          title: base.title,
+          description: base.description,
+          video_url: undefined,
+          video_token: base.video_url ? maHoaVideoToken(base.video_url) : undefined,
+          duration_seconds: base.duration_seconds,
+          sort_order: base.sort_order,
+          status: base.status,
+          materials,
+          progress,
+        }
+      : {
+          ...base,
+          materials,
+          progress,
+        }
+
     return {
-      lesson: {
-        ...(lesson as LessonItem),
-        materials,
-        progress,
-      },
-      courseId: topic.course_id,
+      lesson: lessonOut,
+      courseId: lesson.course_id,
     }
+  }
+
+  // Xóa bài giảng (hàng đợi ôn tập/tiến độ liên quan tự xóa theo CASCADE)
+  async deleteLesson(lessonId: string): Promise<boolean> {
+    const { data, error } = await this.getClient()
+      .from('lessons')
+      .delete()
+      .eq('id', lessonId)
+      .select('id')
+
+    if (error) {
+      throw new Error(`Không thể xóa bài giảng: ${error.message}`)
+    }
+    return Array.isArray(data) && data.length > 0
   }
 
   async updateLesson(
     lessonId: string,
     payload: Partial<{
-      topic_id: string
+      topic_id: string | null
       title: string
       description: string | null
       video_url: string

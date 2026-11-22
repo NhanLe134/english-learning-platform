@@ -1,4 +1,5 @@
 import { dailyWordRepository, DailyWordRepository } from './daily-word.repository.js'
+import { layNgayHomNayVN } from './thoi-gian-vn.js'
 import type {
   LichDangTuVung,
   ThongKeLichThang,
@@ -202,7 +203,9 @@ export class DailyWordService {
    * Lấy từ vựng Daily Word phát hành ngày hôm nay (hoặc từ gần nhất)
    */
   async layTuVungHomNay(): Promise<LichDangTuVung | null> {
-    const todayStr = new Date().toISOString().split('T')[0] ?? ''
+    // "Hôm nay" theo giờ Việt Nam (UTC+7) — trước đây dùng UTC khiến popup
+    // hiện từ của hôm qua trong khung 00:00–07:00 sáng giờ VN
+    const todayStr = layNgayHomNayVN()
     const item = await this.repo.layChiTietTheoNgay(todayStr)
     if (item) return item
 
@@ -277,7 +280,7 @@ export class DailyWordService {
     ngay_ket_thuc: string
     danh_sach: LichDangTuVung[]
   }> {
-    const { danh_sach_tu, ngay_bat_dau, gio_phat_hanh = '07:00:00', ten_tep_nguon } = yeuCau
+    const { danh_sach_tu, ngay_bat_dau, gio_phat_hanh = '03:00:00', ten_tep_nguon } = yeuCau
     const danhSachLuu: Array<{
       tu_vung: {
         tu_tieng_anh: string

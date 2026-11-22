@@ -8,6 +8,8 @@ interface ConfirmModalProps {
   /** true = hành động xóa: icon chips + nút xác nhận dùng biểu tượng thùng rác */
   danger?: boolean
   loading?: boolean
+  /** Lỗi hiển thị bên trong modal (VD: xóa/thao tác thất bại) */
+  error?: string
   onCancel: () => void
   onConfirm: () => void
 }
@@ -24,6 +26,7 @@ export function ConfirmModal({
   confirmLabel = 'Xác nhận',
   danger = false,
   loading = false,
+  error,
   onCancel,
   onConfirm,
 }: ConfirmModalProps) {
@@ -58,6 +61,11 @@ export function ConfirmModal({
         <div className="mt-4">
           <div className="rounded-2xl border border-slate-150 bg-slate-50/70 p-3.5">
             <p className="text-xs leading-relaxed text-slate-600">{message}</p>
+            {error && (
+              <p role="alert" className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold text-rose-700">
+                {error}
+              </p>
+            )}
           </div>
         </div>
 

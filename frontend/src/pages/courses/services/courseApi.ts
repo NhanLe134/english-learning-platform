@@ -50,6 +50,21 @@ async function authenticatedRequest<T>(
 }
 
 export const courseApi = {
+  /** Danh sách phân loại riêng biệt của mọi khóa (cho dropdown chọn phân loại) */
+  async getCategories(
+    accessToken: string | null,
+    refreshAccessToken: () => Promise<string>
+  ): Promise<string[]> {
+    const response = await authenticatedRequest<string[]>(
+      '/categories',
+      { method: 'GET' },
+      accessToken,
+      refreshAccessToken
+    )
+    if (!Array.isArray(response.data)) return []
+    return response.data
+  },
+
   async list(
     filters: CourseFilters,
     accessToken: string | null,
