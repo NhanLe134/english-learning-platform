@@ -110,7 +110,7 @@ export const courseApi = {
 
   async updateStatus(
     id: string,
-    status: 'draft' | 'published',
+    status: 'published' | 'archived',
     accessToken: string | null,
     refreshAccessToken: () => Promise<string>
   ): Promise<Course> {

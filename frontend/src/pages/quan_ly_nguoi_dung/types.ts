@@ -1,10 +1,9 @@
 export type UserRole = 'STUDENT' | 'TEACHER' | 'ADMIN'
-export type UserStatus = 'active' | 'locked' | 'pending'
+export type UserStatus = 'active' | 'locked' | 'pending' | 'deactivated'
 
 export interface UserProfile {
   id: string
   email: string
-  password_hash: string
   full_name: string
   nickname?: string | null
   phone_number?: string | null
@@ -14,6 +13,7 @@ export interface UserProfile {
   is_verified?: boolean
   created_at: string
   updated_at: string
+  activation_email_sent?: boolean
 }
 
 export interface CreateUserInput {
@@ -22,7 +22,7 @@ export interface CreateUserInput {
   email: string
   phone_number?: string
   role: 'TEACHER' | 'ADMIN'
-  password?: string
+  password: string
   avatar_url?: string
 }
 

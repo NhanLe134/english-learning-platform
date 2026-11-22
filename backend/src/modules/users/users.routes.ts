@@ -22,5 +22,8 @@ usersRouter.post('/seed', (req, res) => usersController.seedUsers(req, res))
 // Update user status
 usersRouter.patch('/:id/status', (req, res, next) => usersController.updateStatus(req, res, next))
 
+// Cập nhật hồ sơ người dùng (mọi vai trò): họ tên, nickname, SĐT, avatar
+usersRouter.patch('/:id/profile', (req, res, next) => usersController.updateProfile(req, res, next))
+
 // Delete user
 usersRouter.delete('/:id', (req, res, next) => usersController.deleteUser(req, res, next))

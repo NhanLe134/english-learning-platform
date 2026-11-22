@@ -14,7 +14,9 @@ import {
   Sparkles,
   UserRound,
 } from 'lucide-react'
-import { GoogleAuthButton, SiteFooter, SiteHeader } from './AuthShared'
+import { GoogleAuthButton } from './AuthShared'
+import { SiteHeader } from '../../components/layout/SiteHeader'
+import { SiteFooter } from '../../components/layout/SiteFooter'
 import { EmailOtpVerification } from './EmailOtpVerification'
 import { authApi, getErrorMessage } from './auth-api'
 import { readCheckoutCourse } from '../courses/course-data'
@@ -140,8 +142,17 @@ export function RegisterPage() {
     try {
       await authApi.verifyRegistrationOtp(email, otp)
       setVerified(true)
-      setSuccessMessage('Xác minh thành công. Vui lòng đăng nhập để tiếp tục.')
-      window.location.assign(`/login${window.location.search}`)
+      try {
+        sessionStorage.setItem('your-voice-pending-checkout-student', JSON.stringify({
+          fullName,
+          email,
+          phone: phoneNumber,
+        }))
+      } catch {
+        // Checkout can still collect the required student details if storage is unavailable.
+      }
+      setSuccessMessage('Xác minh thành công. Đang chuyển đến thanh toán.')
+      window.location.assign(`/checkout${window.location.search}`)
     } catch (error) {
       setErrorMessage(getErrorMessage(error))
     } finally {

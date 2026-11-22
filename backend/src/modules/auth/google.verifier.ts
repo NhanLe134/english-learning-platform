@@ -134,6 +134,10 @@ async function verifyGoogleIdToken(
     throw new AuthError('Tài khoản Google không cung cấp địa chỉ email.', 400)
   }
 
+  if (!payload.sub?.trim()) {
+    throw new AuthError('Google token does not contain a stable account identifier.', 401)
+  }
+
   const isVerified = payload.email_verified === true || payload.email_verified === 'true'
   if (!isVerified) {
     throw new AuthError('Địa chỉ email Google chưa được xác minh.', 400)
@@ -144,7 +148,7 @@ async function verifyGoogleIdToken(
     name: payload.name?.trim() || payload.email.split('@')[0] || 'Google User',
     avatarUrl: payload.picture?.trim() || null,
     emailVerified: true,
-    googleId: payload.sub || payload.email,
+    googleId: payload.sub,
   }
 }
 
@@ -165,7 +169,7 @@ async function verifyGoogleAccessToken(accessToken: string): Promise<GoogleUserI
     throw new AuthError('Máy chủ Google trả về định dạng không hợp lệ.', 502)
   }
 
-  if (!response.ok || !payload.email) {
+  if (!response.ok || !payload.email || !payload.sub?.trim()) {
     throw new AuthError(payload.error?.message || 'Access token Google không hợp lệ.', 401)
   }
 
@@ -174,7 +178,7 @@ async function verifyGoogleAccessToken(accessToken: string): Promise<GoogleUserI
     name: payload.name?.trim() || payload.email.split('@')[0] || 'Google User',
     avatarUrl: payload.picture?.trim() || null,
     emailVerified: payload.email_verified === true,
-    googleId: payload.sub || payload.email,
+    googleId: payload.sub,
   }
 }
 
@@ -187,6 +191,15 @@ async function verifySupabaseToken(supabaseToken: string): Promise<GoogleUserInf
       error?.message || 'Không thể xác thực thông tin tài khoản Supabase Google.',
       401
     )
+  }
+
+  const googleIdentity = data.user.identities?.find((identity) => identity.provider === 'google')
+  const googleSubject =
+    typeof googleIdentity?.identity_data?.sub === 'string'
+      ? googleIdentity.identity_data.sub
+      : googleIdentity?.id
+  if (!googleIdentity || !googleSubject?.trim()) {
+    throw new AuthError('The Supabase session is not linked to a Google identity.', 401)
   }
 
   const metadata = data.user.user_metadata as Record<string, unknown> | undefined
@@ -209,6 +222,6 @@ async function verifySupabaseToken(supabaseToken: string): Promise<GoogleUserInf
     name: fullName.trim(),
     avatarUrl: avatarUrl?.trim() || null,
     emailVerified: true,
-    googleId: data.user.id,
+    googleId: googleSubject,
   }
 }

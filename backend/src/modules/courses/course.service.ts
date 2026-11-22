@@ -5,6 +5,7 @@ import type {
   CourseCatalogEntry,
   CourseLevel,
   CourseListFilters,
+  EnrolledCourseItem,
   ManagedCourse,
   ManagedCourseInput,
   ManagedCoursePage,
@@ -72,10 +73,21 @@ export class CourseService {
     if (!env.supabaseUrl || !env.supabaseServiceRoleKey) {
       throw new CourseRequestError('The course catalog is not configured.', 503)
     }
-    return this.repository.findPublishedCourses()
+    const courses = await this.repository.findPublishedCourses()
+    return courses.map((course) => ({
+      ...course,
+      topics: course.topics.map((topic) => ({ ...topic, lessons: [] })),
+    }))
   }
 
-  async getPublishedCourse(identifier: string): Promise<CourseCatalogEntry | null> {
+  async getEnrolledCourses(studentId: string): Promise<EnrolledCourseItem[]> {
+    if (!studentId || !UUID_PATTERN.test(studentId)) {
+      throw new CourseRequestError('Invalid student ID.', 400)
+    }
+    return this.repository.findEnrolledCourses(studentId)
+  }
+
+  async getPublishedCourse(identifier: string, studentId?: string): Promise<CourseCatalogEntry | null> {
     const isId = UUID_PATTERN.test(identifier)
     if (!isId && !SLUG_PATTERN.test(identifier)) {
       throw new CourseRequestError('Course ID or slug is invalid.', 400)
@@ -83,7 +95,9 @@ export class CourseService {
     if (!env.supabaseUrl || !env.supabaseServiceRoleKey) {
       throw new CourseRequestError('The course catalog is not configured.', 503)
     }
-    return this.repository.findPublishedCourse(identifier, isId)
+    const course = await this.repository.findPublishedCourse(identifier, isId)
+    if (!course) return null
+    return course
   }
 
   async getCourseForPaidOrder(courseId: string): Promise<CourseCatalogEntry | null> {
@@ -94,12 +108,18 @@ export class CourseService {
     return this.repository.findCourseById(courseId)
   }
 
-  async createManagedCourse(value: unknown, teacherId: string): Promise<ManagedCourse> {
-    if (!UUID_PATTERN.test(teacherId)) {
+  async createManagedCourse(value: unknown, adminId: string): Promise<ManagedCourse> {
+    if (!UUID_PATTERN.test(adminId)) {
       throw new CourseRequestError('An authenticated administrator is required.', 401)
     }
+    const { input, teacherIds } = this.validateManagedCourse(value)
+    // Ưu tiên danh sách giáo viên được phân công từ body; nếu bỏ trống thì gán tài khoản admin tạo khóa
+    if (teacherIds && !(await this.repository.isTeacherProfiles(teacherIds))) {
+      throw new CourseRequestError('Assigned teachers must reference existing teacher profiles.', 400)
+    }
+    const assignedTeacherIds = teacherIds ?? [adminId]
     try {
-      return await this.repository.createCourse(this.validateManagedCourse(value), teacherId)
+      return await this.repository.createCourse(input, assignedTeacherIds)
     } catch (error) {
       this.throwForDatabaseConstraint(error)
       throw error
@@ -108,9 +128,14 @@ export class CourseService {
 
   async updateManagedCourse(id: string, value: unknown): Promise<ManagedCourse> {
     this.validateCourseId(id)
+    const { input, teacherIds } = this.validateManagedCourse(value)
+    if (teacherIds && !(await this.repository.isTeacherProfiles(teacherIds))) {
+      throw new CourseRequestError('Assigned teachers must reference existing teacher profiles.', 400)
+    }
     let updated: ManagedCourse | null
     try {
-      updated = await this.repository.updateCourse(id, this.validateManagedCourse(value))
+      // teacherIds === null nghĩa là body không gửi trường này — giữ nguyên phân công cũ
+      updated = await this.repository.updateCourse(id, input, teacherIds)
     } catch (error) {
       this.throwForDatabaseConstraint(error)
       throw error
@@ -125,8 +150,8 @@ export class CourseService {
       throw new CourseRequestError('Course status is required.', 400)
     }
     const status = value.status
-    if (status !== 'draft' && status !== 'published') {
-      throw new CourseRequestError('Course status must be draft or published.', 400)
+    if (status !== 'published' && status !== 'archived') {
+      throw new CourseRequestError('Course status must be published or archived.', 400)
     }
     const updated = await this.repository.updateCourseStatus(id, status)
     if (!updated) throw new CourseRequestError('Course not found.', 404)
@@ -220,7 +245,7 @@ export class CourseService {
       : undefined
   }
 
-  private validateManagedCourse(value: unknown): ManagedCourseInput {
+  private validateManagedCourse(value: unknown): { input: ManagedCourseInput; teacherIds: string[] | null } {
     if (!value || typeof value !== 'object') {
       throw new CourseRequestError('Course details are required.', 400)
     }
@@ -278,22 +303,41 @@ export class CourseService {
         throw new CourseRequestError('Thumbnail must be a valid HTTP or HTTPS URL.', 400)
       }
     }
-    if (status !== 'draft' && status !== 'published') {
-      throw new CourseRequestError('Course status must be draft or published.', 400)
+    if (status !== 'published' && status !== 'archived') {
+      throw new CourseRequestError('Course status must be published or archived.', 400)
+    }
+
+    // Danh sách giáo viên được phân công (tùy chọn): chỉ nhận UUID hợp lệ, bỏ trùng lặp.
+    // Trả về null khi body KHÔNG gửi trường này — giúp update giữ nguyên phân công cũ.
+    let teacherIds: string[] | null = null
+    if (Array.isArray(input.teacher_ids)) {
+      teacherIds = [
+        ...new Set(
+          input.teacher_ids.filter(
+            (id: unknown): id is string => typeof id === 'string' && UUID_PATTERN.test(id.trim())
+          )
+        ),
+      ]
+      if (teacherIds.length === 0) {
+        throw new CourseRequestError('At least one valid teacher must be assigned.', 400)
+      }
     }
 
     return {
-      title,
-      slug,
-      description,
-      category,
-      level: level as CourseLevel,
-      target_audience: targetAudience,
-      price,
-      discounted_price: discountedPrice,
-      total_lessons: totalLessons,
-      thumbnail_url: thumbnailUrl,
-      status,
+      input: {
+        title,
+        slug,
+        description,
+        category,
+        level: level as CourseLevel,
+        target_audience: targetAudience,
+        price,
+        discounted_price: discountedPrice,
+        total_lessons: totalLessons,
+        thumbnail_url: thumbnailUrl,
+        status,
+      },
+      teacherIds,
     }
   }
 

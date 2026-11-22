@@ -864,11 +864,36 @@ html:has(.login-page) {
   color: #1A1C1D;
 }
 
+.login-main-container {
+  width: 100%;
+  max-width: 80rem;
+  margin-inline: auto;
+  padding-inline: 1rem;
+  box-sizing: border-box;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+@media (min-width: 640px) {
+  .login-main-container {
+    padding-inline: 1.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .login-main-container {
+    padding-inline: 2rem;
+  }
+}
+
 .login-shell {
   display: grid;
-  width: min(1280px, calc(100% - 64px));
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   min-height: min(720px, calc(100dvh - 220px));
-  margin: 40px auto;
+  margin: 40px 0;
   grid-template-columns: minmax(0, 0.73fr) minmax(0, 1fr);
   overflow: hidden;
   border-radius: 9px;
@@ -1126,25 +1151,9 @@ html:has(.login-page) {
 .login-options {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
   margin: 16px 0 14px;
-}
-
-.login-remember {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: #5F3E39;
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.login-remember input {
-  width: 14px;
-  height: 14px;
-  margin: 0;
-  accent-color: #BC0002;
 }
 
 .login-options > a,
@@ -1275,13 +1284,19 @@ html:has(.login-page) {
 }
 
 @media (max-width: 680px) {
+  .login-main-container {
+    padding-inline: 1rem;
+    padding-block: 16px 24px;
+  }
+
   .login-shell {
     width: 100%;
     min-height: 0;
     margin-block: 0;
     grid-template-columns: minmax(0, 1fr);
-    border-radius: 0;
-    box-shadow: none;
+    border-radius: 12px;
+    box-shadow: 0 4px 16px #1a1c1d10;
+    border: 1px solid #f0eeee;
   }
 
   .login-visual {

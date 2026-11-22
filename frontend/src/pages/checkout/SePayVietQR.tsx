@@ -5,6 +5,7 @@ import { sepayApi, type CreateOrderResponse } from './sepayApi'
 
 interface SePayVietQRProps {
   courseId: string
+  studentEmail: string
   onPaymentError: (message: string) => void
   onOrderReady: (order: CreateOrderResponse) => void
   onOrderStatusChange: (status: string) => void
@@ -29,7 +30,7 @@ function formatCountdown(seconds: number) {
 
 const isTerminalStatus = (status: string) => ['paid', 'expired', 'failed', 'cancelled'].includes(status)
 
-export default function SePayVietQR({ courseId, onPaymentError, onOrderReady, onOrderStatusChange }: SePayVietQRProps) {
+export default function SePayVietQR({ courseId, studentEmail, onPaymentError, onOrderReady, onOrderStatusChange }: SePayVietQRProps) {
   const { accessToken } = useAuth()
   const [order, setOrder] = useState<CreateOrderResponse | null>(null)
   const [error, setError] = useState('')
@@ -46,11 +47,11 @@ export default function SePayVietQR({ courseId, onPaymentError, onOrderReady, on
 
   useEffect(() => {
     let active = true
-    if (!accessToken) {
-      onPaymentError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.')
+    if (!accessToken && !studentEmail) {
+      onPaymentError('Vui lòng nhập email đã xác minh để tạo đơn thanh toán.')
       return () => { active = false }
     }
-    orderRequestRef.current ??= sepayApi.createOrder({ courseId }, accessToken)
+    orderRequestRef.current ??= sepayApi.createOrder({ courseId, email: studentEmail }, accessToken)
     void orderRequestRef.current
       .then((createdOrder) => {
         if (!active) return
@@ -67,7 +68,7 @@ export default function SePayVietQR({ courseId, onPaymentError, onOrderReady, on
         onPaymentError(message)
       })
     return () => { active = false }
-  }, [accessToken, courseId, onOrderReady, onOrderStatusChange, onPaymentError])
+  }, [accessToken, courseId, studentEmail, onOrderReady, onOrderStatusChange, onPaymentError])
 
   useEffect(() => {
     return () => {
@@ -81,7 +82,7 @@ export default function SePayVietQR({ courseId, onPaymentError, onOrderReady, on
     const updateCountdown = () => {
       const remaining = Math.max(0, Math.ceil((Date.parse(order.expiredAt!) - Date.now()) / 1000))
       setRemainingSeconds(remaining)
-      if (remaining === 0 && !expiryCheckedRef.current && accessToken) {
+      if (remaining === 0 && !expiryCheckedRef.current) {
         expiryCheckedRef.current = true
         void sepayApi.getOrderStatus(order.orderId, accessToken)
           .then((current) => {
@@ -101,7 +102,7 @@ export default function SePayVietQR({ courseId, onPaymentError, onOrderReady, on
   const orderId = order?.orderId
   const checkoutMode = order?.checkoutMode
   useEffect(() => {
-    if (!orderId || checkoutMode !== 'direct_qr' || !accessToken || isTerminalStatus(status)) return
+    if (!orderId || checkoutMode !== 'direct_qr' || isTerminalStatus(status)) return
     let active = true
     let connected = false
     let inFlight = false
@@ -136,7 +137,7 @@ export default function SePayVietQR({ courseId, onPaymentError, onOrderReady, on
         }
       }
     }
-    const stopWatching = sepayApi.watchOrderStatus(orderId, accessToken, (message) => {
+    const stopWatching = accessToken ? sepayApi.watchOrderStatus(orderId, accessToken, (message) => {
       if (!active) return
       if (message.kind === 'connection') {
         connected = message.status === 'subscribed'
@@ -146,7 +147,7 @@ export default function SePayVietQR({ courseId, onPaymentError, onOrderReady, on
       } else if (isTerminalStatus(message.status)) {
         void refresh()
       }
-    })
+    }) : () => undefined
     void refresh()
     return () => {
       active = false
@@ -166,8 +167,8 @@ export default function SePayVietQR({ courseId, onPaymentError, onOrderReady, on
     copyTimerRef.current = setTimeout(() => setCopyStatus('idle'), 2500)
   }
 
-  const visibleError = error || (!accessToken ? 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.' : '')
-  if (visibleError) return <div className="sepay-vietqr pay-error" role="alert"><AlertCircle size={20} /> {visibleError}</div>
+  const visibleError = error
+  if (visibleError && !order) return <div className="sepay-vietqr pay-error" role="alert"><AlertCircle size={20} /> {visibleError}</div>
   if (!order) return <div className="sepay-vietqr pay-waiting" role="status"><Loader2 className="sepay-loader" size={22} /> Đang tạo đơn thanh toán…</div>
   if (order.checkoutMode === 'direct_qr' && !order.paymentInformation) {
     return <div className="sepay-vietqr pay-error" role="alert"><AlertCircle size={20} /> Thiếu thông tin nhận thanh toán. Vui lòng liên hệ bộ phận hỗ trợ trước khi chuyển tiền.</div>
@@ -303,12 +304,13 @@ export default function SePayVietQR({ courseId, onPaymentError, onOrderReady, on
         <p>Tiếp tục tới trang SePay để hoàn tất thanh toán bằng phương thức đã chọn.</p>
       </div>
 
+      {visibleError && <p className="checkout-inline-error" role="alert">{visibleError}</p>}
       {order.checkoutUrl && order.checkoutFields && <form action={order.checkoutUrl} method="POST" className="sepay-checkout-form">
         {Object.entries(order.checkoutFields).map(([name, value]) => (
           <input key={name} type="hidden" name={name} value={String(value)} />
         ))}
         <button type="submit" className="checkout-primary-button sepay-continue-button">
-          Tiếp tục tới SePay <ExternalLink size={16} />
+          Pay Now <ExternalLink size={16} />
         </button>
       </form>}
     </section>

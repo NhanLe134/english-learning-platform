@@ -97,7 +97,7 @@ export function CourseCard({ course }: { course: Course }) {
           </span>
           <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-ink-500">
             <CalendarDays className="size-3.5" />
-            {course.lessons} buổi học
+            {course.lessons} bài học
           </span>
         </div>
 

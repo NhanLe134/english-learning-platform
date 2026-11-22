@@ -44,7 +44,15 @@ interface UserService {
     selectedCourseIds: string[],
     googleDetails?: { phoneNumber: string | null; dateOfBirth: string | null; avatarUrl: string | null; googleId: string }
   ): Promise<UserProfile>
-  createGoogleAccount(email: string, fullName: string, avatarUrl: string | null): Promise<UserProfile>
+  resolveGoogleIdentity(
+    email: string,
+    googleSubject: string,
+    fullName: string,
+    avatarUrl: string | null
+  ): Promise<
+    | { status: 'resolved'; user: UserProfile }
+    | { status: 'link_required' | 'conflict' }
+  >
   rollbackStudentAccount(userId: string): Promise<void>
   authenticatePassword(email: string, password: string): Promise<UserProfile | null>
   updatePasswordAndVerifyEmail(id: string, password: string): Promise<void>
@@ -130,7 +138,10 @@ export interface ForgotPasswordResult {
 export interface TokenPair {
   accessToken: string
   refreshToken: string
-  user: Pick<UserProfile, 'id' | 'email' | 'full_name' | 'phone_number' | 'role'>
+  user: Pick<
+    UserProfile,
+    'id' | 'email' | 'full_name' | 'nickname' | 'phone_number' | 'role' | 'avatar_url' | 'status' | 'is_verified'
+  >
 }
 
 function publicUser(user: UserProfile): TokenPair['user'] {
@@ -138,8 +149,12 @@ function publicUser(user: UserProfile): TokenPair['user'] {
     id: user.id,
     email: user.email,
     full_name: user.full_name,
+    nickname: user.nickname ?? null,
     phone_number: user.phone_number ?? null,
     role: user.role,
+    avatar_url: user.avatar_url ?? null,
+    status: user.status,
+    is_verified: user.is_verified ?? false,
   }
 }
 
@@ -190,12 +205,19 @@ function hasMissingAuthSchema(error: unknown, seen = new Set<unknown>()): boolea
   return false
 }
 
-function missingAuthSchemaError(cause: unknown, includeOtpMigration = false): AuthError {
+function missingAuthSchemaError(
+  cause: unknown,
+  includeOtpMigration = false,
+  includeGoogleIdentityMigration = false
+): AuthError {
   const otpMigration = includeOtpMigration
     ? ' and supabase/migrations/20261031031000_add_registration_email_otps.sql'
     : ''
+  const googleIdentityMigration = includeGoogleIdentityMigration
+    ? ' and supabase/migrations/20261120000000_add_google_auth_identities.sql'
+    : ''
   return new AuthError(
-    `Authentication database schema is incomplete. Apply supabase/migrations/20261025003000_database_url_auth.sql and supabase/migrations/20261031024400_add_private_registration_details.sql${otpMigration}, then restart the backend.`,
+    `Authentication database schema is incomplete. Apply supabase/migrations/20261025003000_database_url_auth.sql and supabase/migrations/20261031024400_add_private_registration_details.sql${otpMigration}${googleIdentityMigration}, then restart the backend.`,
     503,
     cause
   )
@@ -215,7 +237,7 @@ export class AuthService {
       if (error) throw new Error('Resend rejected the verification email')
     },
     private readonly adminAuth: AdminAuthProvider = usersService
-  ) {}
+  ) { }
 
   private assertSigningSecretConfigured(): void {
     if (Buffer.byteLength(env.authJwtSecret, 'utf8') < 32) {
@@ -471,10 +493,11 @@ export class AuthService {
       return this.loginWithDatabasePassword(email, password)
     }
 
-    let user: UserProfile | null
+    let user: UserProfile | null = null
     try {
       user = await this.adminAuth.authenticatePassword(email.trim().toLowerCase(), password)
     } catch (error) {
+      if (error instanceof AuthError) throw error
       if (
         error instanceof Error &&
         /SUPABASE_PUBLISHABLE_KEY/.test(error.message)
@@ -487,7 +510,13 @@ export class AuthService {
       }
       throw new AuthError('Admin authentication provider is unavailable.', 503, error)
     }
-    if (!user || user.status !== 'active') throw genericCredentialsError()
+    if (!user) {
+      return this.loginWithDatabasePassword(email, password)
+    }
+    if (user.role !== 'ADMIN') {
+      throw new AuthError('This account is not permitted to sign in through Admin authentication.', 403, undefined, 'ADMIN_ROLE_REQUIRED')
+    }
+    if (user.status !== 'active') throw genericCredentialsError()
     try {
       await this.adminAuth.verifyEmail(user.id)
     } catch (error) {
@@ -505,7 +534,7 @@ export class AuthService {
   }
 
   private async loginWithDatabasePassword(email: string, password: string): Promise<TokenPair> {
-    let user: UserProfile | null
+    let user: UserProfile | null = null
     try {
       user = await this.users.authenticatePassword(email.trim().toLowerCase(), password)
     } catch (error) {
@@ -516,7 +545,13 @@ export class AuthService {
         error
       )
     }
-    if (!user || user.status !== 'active' || user.is_verified !== true) {
+    if (!user || user.is_verified !== true) {
+      throw genericCredentialsError()
+    }
+    if (user.role === 'STUDENT' && user.status === 'pending') {
+      throw new AuthError('Complete course payment before logging in.', 403)
+    }
+    if (user.status !== 'active' && !(user.role === 'TEACHER' && user.status === 'pending')) {
       throw genericCredentialsError()
     }
     try {
@@ -537,51 +572,44 @@ export class AuthService {
       throw new AuthError('Địa chỉ email Google chưa được xác minh.', 400)
     }
 
-    let user: UserProfile | null
+    let user: UserProfile
     try {
-      user = await this.users.findByEmail(userInfo.email)
-    } catch (error) {
-      if (hasMissingAuthSchema(error)) throw missingAuthSchemaError(error)
-      throw new AuthError('Không thể kiểm tra tài khoản Google trong cơ sở dữ liệu.', 503, error)
-    }
-
-    if (!user) {
-      try {
-        const admin = await this.adminAuth.findByEmail(userInfo.email)
-        if (admin?.role === 'ADMIN') user = admin
-      } catch (error) {
-        throw new AuthError('Không thể kiểm tra tài khoản Google trong cơ sở dữ liệu.', 503, error)
-      }
-    }
-
-    if (!user) {
-      try {
-        user = await this.users.createGoogleAccount(
-          userInfo.email,
-          userInfo.name,
-          userInfo.avatarUrl
+      const resolution = await this.users.resolveGoogleIdentity(
+        userInfo.email,
+        userInfo.googleId,
+        userInfo.name,
+        userInfo.avatarUrl
+      )
+      if (resolution.status !== 'resolved') {
+        const linkRequired = resolution.status === 'link_required'
+        throw new AuthError(
+          linkRequired
+            ? 'Verify the existing email account before linking it to Google.'
+            : 'This Google identity is already linked to another account.',
+          409,
+          undefined,
+          linkRequired ? 'GOOGLE_ACCOUNT_LINK_REQUIRED' : 'GOOGLE_IDENTITY_CONFLICT'
         )
-      } catch (error) {
-        if (error instanceof Error && error.message.toLowerCase().includes('already registered')) {
-          try {
-            user = await this.users.findByEmail(userInfo.email)
-          } catch (lookupError) {
-            throw new AuthError(
-              'Không thể kiểm tra tài khoản Google trong cơ sở dữ liệu.',
-              503,
-              lookupError
-            )
-          }
-          if (!user) {
-            throw new AuthError('Không thể tạo tài khoản Google trong cơ sở dữ liệu.', 503, error)
-          }
-        } else {
-          if (hasMissingAuthSchema(error)) throw missingAuthSchemaError(error)
-          throw new AuthError('Không thể tạo tài khoản Google trong cơ sở dữ liệu.', 503, error)
-        }
       }
+      user = resolution.user
+    } catch (error) {
+      if (error instanceof AuthError) throw error
+      if (hasMissingAuthSchema(error)) throw missingAuthSchemaError(error, false, true)
+      throw new AuthError('Unable to resolve the Google identity to an account.', 503, error)
     }
-    if (user.status !== 'active') {
+
+    if (!user.is_verified && user.role !== 'ADMIN' && user.role !== 'TEACHER') {
+      throw new AuthError(
+        'Complete email verification before signing in with Google.',
+        403,
+        undefined,
+        'EMAIL_VERIFICATION_REQUIRED'
+      )
+    }
+    if (user.role === 'STUDENT' && user.status === 'pending') {
+      throw new AuthError('Complete course payment before logging in.', 403)
+    }
+    if (user.status !== 'active' && !(user.role === 'TEACHER' && user.status === 'pending')) {
       throw new AuthError('Tài khoản này đã bị khóa hoặc ngừng hoạt động.', 403)
     }
 
@@ -638,7 +666,9 @@ export class AuthService {
     }
 
     const user = await this.findSessionUser(session.user_id)
-    if (!user || user.status !== 'active' || user.is_verified !== true) {
+    const isAllowedStatus = Boolean(user && (user.status === 'active' || (user.role === 'TEACHER' && user.status === 'pending')))
+    const isVerified = Boolean(user && (user.is_verified === true || user.role === 'ADMIN' || user.role === 'TEACHER'))
+    if (!user || !isAllowedStatus || !isVerified) {
       await this.store.revokeSession(session.id)
       throw invalidTokenError()
     }
@@ -711,7 +741,9 @@ export class AuthService {
     }
 
     const user = await this.findSessionUser(claims.sub)
-    if (!user || user.status !== 'active' || user.is_verified !== true) {
+    const isAllowedStatus = Boolean(user && (user.status === 'active' || (user.role === 'TEACHER' && user.status === 'pending')))
+    const isVerified = Boolean(user && (user.is_verified === true || user.role === 'ADMIN' || user.role === 'TEACHER'))
+    if (!user || !isAllowedStatus || !isVerified) {
       await this.store.revokeSession(session.id)
       throw invalidTokenError()
     }
@@ -823,6 +855,32 @@ export class AuthService {
       )
     }
     return { message: GENERIC_FORGOT_MESSAGE }
+  }
+
+  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+    validatePassword(newPassword)
+    const user = await this.findSessionUser(userId)
+    if (!user) {
+      throw new AuthError('User not found', 404)
+    }
+
+    try {
+      await authRepository.changePassword(userId, currentPassword, newPassword)
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : ''
+      if (msg === 'Current password does not match' || msg.includes('không chính xác')) {
+        throw new AuthError('Mật khẩu hiện tại không chính xác', 400)
+      }
+      throw new AuthError(msg || 'Không thể đổi mật khẩu. Vui lòng thử lại sau.', 400, error)
+    }
+
+    if (user.role === 'ADMIN') {
+      try {
+        await this.adminAuth.updatePassword(userId, user.email, newPassword)
+      } catch (error) {
+        console.warn('Admin Supabase Auth password update non-fatal error:', error)
+      }
+    }
   }
 
   private async findSessionUser(userId: string): Promise<UserProfile | null> {

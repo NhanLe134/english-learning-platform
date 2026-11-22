@@ -442,7 +442,6 @@
   color: #0F172A;
   letter-spacing: -0.02em;
   margin: 0;
-  text-transform: uppercase;
 }
 
 .page-top-actions {
@@ -452,42 +451,53 @@
 }
 
 /* Primary Red Button */
+/* Nút chính: cùng kích thước/style với nút "Thêm khóa mới" trang Quản lý khóa học
+   (h-8 = 32px, chữ 11.5px, gradient đỏ thương hiệu #F60005) */
 .btn-primary-red {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  background: var(--color-primary);
+  gap: 6px;
+  height: 32px;
+  background: linear-gradient(to right, var(--color-primary), var(--color-primary-hover));
   color: #FFFFFF;
   border: none;
   border-radius: 8px;
-  padding: 10px 18px;
-  font-size: 14px;
-  font-weight: 600;
+  padding: 0 14px;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
   cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow: 0 4px 12px rgba(246, 0, 5, 0.2);
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 8px rgba(246, 0, 5, 0.25);
 }
 
 .btn-primary-red:hover {
-  background: var(--color-primary-hover);
-  box-shadow: 0 6px 16px rgba(246, 0, 5, 0.3);
-  transform: translateY(-1px);
+  background: linear-gradient(to right, #FF2B37, var(--color-primary));
+  box-shadow: 0 4px 12px rgba(246, 0, 5, 0.35);
+  transform: translateY(-2px);
 }
 
-/* Secondary Button: Tạo mã đăng ký */
+.btn-primary-red:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* Secondary Button: Tạo mã Đăng ký — cùng kích thước nút "Xuất Excel" */
 .btn-secondary-outline {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  height: 32px;
   background: #FFFFFF;
   color: #475569;
-  border: 1px solid var(--color-border);
+  border: 1px solid rgba(148, 163, 184, 0.9);
   border-radius: 8px;
-  padding: 10px 16px;
-  font-size: 14px;
-  font-weight: 500;
+  padding: 0 12px;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
   transition: all 0.15s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .btn-secondary-outline:hover {
@@ -503,11 +513,11 @@
   background: #FFFFFF;
   border: 1px solid var(--color-border);
   border-radius: 12px;
-  padding: 8px 16px;
+  padding: 3px 10px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: 10px;
+  margin-bottom: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
@@ -515,9 +525,9 @@
   flex: 1;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 10px;
-  min-width: 240px;
+  gap: 8px;
+  padding: 1px 6px;
+  min-width: 220px;
 }
 
 .search-icon {
@@ -529,14 +539,14 @@
   width: 100%;
   border: none;
   background: transparent;
-  font-size: 14px;
+  font-size: 12.5px;
   color: #0F172A;
   outline: none;
 }
 
 .search-input::placeholder {
   color: #94A3B8;
-  font-size: 13.5px;
+  font-size: 12px;
 }
 
 .filter-select-wrapper {
@@ -549,9 +559,9 @@
   appearance: none;
   background: transparent;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 8px 34px 8px 12px;
-  font-size: 13px;
+  border-radius: 7px;
+  padding: 2px 7px;
+  font-size: 11px;
   font-weight: 500;
   color: #334155;
   cursor: pointer;
@@ -581,12 +591,12 @@
 
 .counter-divider {
   width: 1px;
-  height: 22px;
+  height: 18px;
   background: var(--color-border);
 }
 
 .counter-text {
-  font-size: 13.5px;
+  font-size: 12px;
   color: #475569;
 }
 
@@ -619,31 +629,31 @@
 .user-table th {
   background: var(--color-primary-soft);
   color: #475569;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  padding: 14px 18px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--color-primary-border);
 }
 
 .th-user {
-  min-width: 240px;
+  min-width: 215px;
 }
 .th-contact {
-  min-width: 210px;
+  min-width: 190px;
 }
 .th-role {
-  min-width: 130px;
+  min-width: 110px;
 }
 .th-password {
   min-width: 180px;
 }
 .th-date {
-  min-width: 120px;
+  min-width: 105px;
 }
 .th-actions {
-  min-width: 140px;
+  min-width: 125px;
 }
 
 .text-center {
@@ -651,10 +661,10 @@
 }
 
 .user-table td {
-  padding: 14px 18px;
+  padding: 9px 14px;
   border-bottom: 1px solid var(--color-border-light);
   vertical-align: middle;
-  font-size: 13.5px;
+  font-size: 12.5px;
 }
 
 .user-row {
@@ -673,7 +683,7 @@
 .user-info-group {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
 }
 
 .avatar-wrapper {
@@ -682,8 +692,8 @@
 }
 
 .user-avatar {
-  width: 42px;
-  height: 42px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   object-fit: cover;
   background: #F1F5F9;
@@ -707,7 +717,7 @@
 }
 
 .user-full-name {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: #0F172A;
 }
@@ -724,7 +734,7 @@
 }
 
 .user-nickname {
-  font-size: 12px;
+  font-size: 11px;
   color: #94A3B8;
   font-weight: 400;
 }
@@ -743,23 +753,23 @@
 
 .contact-email {
   color: #334155;
-  font-size: 13.5px;
+  font-size: 12.5px;
   font-weight: 400;
 }
 
 .contact-phone {
   color: #94A3B8;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 /* Column: Role Badges */
 .role-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
+  gap: 4px;
+  padding: 3px 9px;
   border-radius: 20px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
 }
 
@@ -837,13 +847,13 @@
 
 .date-day {
   color: #334155;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
 }
 
 .date-time {
   color: #94A3B8;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 /* --------------------------------------------------------------------------
@@ -852,16 +862,16 @@
 .action-buttons-group {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .action-btn-pill {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 10px;
+  gap: 4px;
+  padding: 4px 8px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -901,8 +911,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   border-radius: 6px;
   border: 1px solid var(--color-border);
   background: #FFFFFF;

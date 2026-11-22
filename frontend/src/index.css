@@ -7,11 +7,11 @@
   --color-brand-50: #FEF1F2;
   --color-brand-100: #FDE0E3;
   --color-brand-200: #FBB5BC;
-  --color-brand-500: #E02838;
-  --color-brand-600: #C8102E;
-  --color-brand-700: #A30D26;
-  --color-brand-800: #850D21;
-  --color-brand-900: #6B0A1B;
+  --color-brand-500: #FF2B37;
+  --color-brand-600: #F60005;
+  --color-brand-700: #D60004;
+  --color-brand-800: #B00003;
+  --color-brand-900: #8C0002;
 
   --color-ink-900: #17181C;
   --color-ink-700: #3D4046;
@@ -39,8 +39,34 @@ body {
   margin: 0;
 }
 
-button,
-input {
-  font-family: inherit;
-  font-size: 100%;
+/* Shared layout container: matches SiteHeader and SiteFooter (max-w-7xl mx-auto px-4 sm:px-6 lg:px-8) */
+.shared-container,
+.site-container {
+  width: 100%;
+  max-width: 80rem; /* 1280px */
+  margin-inline: auto;
+  padding-inline: 1rem; /* 16px */
+  box-sizing: border-box;
+}
+
+@media (min-width: 640px) {
+  .shared-container,
+  .site-container {
+    padding-inline: 1.5rem; /* 24px */
+  }
+}
+
+@media (min-width: 1024px) {
+  .shared-container,
+  .site-container {
+    padding-inline: 2rem; /* 32px */
+  }
+}
+
+@layer base {
+  button,
+  input {
+    font-family: inherit;
+    font-size: 100%;
+  }
 }

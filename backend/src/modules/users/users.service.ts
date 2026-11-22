@@ -3,6 +3,10 @@ import type { CreateUserDto, PaginatedResult, UserProfile, UserQueryParams } fro
 import { env } from '../../config/env.js'
 
 export class UsersService {
+  async setAvatarIfMissing(userId: string, avatarUrl: string): Promise<UserProfile | null> {
+    return usersRepository.setAvatarIfMissing(userId, avatarUrl)
+  }
+
   /**
    * Get list of users with filtering, search, and pagination
    */
@@ -26,8 +30,8 @@ export class UsersService {
       throw new Error('Định dạng email không hợp lệ')
     }
 
-    if (!dto.role || (dto.role !== 'TEACHER' && dto.role !== 'ADMIN')) {
-      throw new Error('Vai trò cấp quyền phải là TEACHER hoặc ADMIN')
+    if (dto.role !== 'ADMIN') {
+      throw new Error('Teacher accounts must be created through the activation workflow')
     }
 
     const password = dto.password
@@ -98,6 +102,47 @@ export class UsersService {
       throw new Error('Không tìm thấy người dùng để cập nhật trạng thái')
     }
     return updated
+  }
+
+  /**
+   * Cập nhật hồ sơ người dùng (mọi vai trò): họ tên, nickname, SĐT, avatar
+   */
+  async updateProfile(
+    id: string,
+    payload: Partial<Pick<UserProfile, 'full_name' | 'nickname' | 'phone_number' | 'avatar_url'>>
+  ): Promise<UserProfile> {
+    if (!id) throw new Error('Thiếu ID người dùng')
+    const clean: typeof payload = {}
+    if (payload.full_name !== undefined) {
+      const fullName = payload.full_name.trim()
+      if (!fullName || fullName.length > 120) {
+        throw new Error('Họ và tên là bắt buộc và tối đa 120 ký tự')
+      }
+      clean.full_name = fullName
+    }
+    if (payload.nickname != null) {
+      const nickname = payload.nickname.trim()
+      if (nickname.length > 60) throw new Error('Nickname tối đa 60 ký tự')
+      clean.nickname = nickname
+    }
+    if (payload.phone_number != null) {
+      const phone = payload.phone_number.trim()
+      if (phone && phone.length > 32) throw new Error('Số điện thoại tối đa 32 ký tự')
+      clean.phone_number = phone
+    }
+    if (payload.avatar_url != null) {
+      const avatarUrl = payload.avatar_url.trim()
+      if (avatarUrl) {
+        try {
+          const parsed = new URL(avatarUrl)
+          if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error()
+        } catch {
+          throw new Error('Avatar URL phải là liên kết http/https hợp lệ')
+        }
+      }
+      clean.avatar_url = avatarUrl
+    }
+    return usersRepository.updateProfile(id, clean)
   }
 
   /**

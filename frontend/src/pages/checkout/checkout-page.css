@@ -5,10 +5,24 @@
 }
 
 .checkout-main {
-  width: min(1280px, calc(100% - 64px));
+  width: 100%;
+  max-width: 80rem;
   flex: 1;
-  margin: 0 auto;
-  padding: 22px 0 40px;
+  margin-inline: auto;
+  padding: 22px 1rem 40px;
+  box-sizing: border-box;
+}
+
+@media (min-width: 640px) {
+  .checkout-main {
+    padding-inline: 1.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .checkout-main {
+    padding-inline: 2rem;
+  }
 }
 
 .checkout-breadcrumb-row {
@@ -871,10 +885,6 @@
     gap: 16px;
   }
 
-  .checkout-main {
-    width: calc(100% - 36px);
-  }
-
   .checkout-student-card,
   .checkout-methods-card,
   .checkout-summary-card {
@@ -886,10 +896,6 @@
 @media (max-width: 680px) {
   .checkout-return-notice {
     flex-direction: column;
-  }
-
-  .checkout-main {
-    width: calc(100% - 30px);
   }
 
   .checkout-main {

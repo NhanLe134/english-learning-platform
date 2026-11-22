@@ -13,12 +13,21 @@ export interface Course {
   teacher: CourseTeacher | null
 }
 
+export interface CourseCatalogLesson {
+  id: string
+  title: string
+  description: string | null
+  duration_seconds: number | null
+  video_url?: string | null
+  sort_order: number
+}
+
 export interface CourseCatalogTopic {
   id: string
   title: string
   description: string | null
   sort_order: number
-  lessons: { id: string; title: string; description: string | null; sort_order: number }[]
+  lessons: CourseCatalogLesson[]
 }
 
 export interface CourseCatalogEntry extends Omit<ManagedCourse, 'teacher_id' | 'status'> {
@@ -43,6 +52,10 @@ export interface ManagedCourse {
   thumbnail_url: string | null
   status: ManagedCourseStatus
   teacher_id: string
+  /** Danh sách ID giáo viên được phân công (1..n) — teacher_id là giáo viên chính */
+  teacher_ids?: string[]
+  /** Số bài giảng THẬT tế của khóa (đếm qua topics, không dùng cột total_lessons tĩnh) */
+  lesson_count?: number
   created_at: string
   updated_at: string
 }
@@ -58,7 +71,7 @@ export interface ManagedCourseInput {
   discounted_price: number | null
   total_lessons: number
   thumbnail_url: string | null
-  status: 'draft' | 'published'
+  status: 'published' | 'archived'
 }
 
 export interface CourseListFilters {
@@ -77,4 +90,21 @@ export interface ManagedCoursePage {
   page: number
   limit: number
   totalPages: number
+}
+
+export interface EnrolledCourseItem {
+  id: string
+  course_id: string
+  title: string
+  slug: string
+  category: string
+  level: string
+  thumbnail_url: string | null
+  total_lessons: number
+  completed_lessons: number
+  progress_percent: number
+  status: 'in_progress' | 'completed'
+  enrolled_at: string
+  last_active: string | null
+  teacher: CourseTeacher | null
 }

@@ -2,9 +2,22 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { authApi } from './auth-api'
 import { useAuth } from './auth-context'
+import { sepayApi } from '../checkout/sepayApi'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || ''
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+
+let googleSessionExchangeInFlight: Promise<import('./auth-api').AuthSession> | undefined
+
+function completeGoogleLoginOnce(token?: string): Promise<import('./auth-api').AuthSession> {
+  if (!googleSessionExchangeInFlight) {
+    googleSessionExchangeInFlight = authApi.completeGoogleLogin(token).catch((error) => {
+      googleSessionExchangeInFlight = undefined
+      throw error
+    })
+  }
+  return googleSessionExchangeInFlight
+}
 
 export function OAuthCallbackPage() {
   const { setSession } = useAuth()
@@ -18,11 +31,33 @@ export function OAuthCallbackPage() {
       try {
         const provider = new URLSearchParams(window.location.search).get('provider')
         if (provider === 'google') {
-          const appSession = await authApi.completeGoogleLogin()
+          const urlToken = new URLSearchParams(window.location.search).get('token')
+          const appSession = await completeGoogleLoginOnce(urlToken ?? undefined)
           if (!active) return
           setSession(appSession)
+          let paymentOrderId = new URLSearchParams(window.location.search).get('paymentOrderId')
+          if (!paymentOrderId) {
+            try { paymentOrderId = sessionStorage.getItem('your-voice-pending-payment-order-id') } catch { /* Optional redirect context. */ }
+          }
+          try { sessionStorage.removeItem('your-voice-pending-payment-order-id') } catch { /* Optional redirect context. */ }
+          if (paymentOrderId && appSession.user.role === 'STUDENT') {
+            const order = await sepayApi.getOrderStatus(paymentOrderId, appSession.accessToken)
+            if (order.status !== 'paid' || !order.courseDetails?.slug) {
+              throw new Error('Không tìm thấy giao dịch thanh toán thành công cho tài khoản này.')
+            }
+            if (order.enrollmentExists !== true) {
+              window.location.replace(`/checkout/success?orderId=${encodeURIComponent(paymentOrderId)}`)
+              return
+            }
+            window.location.replace(`/courses/${encodeURIComponent(order.courseDetails.slug)}`)
+            return
+          }
           window.location.replace(
-            appSession.user.role === 'ADMIN' ? '/admin/users' : `/checkout${window.location.search}`
+            appSession.user.role === 'ADMIN'
+              ? '/admin/dashboard'
+              : appSession.user.role === 'TEACHER'
+                ? '/teacher/dashboard'
+                : '/my-courses'
           )
           return
         }
@@ -59,9 +94,11 @@ export function OAuthCallbackPage() {
         setSession(appSession)
 
         if (appSession.user.role === 'ADMIN') {
-          window.location.replace('/admin/users')
+          window.location.replace('/admin/dashboard')
+        } else if (appSession.user.role === 'TEACHER') {
+          window.location.replace('/teacher/dashboard')
         } else {
-          window.location.replace(`/checkout${window.location.search}`)
+          window.location.replace('/my-courses')
         }
       } catch (err) {
         if (!active) return
