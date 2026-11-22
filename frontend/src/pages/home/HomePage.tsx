@@ -11,7 +11,7 @@ import { GiftCtaSection } from './sections/GiftCtaSection'
 export function HomePage() {
   return (
     <div className="min-h-screen bg-white">
-      <SiteHeader />
+      <SiteHeader activeTab="home" />
       <main>
         <HeroSection />
         <CoursesSection />

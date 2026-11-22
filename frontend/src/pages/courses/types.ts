@@ -15,6 +15,10 @@ export interface Course {
   thumbnail_url: string | null
   status: CourseStatus
   teacher_id: string
+  /** Danh sách ID giáo viên được phân công (teacher_id là giáo viên chính) */
+  teacher_ids?: string[]
+  /** Số bài giảng thật của khóa (đếm qua topics — có thể lệch total_lessons tĩnh) */
+  lesson_count?: number
   created_at: string
   updated_at: string
 }
@@ -30,7 +34,9 @@ export interface CourseInput {
   discounted_price: number | null
   total_lessons: number
   thumbnail_url: string | null
-  status: 'draft' | 'published'
+  status: 'published' | 'archived'
+  /** Danh sách ID giáo viên được phân công (ít nhất 1) */
+  teacher_ids: string[]
 }
 
 export interface CourseFilters {

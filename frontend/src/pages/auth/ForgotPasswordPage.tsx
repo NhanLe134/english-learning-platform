@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from 'react'
 import { BookOpen, Info, Mail } from 'lucide-react'
-import { LoginVisual, SiteFooter, SiteHeader } from './AuthShared'
+import { LoginVisual } from './AuthShared'
+import { SiteHeader } from '../../components/layout/SiteHeader'
+import { SiteFooter } from '../../components/layout/SiteFooter'
 import { authApi, getErrorMessage } from './auth-api'
 import './login-page.css'
 import './forgot-password-page.css'
@@ -8,6 +10,7 @@ import './forgot-password-page.css'
 const EMAIL_PLACEHOLDER = 'elena.vance@oxfordlinguistics.edu'
 
 export function ForgotPasswordPage() {
+  const teacherMode = window.location.pathname.startsWith('/teacher/')
   const [errorMessage, setErrorMessage] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -18,10 +21,10 @@ export function ForgotPasswordPage() {
     const formData = new FormData(event.currentTarget)
 
     try {
-      await authApi.forgotPassword(
-        String(formData.get('email') ?? '').trim()
-      )
-      window.location.assign('/login?passwordReset=sent')
+      const email = String(formData.get('email') ?? '').trim()
+      if (teacherMode) await authApi.requestTeacherPasswordReset(email)
+      else await authApi.forgotPassword(email)
+      window.location.assign(teacherMode ? '/teacher/login?passwordReset=sent' : '/login?passwordReset=sent')
     } catch (error) {
       setErrorMessage(getErrorMessage(error))
     } finally {
@@ -33,8 +36,9 @@ export function ForgotPasswordPage() {
     <div className="login-page forgot-password-page min-h-screen bg-white">
       <SiteHeader />
 
-      <main className="login-shell forgot-password-shell">
-        <LoginVisual />
+      <main className="login-main-container">
+        <div className="login-shell forgot-password-shell">
+          <LoginVisual />
 
         <section className="login-form-panel" aria-labelledby="forgot-password-title">
           <div className="login-card forgot-password-card">
@@ -47,7 +51,7 @@ export function ForgotPasswordPage() {
             </div>
             <h1 id="forgot-password-title">Quên mật khẩu?</h1>
             <p className="card-description forgot-password-description">
-              Nhập địa chỉ email đăng ký để nhận mật khẩu tạm thời.
+              {teacherMode ? 'Nhập email tài khoản giáo viên để nhận liên kết đặt lại mật khẩu.' : 'Nhập email đăng ký để nhận hướng dẫn khôi phục tài khoản.'}
             </p>
 
             <form className="login-form forgot-password-form" onSubmit={handleSubmit}>
@@ -69,7 +73,7 @@ export function ForgotPasswordPage() {
               <div className="recovery-info">
                 <Info size={14} aria-hidden="true" />
                 <p>
-                  Nếu email đã được đăng ký, mật khẩu tạm thời sẽ được gửi đến hộp thư của bạn.
+                  {teacherMode ? 'Nếu đây là tài khoản giáo viên đang hoạt động, liên kết đặt lại sẽ được gửi đến email.' : 'Nếu tài khoản tồn tại, hướng dẫn khôi phục sẽ được gửi đến hộp thư của bạn.'}
                 </p>
               </div>
 
@@ -79,13 +83,14 @@ export function ForgotPasswordPage() {
               </button>
             </form>
 
-            <a className="back-to-login" href="/login">← Quay lại đăng nhập</a>
+            <a className="back-to-login" href={teacherMode ? '/teacher/login' : '/login'}>← Quay lại đăng nhập</a>
             <p className="recovery-support">
               Gặp sự cố khi nhận email?{' '}
               <a href="#lien-he">Liên hệ bộ phận trợ giúp EngMaster</a>
             </p>
           </div>
         </section>
+        </div>
       </main>
       <SiteFooter />
     </div>

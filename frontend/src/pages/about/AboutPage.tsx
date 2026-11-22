@@ -270,7 +270,7 @@ function TeacherShowcase() {
 export function AboutPage() {
   return (
     <div className="min-h-screen bg-white">
-      <SiteHeader />
+      <SiteHeader activeTab="about" />
 
       <main>
         {/* Hero */}

@@ -9,6 +9,13 @@ interface RateWindow {
 const windows = new Map<string, RateWindow>()
 
 export function authRateLimit(maxAttempts: number): RequestHandler {
+  // Môi trường development bỏ qua giới hạn: cả đội cùng dùng một IP localhost
+  // và thử mật khẩu liên tục khi test sẽ tự khóa lẫn nhau vô ích.
+  // Production vẫn áp dụng đầy đủ để chống dò mật khẩu.
+  if (env.nodeEnv === 'development') {
+    return (_request, _response, next) => next()
+  }
+
   return (request, response, next) => {
     const now = Date.now()
     const key = `${request.ip || 'unknown'}:${request.path}`
@@ -17,19 +24,27 @@ export function authRateLimit(maxAttempts: number): RequestHandler {
       ? { count: 0, expiresAt: now + env.authRateLimitWindowMs }
       : current
 
-    window.count += 1
-    windows.set(key, window)
-
-    if (windows.size > 10000) {
-      for (const [entryKey, entry] of windows) {
-        if (entry.expiresAt <= now) windows.delete(entryKey)
-      }
-    }
-
-    if (window.count > maxAttempts) {
+    if (window.count >= maxAttempts) {
       response.status(429).json({ message: 'Too many requests. Please try again later.' })
       return
     }
+
+    // Chỉ đếm các lần thử THẤT BẠI (HTTP >= 400): đăng nhập thành công không tốn hạn mức
+    // và xóa sạch bộ đếm để người dùng bắt đầu lại từ đầu.
+    response.on('finish', () => {
+      if (response.statusCode < 400) {
+        if (windows.get(key) === window) windows.delete(key)
+        return
+      }
+      window.count += 1
+      windows.set(key, window)
+
+      if (windows.size > 10000) {
+        for (const [entryKey, entry] of windows) {
+          if (entry.expiresAt <= now) windows.delete(entryKey)
+        }
+      }
+    })
 
     next()
   }

@@ -7,11 +7,11 @@
   --color-brand-50: #FEF1F2;
   --color-brand-100: #FDE0E3;
   --color-brand-200: #FBB5BC;
-  --color-brand-500: #E02838;
-  --color-brand-600: #C8102E;
-  --color-brand-700: #A30D26;
-  --color-brand-800: #850D21;
-  --color-brand-900: #6B0A1B;
+  --color-brand-500: #FF2B37;
+  --color-brand-600: #F60005;
+  --color-brand-700: #D60004;
+  --color-brand-800: #B00003;
+  --color-brand-900: #8C0002;
 
   --color-ink-900: #17181C;
   --color-ink-700: #3D4046;
@@ -29,6 +29,59 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* --------------------------------------------------------------------------
+   Màn hình chuyển hướng (Đang chuyển đến trang quản trị / học viên...)
+   Thay trang trắng trần: logo thương hiệu nhấp nháy + spinner + dòng chữ
+   -------------------------------------------------------------------------- */
+.auth-route-status {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-ink-700);
+}
+
+.auth-route-status::before {
+  content: '';
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--color-brand-600), var(--color-brand-700));
+  box-shadow: 0 4px 14px rgba(246, 0, 5, 0.3);
+  animation: route-logo-pulse 1.2s ease-in-out infinite;
+}
+
+.auth-route-status::after {
+  content: '';
+  width: 26px;
+  height: 26px;
+  border: 3px solid var(--color-brand-100);
+  border-top-color: var(--color-brand-600);
+  border-radius: 50%;
+  animation: route-spinner 0.8s linear infinite;
+}
+
+@keyframes route-logo-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.12);
+  }
+}
+
+@keyframes route-spinner {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -39,8 +92,34 @@ body {
   margin: 0;
 }
 
-button,
-input {
-  font-family: inherit;
-  font-size: 100%;
+/* Shared layout container: matches SiteHeader and SiteFooter (max-w-7xl mx-auto px-4 sm:px-6 lg:px-8) */
+.shared-container,
+.site-container {
+  width: 100%;
+  max-width: 80rem; /* 1280px */
+  margin-inline: auto;
+  padding-inline: 1rem; /* 16px */
+  box-sizing: border-box;
+}
+
+@media (min-width: 640px) {
+  .shared-container,
+  .site-container {
+    padding-inline: 1.5rem; /* 24px */
+  }
+}
+
+@media (min-width: 1024px) {
+  .shared-container,
+  .site-container {
+    padding-inline: 2rem; /* 32px */
+  }
+}
+
+@layer base {
+  button,
+  input {
+    font-family: inherit;
+    font-size: 100%;
+  }
 }

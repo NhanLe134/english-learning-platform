@@ -15,13 +15,32 @@ export class CourseController {
     }
   }
 
+  async getMyEnrolledCourses(
+    _request: Request,
+    response: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      const user = response.locals.authUser as { id?: string } | undefined
+      if (!user?.id) {
+        response.status(401).json({ success: false, message: 'Unauthorized' })
+        return
+      }
+      const courses = await courseService.getEnrolledCourses(user.id)
+      response.status(200).json({ success: true, data: courses })
+    } catch (error) {
+      this.handleError(error, response, next)
+    }
+  }
+
   async getPublishedCourse(
     request: Request,
     response: Response,
     next: NextFunction
   ): Promise<void> {
     try {
-      const course = await courseService.getPublishedCourse(String(request.params.identifier))
+      const user = response.locals.authUser as { id?: string } | undefined
+      const course = await courseService.getPublishedCourse(String(request.params.identifier), user?.id)
       if (!course) {
         response.status(404).json({ success: false, message: 'Published course not found.' })
         return
@@ -29,6 +48,16 @@ export class CourseController {
       response.status(200).json({ success: true, data: course })
     } catch (error) {
       this.handleError(error, response, next)
+    }
+  }
+
+  // GET /api/courses/admin/categories — danh sách phân loại riêng biệt (dropdown)
+  async getCategories(_request: Request, response: Response, next: NextFunction): Promise<void> {
+    try {
+      const categories = await courseService.getDistinctCategories()
+      response.status(200).json({ success: true, data: categories })
+    } catch (error) {
+      next(error)
     }
   }
 

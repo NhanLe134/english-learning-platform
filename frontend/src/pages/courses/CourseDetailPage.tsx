@@ -12,7 +12,9 @@ import {
   ShieldCheck,
   UserRound,
 } from 'lucide-react'
-import { SiteFooter, SiteHeader } from '../auth/AuthShared'
+import { useAuth } from '../auth/auth-context'
+import { SiteHeader } from '../../components/layout/SiteHeader'
+import { SiteFooter } from '../../components/layout/SiteFooter'
 import { createRegistrationUrl, type CourseReference } from './course-data'
 import { courseCatalogApi } from './services/courseCatalogApi'
 import './course-detail-page.css'
@@ -20,14 +22,15 @@ import './course-detail-page.css'
 const formatCurrency = (amount: number) => `${amount.toLocaleString('vi-VN')}đ`
 
 export function CourseDetailPage({ identifier }: { identifier: string }) {
-  const [expandedModules, setExpandedModules] = useState<number[]>([])
+  const { accessToken } = useAuth()
+  const [expandedModules, setExpandedModules] = useState<number[]>([0])
   const [course, setCourse] = useState<CourseReference | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
     let active = true
-    void courseCatalogApi.get(identifier)
+    void courseCatalogApi.get(identifier, accessToken || undefined)
       .then((loadedCourse) => {
         if (active) setCourse(loadedCourse)
       })
@@ -40,7 +43,7 @@ export function CourseDetailPage({ identifier }: { identifier: string }) {
         if (active) setLoading(false)
       })
     return () => { active = false }
-  }, [identifier])
+  }, [identifier, accessToken])
 
   function toggleModule(index: number) {
     setExpandedModules((expanded) => expanded.includes(index)
@@ -54,7 +57,7 @@ export function CourseDetailPage({ identifier }: { identifier: string }) {
 
   return (
     <div className="course-detail-page">
-      <SiteHeader />
+      <SiteHeader activeTab="courses" />
 
       <main className="course-detail-main">
         <nav className="course-detail-breadcrumb" aria-label="Điều hướng đường dẫn">
@@ -79,15 +82,17 @@ export function CourseDetailPage({ identifier }: { identifier: string }) {
             <header className="course-detail-hero">
               <h1>{course.title}</h1>
               <p>{course.description}</p>
-              <div className="course-detail-instructor">
-                <span className="course-instructor-avatar" aria-hidden="true"><UserRound size={25} /></span>
-                <div>
-                  <strong>{course.instructor}</strong>
-                  <span>Giảng viên khóa học</span>
-                  <p>{course.targetAudience}</p>
+              {course.instructor && (
+                <div className="course-detail-instructor">
+                  <span className="course-instructor-avatar" aria-hidden="true"><UserRound size={25} /></span>
+                  <div>
+                    <strong>{course.instructor}</strong>
+                    <span>Giảng viên khóa học</span>
+                    {course.targetAudience && <p>{course.targetAudience}</p>}
+                  </div>
+                  <small><BadgeCheck size={13} /> {course.category} · {course.level}</small>
                 </div>
-                <small><BadgeCheck size={13} /> {course.category} · {course.level}</small>
-              </div>
+              )}
             </header>
 
             <section className="course-detail-goals" aria-labelledby="course-goals-heading">
@@ -126,14 +131,50 @@ export function CourseDetailPage({ identifier }: { identifier: string }) {
                         onClick={() => toggleModule(index)}
                       >
                         <span className="course-module-number">{String(index + 1).padStart(2, '0')}</span>
-                        <span className="course-module-copy"><strong>{module.title}</strong><small>{module.description || `${module.lessons.length} bài học`}</small></span>
+                        <span className="course-module-copy"><strong>{module.title}</strong><small>{module.lessons.length} bài học{module.description ? ` · ${module.description}` : ''}</small></span>
                         <ChevronDown size={16} />
                       </button>
                       {expanded && (
                         <div className="course-module-details">
-                          {module.lessons.length > 0
-                            ? <ul>{module.lessons.map((lesson) => <li key={lesson}>{lesson}</li>)}</ul>
-                            : <p>{module.description || 'Nội dung chủ đề sẽ được cập nhật.'}</p>}
+                          {module.lessons.length > 0 ? (
+                            <div className="course-module-lesson-list">
+                              {module.lessons.map((lesson, lIdx) => (
+                                <div className="course-detail-lesson-card" key={lesson.id || lIdx}>
+                                  <div className="course-detail-lesson-thumb">
+                                    <img
+                                      src={lesson.thumbnailUrl || course.thumbnailUrl || '/hero-classroom.png'}
+                                      alt={lesson.title}
+                                      loading="lazy"
+                                      onError={(e) => {
+                                        const target = e.currentTarget
+                                        const fallback = course.thumbnailUrl || '/hero-classroom.png'
+                                        if (!target.src.endsWith(fallback)) {
+                                          target.src = fallback
+                                        }
+                                      }}
+                                    />
+                                    <span className="course-detail-lesson-duration">
+                                      {lesson.duration && lesson.duration !== 'Chưa cập nhật' ? lesson.duration : '--:--'}
+                                    </span>
+                                    <span className="course-detail-lesson-play">
+                                      <Play size={12} fill="currentColor" />
+                                    </span>
+                                  </div>
+                                  <div className="course-detail-lesson-info">
+                                    <h4 className="course-detail-lesson-title">{lesson.title}</h4>
+                                    <div className="course-detail-lesson-meta">
+                                      <span>⏱ {lesson.duration && lesson.duration !== 'Chưa cập nhật' ? lesson.duration : '--:--'}</span>
+                                      {lesson.description && (
+                                        <span className="course-detail-lesson-desc"> • {lesson.description}</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p>{module.description || 'Nội dung chủ đề sẽ được cập nhật.'}</p>
+                          )}
                         </div>
                       )}
                     </article>
@@ -170,7 +211,9 @@ export function CourseDetailPage({ identifier }: { identifier: string }) {
               <strong>Khóa học này bao gồm:</strong>
               <span><CheckCircle2 size={14} /> Truy cập nội dung khóa học và tài liệu đi kèm</span>
               <span><ShieldCheck size={14} /> Lộ trình gồm {course.totalLessons} bài học được sắp xếp theo chủ đề</span>
-              <span><UserRound size={14} /> Học cùng giảng viên: {course.instructor}</span>
+              {course.instructor && (
+                <span><UserRound size={14} /> Học cùng giảng viên: {course.instructor}</span>
+              )}
               <span><Download size={14} /> Tài liệu học tập phù hợp với chủ đề {course.category}</span>
             </div>
           </aside>
@@ -179,7 +222,7 @@ export function CourseDetailPage({ identifier }: { identifier: string }) {
         })()}
       </main>
 
-      <SiteFooter brandName="Your English Voice" />
+      <SiteFooter />
     </div>
   )
 }

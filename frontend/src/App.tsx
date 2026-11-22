@@ -1,5 +1,9 @@
 import { useEffect } from 'react'
 import { QuanLyNguoiDungPage } from './pages/quan_ly_nguoi_dung'
+import { QuanLyThanhToanPage } from './pages/quan_ly_thanh_toan'
+import ThemBaiGiangPage from './pages/them_bai_giang'
+import { QuanLyBaiGiangKhoaHocPage } from './pages/quan_ly_bai_giang'
+import { QuanLyBaiTapPage } from './pages/quan_ly_bai_tap'
 import { HomePage } from './pages/home/HomePage'
 import { AboutPage } from './pages/about/AboutPage'
 import { EbooksPage } from './pages/ebooks/EbooksPage'
@@ -10,8 +14,16 @@ import { OAuthCallbackPage } from './pages/auth/OAuthCallbackPage'
 import { CourseManagementPage } from './pages/courses/CourseManagementPage'
 import { CourseDetailPage } from './pages/courses/CourseDetailPage'
 import { CourseListPage } from './pages/courses/CourseListPage'
+import { StudentCoursesPage } from './pages/courses/StudentCoursesPage'
+import { StudentCourseDetailPage } from './pages/courses/StudentCourseDetailPage'
 import { CheckoutPage } from './pages/checkout/CheckoutPage'
 import { CheckoutSuccessPage } from './pages/checkout/CheckoutSuccessPage'
+import { WorkshopsPage } from './pages/workshops/WorkshopsPage'
+import { DailyWordPage } from './pages/daily-word/DailyWordPage'
+// Popup Daily Word KHÔNG render toàn cục nữa — chỉ trong StudentCoursesPage (/my-courses)
+import { ContactPage } from './pages/contact/ContactPage'
+import { TeacherDashboardPage } from './pages/courses/TeacherDashboardPage'
+import { TeacherAccountActionPage } from './pages/auth/TeacherAccountActionPage'
 import { AuthProvider } from './pages/auth/AuthContext'
 import { useAuth } from './pages/auth/auth-context'
 
@@ -19,6 +31,9 @@ function AppRoutes() {
   const { initializationError, isInitializing, user } = useAuth()
   const pathname = window.location.pathname
   const isAdminRoute = pathname.startsWith('/admin')
+  const isTeacherArea = pathname.startsWith('/teacher')
+  const isTeacherPublicRoute = ['/teacher/login', '/teacher/activate', '/teacher/reset-password', '/teacher/forgot-password'].includes(pathname)
+  const isStudentArea = pathname === '/my-courses' || pathname.startsWith('/student') || pathname.startsWith('/my-courses/')
   const isAuthCallback = pathname === '/auth/callback'
   const isAuthPage = ['/login', '/register', '/forgot-password'].includes(pathname)
 
@@ -29,27 +44,32 @@ function AppRoutes() {
       // 1 trình duyệt 1 tài khoản: Đã đăng nhập Admin thì chỉ hiển thị trang Admin.
       // Dù mở tab mới hay nhập bất kỳ link nào (/, /courses, /login, /register...), đều tự chuyển về trang quản trị
       if (!isAdminRoute) {
-        window.location.replace('/admin/users')
+        window.location.replace('/admin/dashboard')
       }
-    } else if (user) {
+    } else if (user?.role === 'TEACHER') {
+      if (isAdminRoute || isStudentArea || pathname === '/login' || pathname === '/register') {
+        window.location.replace('/teacher/dashboard')
+      } else if (pathname === '/teacher/login' || pathname === '/teacher/forgot-password') {
+        window.location.replace('/teacher/dashboard')
+      }
+    } else if (user?.role === 'STUDENT') {
       // Học viên đã đăng nhập: không vào được admin và không mở lại trang login/register
       if (isAdminRoute) {
         window.location.replace('/login')
       } else if (isAuthPage) {
-        const hasSelectedCourse = Boolean(new URLSearchParams(window.location.search).get('courseId'))
-        window.location.replace(
-          pathname === '/register' && !hasSelectedCourse
-            ? '/courses'
-            : `/checkout${window.location.search}`
-        )
+        // Redirect to role-appropriate default page – never blindly redirect to /checkout.
+        // The checkout flow itself will navigate here when needed.
+        window.location.replace('/my-courses')
       }
     } else {
       // Chưa đăng nhập mà truy cập route admin
       if (isAdminRoute) {
         window.location.replace('/login')
       }
+      if (isStudentArea) window.location.replace('/login')
+      if (isTeacherArea && !isTeacherPublicRoute) window.location.replace('/teacher/login')
     }
-  }, [isAdminRoute, isAuthCallback, isAuthPage, isInitializing, pathname, user])
+  }, [isAdminRoute, isAuthCallback, isAuthPage, isInitializing, isStudentArea, isTeacherArea, isTeacherPublicRoute, pathname, user])
 
   // Trạng thái đang xác minh quyền hoặc đang điều hướng
   if (!isAuthCallback) {
@@ -68,6 +88,9 @@ function AppRoutes() {
         </main>
       )
     }
+    if (user?.role === 'TEACHER' && !isTeacherArea && !isAdminRoute && pathname !== '/auth/callback') {
+      return <main className="auth-route-status" role="status">Đang chuyển đến trang giáo viên…</main>
+    }
 
     if (isAdminRoute && (isInitializing || user?.role !== 'ADMIN')) {
       return (
@@ -76,11 +99,17 @@ function AppRoutes() {
         </main>
       )
     }
+    if (isTeacherArea && !isTeacherPublicRoute && (isInitializing || user?.role !== 'TEACHER')) {
+      return <main className="auth-route-status" role="status">{isInitializing ? 'Đang xác minh phiên đăng nhập…' : 'Đang chuyển đến đăng nhập giáo viên…'}</main>
+    }
+    if (isStudentArea && (isInitializing || user?.role !== 'STUDENT')) {
+      return <main className="auth-route-status" role="status">Đang chuyển đến khu vực phù hợp…</main>
+    }
 
     if (user && isAuthPage) {
       return (
         <main className="auth-route-status" role="status">
-          Đang chuyển đến trang thanh toán…
+          Đang chuyển đến trang khóa học…
         </main>
       )
     }
@@ -88,19 +117,74 @@ function AppRoutes() {
 
   let page
   switch (window.location.pathname) {
+    case '/teacher/login':
+      page = <LoginPage />
+      break
+    case '/teacher/activate':
+      page = <TeacherAccountActionPage mode="activate" />
+      break
+    case '/teacher/reset-password':
+      page = <TeacherAccountActionPage mode="reset" />
+      break
+    case '/teacher/dashboard':
+      page = <TeacherDashboardPage />
+      break
+    case '/teacher/forgot-password':
+      page = <ForgotPasswordPage />
+      break
+    case '/admin':
+    case '/admin/dashboard':
     case '/admin/users':
       page = <QuanLyNguoiDungPage />
+      break
+    case '/admin/payments':
+      page = <QuanLyThanhToanPage />
       break
     case '/admin/courses':
       page = <CourseManagementPage />
       break
+    case '/admin/exercises':
+      page = <QuanLyBaiTapPage />
+      break
+    case '/admin/lessons':
+      // Quản lý bài giảng của một khóa học (?courseId=...)
+      page = <QuanLyBaiGiangKhoaHocPage />
+      break
+    case '/daily-word':
+    case '/admin/daily-word':
+      page = <DailyWordPage />
+      break
+    case '/admin/lessons/new':
+    case '/teacher/lessons/new':
+      // Trang "Thêm bài giảng & Bài tập" (giao diện tĩnh theo Figma)
+      page = <ThemBaiGiangPage />
+      break
+    case '/about':
+    case '/ve-chung-toi':
+      page = <AboutPage />
+      break
     case '/courses':
     case '/khoa-hoc':
-      page = <CourseListPage />
+      page = user?.role === 'STUDENT' ? <StudentCoursesPage /> : <CourseListPage />
+      break
+    case '/student/courses':
+    case '/my-courses':
+    case '/student':
+    case '/khoa-hoc-cua-toi':
+      page = <StudentCoursesPage />
       break
     case '/ebooks':
+    case '/ebook':
     case '/sach-dien-tu':
       page = <EbooksPage />
+      break
+    case '/workshops':
+    case '/workshop':
+      page = <WorkshopsPage />
+      break
+    case '/contact':
+    case '/lien-he':
+      page = <ContactPage />
       break
     case '/register':
       page = <RegisterPage />
@@ -120,12 +204,7 @@ function AppRoutes() {
     case '/thanh-toan/thanh-cong':
       page = <CheckoutSuccessPage />
       break
-    case '/about':
-      page = <AboutPage />
-      break
     case '/home':
-      page = <HomePage />
-      break
     case '/':
       page = <HomePage />
       break
@@ -134,10 +213,24 @@ function AppRoutes() {
       break
     default:
       {
+        const studentCourseRoute = pathname.match(
+          /^\/(?:student\/courses?|my-courses|khoa-hoc-cua-toi)\/([^/]+)$/
+        )
+        if (studentCourseRoute && studentCourseRoute[1]) {
+          page = <StudentCourseDetailPage courseSlug={decodeURIComponent(studentCourseRoute[1])} />
+          break
+        }
+
         const courseRoute = pathname.match(/^\/(?:courses|khoa-hoc)\/([^/]+)$/)
-        page = courseRoute
-          ? <CourseDetailPage identifier={decodeURIComponent(courseRoute[1])} />
-          : <CourseListPage />
+        if (courseRoute && courseRoute[1]) {
+          const decodedSlug = decodeURIComponent(courseRoute[1])
+          page = user?.role === 'STUDENT'
+            ? <StudentCourseDetailPage courseSlug={decodedSlug} />
+            : <CourseDetailPage identifier={decodedSlug} />
+          break
+        }
+
+        page = user?.role === 'STUDENT' ? <StudentCoursesPage /> : <CourseListPage />
       }
   }
   return (

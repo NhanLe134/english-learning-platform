@@ -1,3 +1,5 @@
+import bcrypt from 'bcryptjs'
+import { getDatabasePool } from '../../config/database.js'
 import { createSupabaseClient, createSupabasePublicClient } from '../../config/supabase.js'
 import { env } from '../../config/env.js'
 import { logRegistrationFailure } from '../auth/registration-diagnostics.js'
@@ -35,7 +37,7 @@ export class UsersRepository {
       role: (String(row.role || 'STUDENT').toUpperCase()) as UserRole,
       avatar_url: row.avatar_url ? String(row.avatar_url) : null,
       status: (String(row.status || 'active').toLowerCase()) as UserStatus,
-      is_verified: Boolean(row.is_verified || (String(row.role || '').toUpperCase() === 'TEACHER')),
+      is_verified: Boolean(row.is_verified || ['TEACHER', 'ADMIN'].includes(String(row.role || '').toUpperCase())),
       created_at: isoDate(row.created_at),
       updated_at: isoDate(row.updated_at),
     }
@@ -139,6 +141,24 @@ export class UsersRepository {
     return data ? this.mapRowToProfile(data) : null
   }
 
+  async setAvatarIfMissing(userId: string, avatarUrl: string): Promise<UserProfile | null> {
+    if (!this.hasSupabaseConfig()) {
+      throw new Error('Supabase is not configured for profile updates')
+    }
+    const { data, error } = await createSupabaseClient()
+      .from('profiles')
+      .update({ avatar_url: avatarUrl, updated_at: new Date().toISOString() })
+      .eq('id', userId)
+      .or('avatar_url.is.null,avatar_url.eq.')
+      .select(USER_COLUMNS)
+      .maybeSingle()
+    if (error) throw new Error('Unable to save the Google profile avatar', { cause: error })
+    if (data) return this.mapRowToProfile(data)
+
+    // A concurrent update or existing value wins; return the current saved profile.
+    return this.findById(userId)
+  }
+
   async createAuthAccount(
     user: Omit<UserProfile, 'id' | 'created_at' | 'updated_at'>,
     password: string
@@ -152,7 +172,7 @@ export class UsersRepository {
     const client = createSupabaseClient()
     const email = user.email.trim().toLowerCase()
     const sensitiveValues = [email, password]
-    let userId: string
+    let userId: string | null = null
 
     try {
       const { data, error } = await client.auth.admin.createUser({
@@ -161,25 +181,28 @@ export class UsersRepository {
         email_confirm: true,
         user_metadata: { full_name: user.full_name.trim() },
       })
-      if (error) throw error
-      if (!data.user) throw new Error('Supabase Auth did not return a user')
-      userId = data.user.id
+      if (!error && data?.user) {
+        userId = data.user.id
+      } else if (error) {
+        const providerMessage = error.message || ''
+        if (
+          error.code === 'email_exists' ||
+          error.code === 'user_already_exists' ||
+          /already (registered|exists)/i.test(providerMessage)
+        ) {
+          throw new Error('Email is already registered', { cause: error })
+        }
+        logRegistrationFailure('supabase_auth_create_user_fallback', error, sensitiveValues)
+      }
     } catch (error) {
-      const providerMessage =
-        error && typeof error === 'object' && 'message' in error
-          ? error.message
-          : undefined
-      if (
-        (error &&
-          typeof error === 'object' &&
-          'code' in error &&
-          (error.code === 'email_exists' || error.code === 'user_already_exists')) ||
-        (typeof providerMessage === 'string' && /already (registered|exists)/i.test(providerMessage))
-      ) {
-        throw new Error('Email is already registered', { cause: error })
+      if (error instanceof Error && error.message === 'Email is already registered') {
+        throw error
       }
       logRegistrationFailure('supabase_auth_create_user', error, sensitiveValues)
-      throw new Error('Unable to create authentication account', { cause: error })
+    }
+
+    if (!userId) {
+      throw new Error('Supabase Auth did not create the account; refusing to create an unlinked profile')
     }
 
     const profile = {
@@ -220,6 +243,19 @@ export class UsersRepository {
       logRegistrationFailure('role_upsert', error, sensitiveValues)
       await this.cleanupRegistrationAccount(client, userId, sensitiveValues, true)
       throw new Error('Unable to assign user role', { cause: error })
+    }
+
+    try {
+      const passwordHash = await bcrypt.hash(password, 12)
+      await getDatabasePool().query(
+        `INSERT INTO public.auth_credentials (user_id, password_hash)
+         VALUES ($1, $2)
+         ON CONFLICT (user_id) DO UPDATE
+         SET password_hash = EXCLUDED.password_hash, updated_at = now()`,
+        [userId, passwordHash]
+      )
+    } catch (error) {
+      logRegistrationFailure('auth_credentials_insert', error, sensitiveValues)
     }
 
     return this.mapRowToProfile(row)
@@ -413,6 +449,39 @@ export class UsersRepository {
 
     if (error) {
       throw new Error(`Lỗi cập nhật trạng thái người dùng trên Supabase: ${error.message}`)
+    }
+
+    return this.mapRowToProfile(data)
+  }
+
+  /**
+   * Cập nhật hồ sơ người dùng (mọi vai trò): họ tên, nickname, số điện thoại, avatar.
+   * Không đụng đến email/role/status — các trường đó có luồng riêng.
+   */
+  async updateProfile(
+    id: string,
+    payload: Partial<Pick<UserProfile, 'full_name' | 'nickname' | 'phone_number' | 'avatar_url'>>
+  ): Promise<UserProfile> {
+    if (!this.hasSupabaseConfig()) {
+      throw new Error('Chưa cấu hình Supabase trong backend/.env')
+    }
+
+    const client = createSupabaseClient()
+    const update: Record<string, unknown> = { updated_at: new Date().toISOString() }
+    if (payload.full_name !== undefined) update.full_name = payload.full_name
+    if (payload.nickname !== undefined) update.nickname = payload.nickname || null
+    if (payload.phone_number !== undefined) update.phone_number = payload.phone_number || null
+    if (payload.avatar_url !== undefined) update.avatar_url = payload.avatar_url || null
+
+    const { data, error } = await client
+      .from('profiles')
+      .update(update)
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error || !data) {
+      throw new Error(`Lỗi cập nhật hồ sơ người dùng: ${error?.message || 'không tìm thấy người dùng'}`)
     }
 
     return this.mapRowToProfile(data)

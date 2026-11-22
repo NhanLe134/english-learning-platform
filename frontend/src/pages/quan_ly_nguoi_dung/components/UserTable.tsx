@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { Check, Copy, GraduationCap, ShieldCheck, CheckCircle2, Lock, Unlock, Trash2 } from 'lucide-react'
+import React from 'react'
+import { GraduationCap, ShieldCheck, CheckCircle2, Lock, Unlock, Trash2, Pencil } from 'lucide-react'
 import type { UserProfile, UserRole } from '../types'
 import type { ConfirmActionType } from './ConfirmActionModal'
 
@@ -7,26 +7,10 @@ interface UserTableProps {
   users: UserProfile[]
   loading?: boolean
   onActionClick: (user: UserProfile, action: ConfirmActionType) => void
+  onEditClick?: (user: UserProfile) => void
 }
 
-export const UserTable: React.FC<UserTableProps> = ({ users, loading, onActionClick }) => {
-  const [copiedId, setCopiedId] = useState<string | null>(null)
-
-  const handleCopyHash = (id: string, hash: string) => {
-    navigator.clipboard.writeText(hash)
-    setCopiedId(id)
-    setTimeout(() => {
-      setCopiedId(null)
-    }, 2000)
-  }
-
-  // Format hash for clean display: "$2b$12$e8K9...7aXp"
-  const formatHash = (hash: string) => {
-    if (!hash || hash.length < 16) return hash || '••••••••'
-    const start = hash.slice(0, 11)
-    const end = hash.slice(-4)
-    return `${start}...${end}`
-  }
+export const UserTable: React.FC<UserTableProps> = ({ users, loading, onActionClick, onEditClick }) => {
 
   // Format date & time into two lines (e.g., 15/10/2024 and 14:30)
   const formatDateTime = (dateStr: string) => {
@@ -82,7 +66,6 @@ export const UserTable: React.FC<UserTableProps> = ({ users, loading, onActionCl
               <th className="th-user">NGƯỜI DÙNG & AVATAR</th>
               <th className="th-contact">EMAIL & SỐ ĐIỆN THOẠI</th>
               <th className="th-role">VAI TRÒ</th>
-              <th className="th-password">MẬT KHẨU</th>
               <th className="th-date">NGÀY TẠO</th>
               <th className="th-actions text-center">THAO TÁC</th>
             </tr>
@@ -90,21 +73,21 @@ export const UserTable: React.FC<UserTableProps> = ({ users, loading, onActionCl
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={6} className="table-loading-cell">
+                <td colSpan={5} className="table-loading-cell">
                   <div className="spinner"></div>
                   <span>Đang tải danh sách người dùng từ Supabase...</span>
                 </td>
               </tr>
             ) : users.length === 0 ? (
               <tr>
-                <td colSpan={6} className="table-empty-cell">
+                <td colSpan={5} className="table-empty-cell">
                   Không tìm thấy người dùng nào trong cơ sở dữ liệu.
                 </td>
               </tr>
             ) : (
               users.map((user) => {
                 const { date, time } = formatDateTime(user.created_at)
-                const isLocked = user.status === 'locked'
+                const isLocked = user.status === 'locked' || user.status === 'deactivated'
 
                 return (
                   <tr key={user.id} className={`user-row ${isLocked ? 'row-locked' : ''}`}>
@@ -134,9 +117,10 @@ export const UserTable: React.FC<UserTableProps> = ({ users, loading, onActionCl
                               {user.full_name}
                             </span>
                             {user.is_verified && (
-                              <CheckCircle2 size={15} className="verified-badge-icon" />
+                              <CheckCircle2 size={14} className="verified-badge-icon" />
                             )}
                           </div>
+                          {user.status !== 'active' && <span className="text-xs font-medium text-amber-700">{user.status === 'pending' ? 'Chờ kích hoạt' : user.status === 'deactivated' ? 'Đã vô hiệu hóa' : 'Đang tạm khóa'}</span>}
                           {user.nickname && (
                             <span className={`user-nickname ${isLocked ? 'nickname-violate' : ''}`}>
                               {user.nickname}
@@ -160,24 +144,6 @@ export const UserTable: React.FC<UserTableProps> = ({ users, loading, onActionCl
                     <td className="td-role">{renderRoleBadge(user.role)}</td>
 
                     {/* 4. Password Hash with Copy */}
-                    <td className="td-password">
-                      <div className="password-hash-pill">
-                        <span className="hash-code">{formatHash(user.password_hash)}</span>
-                        <button
-                          type="button"
-                          className="copy-hash-btn"
-                          title="Sao chép toàn bộ mã Hash"
-                          onClick={() => handleCopyHash(user.id, user.password_hash)}
-                        >
-                          {copiedId === user.id ? (
-                            <Check size={14} className="copied-icon" />
-                          ) : (
-                            <Copy size={14} className="copy-icon" />
-                          )}
-                        </button>
-                      </div>
-                    </td>
-
                     {/* 5. Created Date */}
                     <td className="td-date">
                       <div className="date-group">
@@ -186,38 +152,39 @@ export const UserTable: React.FC<UserTableProps> = ({ users, loading, onActionCl
                       </div>
                     </td>
 
-                    {/* 6. Action Column: Lock/Unlock & Delete */}
+                    {/* 6. Action Column: Edit (mọi vai trò) / Lock-Unlock & Delete */}
                     <td className="td-actions text-center">
                       <div className="action-buttons-group">
+                        {onEditClick && <button type="button" className="action-btn-pill" title="Chi tiết & chỉnh sửa người dùng" onClick={() => onEditClick(user)}><Pencil size={14} /></button>}
                         {/* Lock / Unlock Toggle Button */}
-                        <button
+                        {user.status !== 'deactivated' && <button
                           type="button"
                           className={`action-btn-pill ${isLocked ? 'action-btn-locked' : 'action-btn-unlocked'}`}
-                          title={isLocked ? 'Nhấn để mở khóa tài khoản' : 'Nhấn để khóa tài khoản'}
-                          onClick={() => onActionClick(user, isLocked ? 'unlock' : 'lock')}
+                          title={user.status === 'pending' ? 'Gửi lại liên kết kích hoạt' : isLocked ? 'Nhấn để mở khóa tài khoản' : 'Nhấn để khóa tài khoản'}
+                          onClick={() => onActionClick(user, user.status === 'pending' || isLocked ? 'unlock' : 'lock')}
                         >
                           {isLocked ? (
                             <>
-                              <Lock size={15} className="action-icon-lock" />
+                              <Lock size={13} className="action-icon-lock" />
                               <span className="action-btn-label">Bị khóa</span>
                             </>
                           ) : (
                             <>
-                              <Unlock size={15} className="action-icon-unlock" />
-                              <span className="action-btn-label">Mở</span>
+                              <Unlock size={13} className="action-icon-unlock" />
+                              <span className="action-btn-label">{user.status === 'pending' ? 'Kích hoạt' : 'Mở'}</span>
                             </>
                           )}
-                        </button>
+                        </button>}
 
                         {/* Delete User Button */}
-                        <button
+                        {user.role !== 'TEACHER' || user.status !== 'deactivated' ? <button
                           type="button"
                           className="action-btn-delete"
                           title="Xóa người dùng vĩnh viễn khỏi CSDL Supabase"
                           onClick={() => onActionClick(user, 'delete')}
                         >
-                          <Trash2 size={16} />
-                        </button>
+                          <Trash2 size={14} />
+                        </button> : null}
                       </div>
                     </td>
                   </tr>

@@ -1,20 +1,38 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { Fragment, useEffect, useRef, useState } from 'react'
 import { Bell, ChevronDown, ChevronRight, LogOut } from 'lucide-react'
 import { useAuth } from '../../auth/auth-context'
 
-interface TopHeaderProps {
-  currentPage?: string
+export interface BreadcrumbItem {
+  label: string
+  href?: string
 }
 
-export const TopHeader: React.FC<TopHeaderProps> = ({ currentPage = 'Quản lý người dùng' }) => {
+interface TopHeaderProps {
+  currentPage?: string
+  /**
+   * Breadcrumb tùy chỉnh. Khi bỏ trống, hiển thị mặc định "Hệ thống › {currentPage}".
+   * Các phần tử có `href` (trừ phần tử cuối) hiển thị như liên kết.
+   */
+  breadcrumb?: BreadcrumbItem[]
+}
+
+export const TopHeader: React.FC<TopHeaderProps> = ({
+  currentPage = 'Quản lý người dùng',
+  breadcrumb,
+}) => {
   const { user, logout, reportError } = useAuth()
   const [loggingOut, setLoggingOut] = useState(false)
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null)
   const profileRef = useRef<HTMLDivElement>(null)
   const email = user?.email ?? ''
-  const displayName = email
-    ? (email.split('@')[0] ?? '').replace(/[._-]+/g, ' ').replace(/^./, (letter) => letter.toUpperCase())
-    : 'Quản trị viên'
+  const displayName =
+    user?.fullName?.trim() ||
+    (email
+      ? (email.split('@')[0] ?? '').replace(/[._-]+/g, ' ').replace(/^./, (letter) => letter.toUpperCase())
+      : 'Quản trị viên')
+  const avatarUrl = user?.avatarUrl?.trim() || null
+  const showAvatarImage = Boolean(avatarUrl && failedAvatarUrl !== avatarUrl)
 
   useEffect(() => {
     if (!profileMenuOpen) return
@@ -40,7 +58,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ currentPage = 'Quản lý 
     setLoggingOut(true)
     try {
       await logout()
-      window.location.assign('/login')
+      window.location.replace('/login')
     } catch (error) {
       reportError(error instanceof Error ? error.message : 'Đăng xuất không thành công.')
     } finally {
@@ -52,9 +70,31 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ currentPage = 'Quản lý 
     <header className="engmaster-top-header">
       {/* Breadcrumb navigation */}
       <div className="header-breadcrumb">
-        <span className="breadcrumb-parent">Hệ thống</span>
-        <ChevronRight size={14} className="breadcrumb-arrow" />
-        <span className="breadcrumb-current">{currentPage}</span>
+        {breadcrumb && breadcrumb.length > 0 ? (
+          breadcrumb.map((item, index) => {
+            const isLast = index === breadcrumb.length - 1
+            return (
+              <Fragment key={`${item.label}-${index}`}>
+                {index > 0 && <ChevronRight size={14} className="breadcrumb-arrow" />}
+                {isLast || !item.href ? (
+                  <span className={isLast ? 'breadcrumb-current' : 'breadcrumb-parent'}>
+                    {item.label}
+                  </span>
+                ) : (
+                  <a href={item.href} className="breadcrumb-parent">
+                    {item.label}
+                  </a>
+                )}
+              </Fragment>
+            )
+          })
+        ) : (
+          <>
+            <span className="breadcrumb-parent">Hệ thống</span>
+            <ChevronRight size={14} className="breadcrumb-arrow" />
+            <span className="breadcrumb-current">{currentPage}</span>
+          </>
+        )}
       </div>
 
       {/* Header right: Notifications & Admin Profile */}
@@ -79,9 +119,19 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ currentPage = 'Quản lý 
             aria-label="Mở menu tài khoản"
             onClick={() => setProfileMenuOpen((open) => !open)}
           >
-            <span className="admin-avatar admin-avatar-initial" aria-hidden="true">
-              {displayName.charAt(0).toUpperCase()}
-            </span>
+            {showAvatarImage && avatarUrl ? (
+              <img
+                src={avatarUrl}
+                alt={displayName}
+                className="admin-avatar"
+                referrerPolicy="no-referrer"
+                onError={() => setFailedAvatarUrl(avatarUrl)}
+              />
+            ) : (
+              <span className="admin-avatar admin-avatar-initial" aria-hidden="true">
+                {displayName.charAt(0).toUpperCase()}
+              </span>
+            )}
             <span className="admin-info">
               <span className="admin-name">{displayName}</span>
               <span className="admin-role">{user?.role ?? 'ADMIN'}</span>

@@ -9,13 +9,121 @@
 }
 
 .public-course-container {
-  width: min(100% - 32px, 1280px);
+  width: 100%;
+  max-width: 80rem;
   margin-inline: auto;
+  padding-inline: 1rem;
+  box-sizing: border-box;
+}
+
+@media (min-width: 640px) {
+  .public-course-container {
+    padding-inline: 1.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .public-course-container {
+    padding-inline: 2rem;
+  }
 }
 
 .public-course-hero {
-  padding: 72px 0 56px;
+  padding: 40px 0 56px;
   background: linear-gradient(180deg, #fef1f2 0%, #fdf5f6 55%, #fff 100%);
+}
+
+.public-course-promo-banner {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  align-items: flex-start;
+  gap: 14px;
+  margin-bottom: 28px;
+  padding: 18px 20px;
+  border: 1px solid #f7cdd2;
+  border-left: 4px solid #c8102e;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #ffffff 0%, #fff7f8 100%);
+  box-shadow: 0 8px 24px rgba(200, 16, 46, 0.08);
+}
+
+.public-course-promo-icon {
+  display: inline-flex;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #e11d48 0%, #c8102e 100%);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(200, 16, 46, 0.22);
+}
+
+.public-course-promo-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.public-course-promo-copy strong {
+  display: block;
+  color: #17181c;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  line-height: 1.35;
+}
+
+.public-course-promo-copy p {
+  margin: 4px 0 0;
+  color: #3d4046;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.public-course-promo-dismiss {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #6b7076;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.public-course-promo-dismiss:hover {
+  background: #fde8eb;
+  color: #c8102e;
+}
+
+@media (max-width: 640px) {
+  .public-course-promo-banner {
+    padding: 14px 14px;
+    gap: 10px;
+  }
+
+  .public-course-promo-icon {
+    width: 34px;
+    height: 34px;
+    flex-basis: 34px;
+  }
+
+  .public-course-promo-copy strong {
+    font-size: 14px;
+  }
+
+  .public-course-promo-copy p {
+    font-size: 13px;
+  }
 }
 
 .public-course-hero h1 {
@@ -39,7 +147,7 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  color: #c8102e;
+  color: #F60005;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -48,6 +156,8 @@
 .public-course-search {
   display: flex;
   width: min(100%, 920px);
+  max-width: 100%;
+  box-sizing: border-box;
   min-height: 66px;
   align-items: center;
   gap: 12px;
@@ -70,7 +180,7 @@
 }
 
 .public-course-search-field:focus-within {
-  border-radius: 8px;
+  border-radius: 4px;
   outline: 2px solid #fbb5bc;
   outline-offset: 3px;
 }
@@ -78,6 +188,7 @@
 .public-course-search-field input {
   width: 100%;
   min-width: 0;
+  height: auto;
   border: 0;
   outline: 0;
   background: transparent;
@@ -126,24 +237,24 @@
 }
 
 .public-course-guarantee svg {
-  color: #c8102e;
+  color: #F60005;
 }
 
 .public-course-guarantee:hover,
 .public-course-guarantee.active {
   border-color: #fbb5bc;
   background: #fef1f2;
-  color: #c8102e;
+  color: #F60005;
 }
 
 .public-course-search-button {
   border: 0;
-  background: #c8102e;
+  background: #F60005;
   color: #fff;
 }
 
 .public-course-search-button:hover {
-  background: #a30d26;
+  background: #D60004;
 }
 
 .public-course-results {
@@ -152,7 +263,8 @@
 
 .public-course-section-header {
   display: flex;
-  align-items: end;
+  align-items: flex-end;
+  justify-content: space-between;
   gap: 16px;
   margin-bottom: 24px;
 }
@@ -175,7 +287,7 @@
   padding: 6px 12px;
   border-radius: 9999px;
   background: #fef1f2;
-  color: #c8102e;
+  color: #F60005;
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
@@ -305,7 +417,7 @@
 }
 
 .public-course-status-badge {
-  background: #c8102e;
+  background: #F60005;
   color: #fff;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -331,7 +443,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  color: #c8102e;
+  color: #F60005;
   font-size: 12px;
   font-weight: 700;
 }
@@ -366,7 +478,7 @@
 }
 
 .public-course-card:hover h2 {
-  color: #c8102e;
+  color: #F60005;
 }
 
 .public-course-card-copy > p {
@@ -401,7 +513,7 @@
 .public-course-highlight-item svg {
   flex: 0 0 auto;
   margin-top: 1px;
-  color: #c8102e;
+  color: #F60005;
 }
 
 .public-course-instructor-row {
@@ -420,7 +532,7 @@
   place-items: center;
   border-radius: 50%;
   background: #fef1f2;
-  color: #c8102e;
+  color: #F60005;
   font-size: 12px;
   font-weight: 700;
 }
@@ -455,7 +567,7 @@
 }
 
 .public-course-price-group strong {
-  color: #c8102e;
+  color: #F60005;
   font-size: 20px;
   font-weight: 800;
 }
@@ -468,7 +580,7 @@
   gap: 5px;
   padding: 8px 12px;
   border-radius: 8px;
-  background: #c8102e;
+  background: #F60005;
   color: #fff;
   font-size: 12px;
   font-weight: 700;
@@ -477,7 +589,7 @@
 }
 
 .public-course-card:hover .public-course-btn-primary {
-  background: #a30d26;
+  background: #D60004;
 }
 
 .public-course-status,
@@ -498,16 +610,20 @@
 }
 
 .public-course-error {
-  width: min(100% - 32px, 1280px);
+  display: flex;
+  width: 100%;
+  max-width: 100%;
   min-height: unset;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin: 24px auto 0;
+  margin: 24px 0 0;
   padding: 14px 16px;
   border: 1px solid #fbb5bc;
   border-radius: 12px;
   background: #fef1f2;
   color: #6b0a1b;
+  box-sizing: border-box;
 }
 
 .public-course-error p {
@@ -520,7 +636,7 @@
   padding: 0 12px;
   border: 0;
   border-radius: 8px;
-  background: #c8102e;
+  background: #F60005;
   color: #fff;
   cursor: pointer;
   font-family: inherit;
@@ -529,28 +645,26 @@
 }
 
 .public-course-error button:hover {
-  background: #a30d26;
+  background: #D60004;
 }
 
 @media (min-width: 640px) {
-  .public-course-container {
-    width: min(100% - 48px, 1280px);
-  }
-
   .public-course-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (min-width: 1024px) {
-  .public-course-container {
-    width: min(100% - 64px, 1280px);
   }
 }
 
 @media (min-width: 1280px) {
   .public-course-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .public-course-section-header {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 10px;
   }
 }
 

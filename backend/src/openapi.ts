@@ -42,6 +42,8 @@ const tags = [
   { name: 'Authentication' },
   { name: 'Courses', description: 'Public course selection and ADMIN-only course management.' },
   { name: 'User Management', description: 'ADMIN-only user administration endpoints.' },
+  { name: 'Payment Management', description: 'ADMIN-only payment order management, reconciliation, and audit.' },
+  { name: 'Lessons', description: 'Curriculum topics, lessons, and learning material endpoints.' },
 ]
 
 const adminSecurity = [{ bearerAuth: [] }]
@@ -117,6 +119,20 @@ export const openApiDocument = {
         responses: {
           '200': jsonResponse('Published course catalog'),
           '503': jsonResponse('Course catalog is not configured', {
+            $ref: '#/components/schemas/ErrorResponse',
+          }),
+        },
+      },
+    },
+    '/api/courses/my-courses': {
+      get: {
+        tags: ['Courses'],
+        summary: 'List enrolled courses for the authenticated student',
+        operationId: 'getMyEnrolledCourses',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          '200': jsonResponse('Enrolled courses list'),
+          '401': jsonResponse('Authentication required', {
             $ref: '#/components/schemas/ErrorResponse',
           }),
         },
@@ -232,6 +248,104 @@ export const openApiDocument = {
         },
       },
     },
+    '/api/lessons/courses/{courseId}/topics': {
+      get: {
+        tags: ['Lessons'],
+        summary: 'Get course curriculum and lessons',
+        description:
+          'Accessible to ADMIN, TEACHER, and enrolled STUDENTs. Students only receive published lessons. Course ID can be a UUID or course slug.',
+        operationId: 'getCourseCurriculum',
+        security: adminSecurity,
+        parameters: [
+          {
+            in: 'path',
+            name: 'courseId',
+            required: true,
+            schema: { type: 'string' },
+            description: 'Course UUID or URL slug.',
+          },
+        ],
+        responses: {
+          '200': jsonResponse('Course topics with ordered lessons and materials'),
+          '401': jsonResponse('Unauthorized', { $ref: '#/components/schemas/ErrorResponse' }),
+          '403': jsonResponse('Student is not enrolled or active in this course', {
+            $ref: '#/components/schemas/ErrorResponse',
+          }),
+          '404': jsonResponse('Course not found', { $ref: '#/components/schemas/ErrorResponse' }),
+        },
+      },
+    },
+    '/api/lessons/lessons/{lessonId}': {
+      get: {
+        tags: ['Lessons'],
+        summary: 'Get lesson details and materials',
+        description:
+          'Accessible to ADMIN, TEACHER, and enrolled STUDENTs. Students can only access published lessons for courses they are actively enrolled in.',
+        operationId: 'getLessonDetails',
+        security: adminSecurity,
+        parameters: [
+          {
+            in: 'path',
+            name: 'lessonId',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+            description: 'Lesson UUID.',
+          },
+        ],
+        responses: {
+          '200': jsonResponse('Lesson details including video URL and learning materials'),
+          '401': jsonResponse('Unauthorized', { $ref: '#/components/schemas/ErrorResponse' }),
+          '403': jsonResponse('Forbidden - unenrolled student', {
+            $ref: '#/components/schemas/ErrorResponse',
+          }),
+          '404': jsonResponse('Lesson not found or unpublished', {
+            $ref: '#/components/schemas/ErrorResponse',
+          }),
+        },
+      },
+    },
+    '/api/lessons/lessons/{lessonId}/progress': {
+      put: {
+        tags: ['Lessons'],
+        summary: 'Update student lesson watch progress',
+        description:
+          'Updates last_position_seconds, watched progress_percent (capped at 99 until exercise completion), and is_completed (set true only upon passing all exercises; completed lessons preserve completion and 100% progress). Optionally backfills missing duration_seconds.',
+        operationId: 'updateLessonProgress',
+        security: adminSecurity,
+        parameters: [
+          {
+            in: 'path',
+            name: 'lessonId',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+            description: 'Lesson UUID.',
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['last_position_seconds'],
+                properties: {
+                  last_position_seconds: { type: 'number', minimum: 0 },
+                  progress_percent: { type: 'number', minimum: 0, maximum: 100 },
+                  is_completed: { type: 'boolean' },
+                  duration_seconds: { type: 'number', minimum: 0 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': jsonResponse('Updated lesson progress'),
+          '400': jsonResponse('Validation error', { $ref: '#/components/schemas/ErrorResponse' }),
+          '401': jsonResponse('Unauthorized', { $ref: '#/components/schemas/ErrorResponse' }),
+          '403': jsonResponse('Forbidden', { $ref: '#/components/schemas/ErrorResponse' }),
+        },
+      },
+    },
     '/api/users': {
       get: {
         tags: ['User Management'],
@@ -242,7 +356,7 @@ export const openApiDocument = {
         parameters: [
           { in: 'query', name: 'search', schema: { type: 'string' }, description: 'Search name, email, phone number, or nickname.' },
           { in: 'query', name: 'role', schema: { type: 'string', enum: ['ALL', 'STUDENT', 'TEACHER', 'ADMIN'], default: 'ALL' } },
-          { in: 'query', name: 'status', schema: { type: 'string', enum: ['ALL', 'active', 'locked', 'pending'], default: 'ALL' } },
+          { in: 'query', name: 'status', schema: { type: 'string', enum: ['ALL', 'active', 'locked', 'pending', 'deactivated'], default: 'ALL' } },
           { in: 'query', name: 'page', schema: { type: 'integer', minimum: 1, default: 1 } },
           { in: 'query', name: 'limit', schema: { type: 'integer', minimum: 1, maximum: 100, default: 10 } },
         ],
@@ -331,6 +445,45 @@ export const openApiDocument = {
         },
       },
     },
+    '/api/teachers/admin': {
+      get: {
+        tags: ['User Management'], summary: 'List teacher accounts', operationId: 'listTeachers', security: adminSecurity,
+        parameters: [
+          { in: 'query', name: 'search', schema: { type: 'string' } },
+          { in: 'query', name: 'status', schema: { type: 'string', enum: ['ALL', 'active', 'locked', 'pending', 'deactivated'] } },
+          { in: 'query', name: 'page', schema: { type: 'integer', minimum: 1 } },
+          { in: 'query', name: 'limit', schema: { type: 'integer', minimum: 1, maximum: 100 } },
+        ],
+        responses: { '200': jsonResponse('Paginated teacher profiles'), ...adminResponses },
+      },
+      post: {
+        tags: ['User Management'], summary: 'Create a teacher account with an initial password', operationId: 'createTeacher', security: adminSecurity,
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['full_name', 'email', 'password'], properties: { full_name: { type: 'string', minLength: 1 }, email: { type: 'string', format: 'email' }, password: { type: 'string', minLength: 8, maxLength: 72, format: 'password' }, nickname: { type: 'string' }, phone_number: { type: 'string' }, avatar_url: { type: 'string', format: 'uri' } } } } } },
+        responses: { '201': jsonResponse('Active teacher profile'), ...adminResponses },
+      },
+    },
+    '/api/teachers/admin/{id}': {
+      get: { tags: ['User Management'], summary: 'Get teacher details', operationId: 'getTeacher', security: adminSecurity, parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { '200': jsonResponse('Teacher profile'), '404': jsonResponse('Teacher not found'), ...adminResponses } },
+      patch: { tags: ['User Management'], summary: 'Edit teacher profile', operationId: 'updateTeacher', security: adminSecurity, parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' } }], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['full_name'], properties: { full_name: { type: 'string' }, nickname: { type: 'string' }, phone_number: { type: 'string' } } } } } }, responses: { '200': jsonResponse('Updated teacher profile'), ...adminResponses } },
+    },
+    '/api/teachers/admin/{id}/status': {
+      patch: { tags: ['User Management'], summary: 'Change teacher account status', operationId: 'updateTeacherStatus', security: adminSecurity, parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' } }], requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['status'], properties: { status: { type: 'string', enum: ['active', 'locked', 'pending', 'deactivated'] } } } } } }, responses: { '200': jsonResponse('Updated teacher status'), ...adminResponses } },
+    },
+    '/api/teachers/admin/{id}/activation/resend': {
+      post: { tags: ['User Management'], summary: 'Resend teacher activation link', operationId: 'resendTeacherActivation', security: adminSecurity, parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string', format: 'uuid' } }], responses: { '202': jsonResponse('Activation email queued or sent'), ...adminResponses } },
+    },
+    '/api/teachers/activation/complete': {
+      post: { tags: ['Authentication'], summary: 'Activate a teacher account', operationId: 'activateTeacher', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['token', 'password'], properties: { token: { type: 'string' }, password: { type: 'string', minLength: 8, maxLength: 72 } } } } } }, responses: { '200': jsonResponse('Teacher activated'), ...errorResponses } },
+    },
+    '/api/teachers/password-reset/request': {
+      post: { tags: ['Authentication'], summary: 'Request a teacher password reset link', operationId: 'requestTeacherPasswordReset', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['email'], properties: { email: { type: 'string', format: 'email' } } } } } }, responses: { '200': jsonResponse('Generic response independent of account existence'), ...errorResponses } },
+    },
+    '/api/teachers/password-reset/complete': {
+      post: { tags: ['Authentication'], summary: 'Complete teacher password reset', operationId: 'resetTeacherPassword', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['token', 'password'], properties: { token: { type: 'string' }, password: { type: 'string', minLength: 8, maxLength: 72 } } } } } }, responses: { '200': jsonResponse('Password reset and sessions revoked'), ...errorResponses } },
+    },
+    '/api/teachers/me': {
+      get: { tags: ['Authentication'], summary: 'Get authenticated teacher profile', operationId: 'getTeacherMe', security: [{ bearerAuth: [] }], responses: { '200': jsonResponse('Teacher profile'), ...adminResponses } },
+    },
     '/api/auth/register': {
       post: {
         tags: ['Authentication'],
@@ -412,7 +565,7 @@ export const openApiDocument = {
         tags: ['Authentication'],
         summary: 'Log in or sign up with a Google token',
         description:
-          'Verifies the Google identity, creates an active STUDENT profile when needed, and issues a session. Google identity verification is required.',
+          'Verifies the Google identity and resolves its stable provider subject to one canonical profile. An unlinked existing profile must have independently verified its email before it can be linked; a new Google profile remains pending until payment activates it.',
         operationId: 'loginWithGoogle',
         requestBody: jsonBody('GoogleAuthRequest'),
         responses: {
@@ -527,6 +680,58 @@ export const openApiDocument = {
         },
       },
     },
+    '/api/payment/admin/orders': {
+      get: {
+        tags: ['Payment Management'],
+        summary: 'List payment orders with filters',
+        description: 'ADMIN only. Returns paginated course orders with student, course, and enrollment details.',
+        operationId: 'listAdminPaymentOrders',
+        security: adminSecurity,
+        parameters: [
+          { in: 'query', name: 'search', schema: { type: 'string' }, description: 'Search student name, email, course title, or transfer content.' },
+          { in: 'query', name: 'status', schema: { type: 'string', enum: ['ALL', 'pending', 'paid', 'failed', 'expired', 'cancelled'], default: 'ALL' } },
+          { in: 'query', name: 'enrollment', schema: { type: 'string', enum: ['ALL', 'has_enrollment', 'missing_enrollment'], default: 'ALL' } },
+          { in: 'query', name: 'dateFrom', schema: { type: 'string', format: 'date-time' } },
+          { in: 'query', name: 'dateTo', schema: { type: 'string', format: 'date-time' } },
+          { in: 'query', name: 'page', schema: { type: 'integer', minimum: 1, default: 1 } },
+          { in: 'query', name: 'limit', schema: { type: 'integer', minimum: 1, maximum: 100, default: 20 } },
+          { in: 'query', name: 'sortBy', schema: { type: 'string', enum: ['created_at', 'paid_at', 'amount', 'student_name', 'course_title'], default: 'created_at' } },
+          { in: 'query', name: 'sortOrder', schema: { type: 'string', enum: ['asc', 'desc'], default: 'desc' } },
+        ],
+        responses: {
+          '200': jsonResponse('Paginated payment orders', { $ref: '#/components/schemas/PaginatedAdminPaymentOrdersResponse' }),
+          ...adminResponses,
+        },
+      },
+    },
+    '/api/payment/admin/orders/{orderId}': {
+      get: {
+        tags: ['Payment Management'],
+        summary: 'Get payment order detail',
+        description: 'ADMIN only. Returns a single order with full student, course, and enrollment information.',
+        operationId: 'getAdminPaymentOrderDetail',
+        security: adminSecurity,
+        parameters: [{ in: 'path', name: 'orderId', required: true, schema: { type: 'string', format: 'uuid' } }],
+        responses: {
+          '200': jsonResponse('Payment order detail', { $ref: '#/components/schemas/AdminPaymentOrderResponse' }),
+          '404': jsonResponse('Order not found', { $ref: '#/components/schemas/ErrorResponse' }),
+          ...adminResponses,
+        },
+      },
+      post: {
+        tags: ['Payment Management'],
+        summary: 'Reconcile enrollment for a paid order',
+        description: 'ADMIN only. If the order is paid but has no enrollment, creates the enrollment and activates the student profile. Does not re-verify the payment with SePay.',
+        operationId: 'reconcileAdminPaymentOrder',
+        security: adminSecurity,
+        parameters: [{ in: 'path', name: 'orderId', required: true, schema: { type: 'string', format: 'uuid' } }],
+        responses: {
+          '200': jsonResponse('Reconciliation result', { $ref: '#/components/schemas/ReconcileOrderResponse' }),
+          '404': jsonResponse('Order not found', { $ref: '#/components/schemas/ErrorResponse' }),
+          ...adminResponses,
+        },
+      },
+    },
   },
   components: {
     securitySchemes: {
@@ -627,13 +832,18 @@ export const openApiDocument = {
               discounted_price: { type: 'number', minimum: 0, nullable: true },
               total_lessons: { type: 'integer', minimum: 0, maximum: 100000 },
               thumbnail_url: { type: 'string', format: 'uri', nullable: true },
-              status: { type: 'string', enum: ['draft', 'published'] },
+              status: { type: 'string', enum: ['published', 'archived'] },
+              teacher_ids: {
+                type: 'array',
+                items: { type: 'string', format: 'uuid' },
+                description: 'Danh sách ID profile vai trò TEACHER được phân công phụ trách khóa học (1..n). Bỏ trống trường này khi cập nhật thì giữ nguyên phân công cũ; khi tạo mới nếu bỏ trống thì gán tài khoản admin tạo khóa.',
+              },
             },
           },
           CourseStatusUpdateRequest: {
             type: 'object',
             required: ['status'],
-            properties: { status: { type: 'string', enum: ['draft', 'published'] } },
+            properties: { status: { type: 'string', enum: ['published', 'archived'] } },
           },
         },
       },
@@ -870,13 +1080,20 @@ export const openApiDocument = {
       },
       PublicUser: {
         type: 'object',
-        required: ['id', 'email', 'full_name', 'role'],
+        required: [
+          'id', 'email', 'full_name', 'nickname', 'phone_number', 'avatar_url',
+          'role', 'status', 'is_verified',
+        ],
         properties: {
           id: { type: 'string', format: 'uuid' },
           email: { type: 'string', format: 'email' },
           full_name: { type: 'string' },
+          nickname: { type: 'string', nullable: true },
           phone_number: { type: 'string', nullable: true },
+          avatar_url: { type: 'string', nullable: true },
           role: { type: 'string', enum: ['STUDENT', 'TEACHER', 'ADMIN'] },
+          status: { type: 'string', enum: ['active', 'locked', 'pending', 'deactivated'] },
+          is_verified: { type: 'boolean' },
         },
       },
       TokenResponse: {
@@ -907,6 +1124,73 @@ export const openApiDocument = {
         properties: {
           success: { type: 'boolean', example: true },
           data: { $ref: '#/components/schemas/PublicUser' },
+        },
+      },
+      AdminPaymentOrder: {
+        type: 'object',
+        required: ['orderId', 'studentId', 'studentName', 'studentEmail', 'courseId', 'courseTitle', 'amount', 'currency', 'status', 'transferContent', 'createdAt', 'enrollmentStatus', 'needsAttention'],
+        properties: {
+          orderId: { type: 'string', format: 'uuid' },
+          studentId: { type: 'string', format: 'uuid' },
+          studentName: { type: 'string' },
+          studentEmail: { type: 'string', format: 'email' },
+          studentPhone: { type: 'string', nullable: true },
+          courseId: { type: 'string', format: 'uuid' },
+          courseTitle: { type: 'string' },
+          courseSlug: { type: 'string', nullable: true },
+          amount: { type: 'number' },
+          currency: { type: 'string' },
+          status: { type: 'string', enum: ['pending', 'paid', 'failed', 'expired', 'cancelled'] },
+          transferContent: { type: 'string' },
+          providerTransactionId: { type: 'string', nullable: true },
+          providerOrderId: { type: 'string', nullable: true },
+          paidAt: { type: 'string', format: 'date-time', nullable: true },
+          expiredAt: { type: 'string', format: 'date-time', nullable: true },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+          enrollmentStatus: { type: 'string', enum: ['active', 'completed', 'cancelled'], nullable: true },
+          enrollmentId: { type: 'string', format: 'uuid', nullable: true },
+          needsAttention: { type: 'boolean' },
+        },
+      },
+      PaginatedAdminPaymentOrdersResponse: {
+        type: 'object',
+        properties: {
+          success: { type: 'boolean', example: true },
+          data: { type: 'array', items: { $ref: '#/components/schemas/AdminPaymentOrder' } },
+          pagination: {
+            type: 'object',
+            properties: {
+              page: { type: 'integer' },
+              limit: { type: 'integer' },
+              total: { type: 'integer' },
+              totalPages: { type: 'integer' },
+            },
+          },
+        },
+      },
+      AdminPaymentOrderResponse: {
+        type: 'object',
+        properties: {
+          success: { type: 'boolean', example: true },
+          data: { $ref: '#/components/schemas/AdminPaymentOrder' },
+        },
+      },
+      ReconcileOrderResponse: {
+        type: 'object',
+        properties: {
+          success: { type: 'boolean', example: true },
+          message: { type: 'string' },
+          data: {
+            type: 'object',
+            properties: {
+              orderId: { type: 'string', format: 'uuid' },
+              status: { type: 'string' },
+              enrollmentCreated: { type: 'boolean' },
+              enrollmentId: { type: 'string', format: 'uuid', nullable: true },
+              enrollmentStatus: { type: 'string', nullable: true },
+            },
+          },
         },
       },
       ApiResponse: {

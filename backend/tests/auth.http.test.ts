@@ -180,6 +180,8 @@ describe('authentication HTTP endpoints', () => {
           email: 'google-registration@example.test',
           fullName: 'Google Registration',
           avatarUrl: null,
+          phoneNumber: null,
+          dateOfBirth: null,
         },
       })
     } finally {
@@ -446,8 +448,12 @@ describe('authentication HTTP endpoints', () => {
         id: randomUUID(),
         email: 'learner@example.test',
         full_name: 'Learner',
+        nickname: null,
         phone_number: null,
+        avatar_url: 'https://example.test/learner-avatar.png',
         role: 'STUDENT',
+        status: 'active',
+        is_verified: true,
       },
     })
 
@@ -467,6 +473,22 @@ describe('authentication HTTP endpoints', () => {
 
       const sessionLogin = await requestLogin(false)
       assert.equal(sessionLogin.status, 200)
+      const sessionBody = await sessionLogin.json() as {
+        data: {
+          user: {
+            id: string
+            avatar_url: string | null
+            nickname: string | null
+            status: string
+            is_verified: boolean
+          }
+        }
+      }
+      assert.equal(sessionBody.data.user.id.length > 0, true)
+      assert.equal(sessionBody.data.user.avatar_url, 'https://example.test/learner-avatar.png')
+      assert.equal(sessionBody.data.user.nickname, null)
+      assert.equal(sessionBody.data.user.status, 'active')
+      assert.equal(sessionBody.data.user.is_verified, true)
       const sessionCookies = sessionLogin.headers.get('set-cookie') ?? ''
       assert.match(sessionCookies, /english_learning_platform_refresh=test-refresh-token/)
       assert.match(sessionCookies, /english_learning_platform_remember=0/)
@@ -481,6 +503,89 @@ describe('authentication HTTP endpoints', () => {
       assert.match(rememberedCookies, /SameSite=Lax/)
     } finally {
       authService.login = originalLogin
+    }
+  })
+
+  it('returns a complete profile from the Google OAuth handoff session', async () => {
+    const originalAuthenticateAccessToken = authService.authenticateAccessToken
+    const user: UserProfile = {
+      id: randomUUID(),
+      email: 'google-handoff@example.test',
+      full_name: 'Google Handoff Student',
+      phone_number: '+84912345678',
+      avatar_url: 'https://example.test/google-avatar.png',
+      role: 'STUDENT',
+      status: 'active',
+      is_verified: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+    authService.authenticateAccessToken = async () => user
+
+    try {
+      const response = await fetch(`${baseUrl}/api/auth/google/session`, {
+        method: 'POST',
+        headers: {
+          Origin: frontendOrigin,
+          Cookie: 'english_learning_platform_google_access_handoff=google-handoff-token',
+        },
+      })
+      assert.equal(response.status, 200)
+      const body = await response.json() as {
+        data: { user: Record<string, unknown> }
+      }
+      assert.deepEqual(body.data.user, {
+        id: user.id,
+        email: user.email,
+        full_name: user.full_name,
+        nickname: null,
+        phone_number: user.phone_number,
+        avatar_url: user.avatar_url,
+        role: user.role,
+        status: user.status,
+        is_verified: user.is_verified,
+      })
+    } finally {
+      authService.authenticateAccessToken = originalAuthenticateAccessToken
+    }
+  })
+
+  it('returns the canonical complete profile from /me', async () => {
+    const originalAuthenticateAccessToken = authService.authenticateAccessToken
+    const user: UserProfile = {
+      id: randomUUID(),
+      email: 'current-profile@example.test',
+      full_name: 'Current Profile',
+      nickname: '@current',
+      phone_number: '+84912345678',
+      avatar_url: 'https://example.test/current-avatar.png',
+      role: 'TEACHER',
+      status: 'active',
+      is_verified: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+    authService.authenticateAccessToken = async () => user
+
+    try {
+      const response = await fetch(`${baseUrl}/api/auth/me`, {
+        headers: { Authorization: 'Bearer current-profile-token' },
+      })
+      assert.equal(response.status, 200)
+      const body = await response.json() as { data: Record<string, unknown> }
+      assert.deepEqual(body.data, {
+        id: user.id,
+        email: user.email,
+        full_name: user.full_name,
+        nickname: user.nickname,
+        phone_number: user.phone_number,
+        avatar_url: user.avatar_url,
+        role: user.role,
+        status: user.status,
+        is_verified: user.is_verified,
+      })
+    } finally {
+      authService.authenticateAccessToken = originalAuthenticateAccessToken
     }
   })
 

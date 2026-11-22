@@ -71,9 +71,10 @@ export const userApi = {
     params.append('page', String(filters.page))
     params.append('limit', String(filters.limit))
     const headers = authHeaders(accessToken)
+    const endpoint = filters.role === 'TEACHER' ? '/teachers/admin' : '/users'
 
     try {
-      const response = await authenticatedFetch(`${API_BASE_URL}/users?${params.toString()}`, {
+      const response = await authenticatedFetch(`${API_BASE_URL}${endpoint}?${params.toString()}`, {
         method: 'GET',
         headers,
       }, accessToken, refreshAccessToken)
@@ -101,6 +102,7 @@ export const userApi = {
       if (err instanceof UserApiError && (err.status === 401 || err.status === 403)) {
         throw err
       }
+      if (filters.role === 'TEACHER') throw err
       if (err instanceof AuthApiError) throw err
       // If direct Supabase client credentials are configured on frontend
       if (directSupabaseClient) {
@@ -124,7 +126,7 @@ export const userApi = {
     const limit = filters.limit || 10
     const offset = (page - 1) * limit
 
-    let query = directSupabaseClient.from('profiles').select('*', { count: 'exact' })
+    let query = directSupabaseClient.from('profiles').select('id,email,full_name,nickname,phone_number,role,avatar_url,status,is_verified,created_at,updated_at', { count: 'exact' })
 
     if (filters.search && filters.search.trim()) {
       const s = filters.search.trim()
@@ -150,7 +152,6 @@ export const userApi = {
     const items: UserProfile[] = (data || []).map((row: any) => ({
       id: String(row.id),
       email: String(row.email || ''),
-      password_hash: String(row.password_hash || ''),
       full_name: String(row.full_name || ''),
       nickname: row.nickname ? String(row.nickname) : null,
       phone_number: row.phone_number ? String(row.phone_number) : (row.phone ? String(row.phone) : null),
@@ -184,7 +185,8 @@ export const userApi = {
     accessToken: string | null,
     refreshAccessToken: () => Promise<string>
   ): Promise<UserProfile> {
-    const response = await authenticatedFetch(`${API_BASE_URL}/users`, {
+    const endpoint = input.role === 'TEACHER' ? '/teachers/admin' : '/users'
+    const response = await authenticatedFetch(`${API_BASE_URL}${endpoint}`, {
       method: 'POST',
       headers: authHeaders(accessToken),
       body: JSON.stringify(input),
@@ -205,9 +207,11 @@ export const userApi = {
     id: string,
     status: UserStatus,
     accessToken: string | null,
-    refreshAccessToken: () => Promise<string>
+    refreshAccessToken: () => Promise<string>,
+    role?: UserRole
   ): Promise<UserProfile> {
-    const response = await authenticatedFetch(`${API_BASE_URL}/users/${id}/status`, {
+    const endpoint = role === 'TEACHER' ? `/teachers/admin/${id}/status` : `/users/${id}/status`
+    const response = await authenticatedFetch(`${API_BASE_URL}${endpoint}`, {
       method: 'PATCH',
       headers: authHeaders(accessToken),
       body: JSON.stringify({ status }),
@@ -219,6 +223,41 @@ export const userApi = {
     }
 
     return json.data!
+  },
+
+  async resendTeacherActivation(id: string, accessToken: string | null, refreshAccessToken: () => Promise<string>): Promise<void> {
+    const response = await authenticatedFetch(`${API_BASE_URL}/teachers/admin/${id}/activation/resend`, {
+      method: 'POST', headers: authHeaders(accessToken),
+    }, accessToken, refreshAccessToken)
+    const json: ApiResponse = await response.json()
+    if (!response.ok || !json.success) throw new Error(json.message || 'Không thể gửi lại liên kết kích hoạt')
+  },
+
+  async updateTeacher(id: string, input: { full_name: string; nickname: string; phone_number: string }, accessToken: string | null, refreshAccessToken: () => Promise<string>): Promise<UserProfile> {
+    const response = await authenticatedFetch(`${API_BASE_URL}/teachers/admin/${id}`, {
+      method: 'PATCH', headers: authHeaders(accessToken), body: JSON.stringify(input),
+    }, accessToken, refreshAccessToken)
+    const json: ApiResponse<UserProfile> = await response.json()
+    if (!response.ok || !json.success || !json.data) throw new Error(json.message || 'Không cập nhật được giáo viên')
+    return json.data
+  },
+
+  /**
+   * Cập nhật hồ sơ người dùng (mọi vai trò): họ tên, nickname, SĐT, avatar
+   * qua PATCH /users/:id/profile
+   */
+  async updateUserProfile(
+    id: string,
+    input: { full_name: string; nickname?: string; phone_number?: string; avatar_url?: string },
+    accessToken: string | null,
+    refreshAccessToken: () => Promise<string>
+  ): Promise<UserProfile> {
+    const response = await authenticatedFetch(`${API_BASE_URL}/users/${encodeURIComponent(id)}/profile`, {
+      method: 'PATCH', headers: { ...authHeaders(accessToken), 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+    }, accessToken, refreshAccessToken)
+    const json: ApiResponse<UserProfile> = await response.json()
+    if (!response.ok || !json.success || !json.data) throw new Error(json.message || 'Không cập nhật được hồ sơ người dùng')
+    return json.data
   },
 
   /**

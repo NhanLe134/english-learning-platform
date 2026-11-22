@@ -73,6 +73,12 @@ authRouter.post(
   authRateLimit(env.authResetRateLimit),
   (request, response, next) => authController.forgotPassword(request, response, next)
 )
+authRouter.post(
+  '/change-password',
+  authenticate,
+  requireTrustedOrigin,
+  (request, response, next) => authController.changePassword(request, response, next)
+)
 authRouter.get('/me', authenticate, (request, response, next) =>
   authController.me(request, response, next)
 )
