@@ -33,6 +33,7 @@ import {
 } from './auth.tokens.js'
 import type { GoogleAuthInput } from './google.types.js'
 import { getGoogleRegistrationDetails, verifyGoogleAuthInput } from './google.verifier.js'
+import { sanitizeRegistrationDiagnosticMessage } from './registration-diagnostics.js'
 
 interface UserService {
   createStudentAccount(
@@ -434,7 +435,25 @@ export class AuthService {
       )
     } catch (error) {
       if (hasMissingAuthSchema(error)) throw missingAuthSchemaError(error)
-      throw new AuthError('Unable to verify the code. Please try again later.', 503, error)
+      const rootCause = error instanceof Error && error.cause !== undefined ? error.cause : error
+      const causeCode =
+        rootCause && typeof rootCause === 'object' && 'code' in rootCause && typeof rootCause.code === 'string'
+          ? rootCause.code
+          : undefined
+      const causeName = rootCause instanceof Error ? rootCause.name : typeof rootCause
+      const rawMessage = rootCause instanceof Error ? rootCause.message : String(rootCause)
+      const sanitizedMessage = sanitizeRegistrationDiagnosticMessage(
+        rawMessage.replace(/postgres(?:ql)?:\/\/\S+/gi, '[redacted-db-url]'),
+        [env.databaseUrl, env.authJwtSecret]
+      )
+      console.error('[Auth] Registration OTP verification failed', {
+        name: causeName,
+        ...(causeCode ? { code: causeCode } : {}),
+        message: sanitizedMessage,
+      })
+      const authError = new AuthError('Unable to verify the code. Please try again later.', 503, error)
+      Object.defineProperty(authError, Symbol.for('auth.diagnostic.logged'), { value: true })
+      throw authError
     }
 
     switch (result.status) {
