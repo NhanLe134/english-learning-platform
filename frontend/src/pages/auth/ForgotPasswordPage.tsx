@@ -36,8 +36,9 @@ export function ForgotPasswordPage() {
     <div className="login-page forgot-password-page min-h-screen bg-white">
       <SiteHeader />
 
-      <main className="login-shell forgot-password-shell">
-        <LoginVisual />
+      <main className="login-main-container">
+        <div className="login-shell forgot-password-shell">
+          <LoginVisual />
 
         <section className="login-form-panel" aria-labelledby="forgot-password-title">
           <div className="login-card forgot-password-card">
@@ -89,6 +90,7 @@ export function ForgotPasswordPage() {
             </p>
           </div>
         </section>
+        </div>
       </main>
       <SiteFooter />
     </div>

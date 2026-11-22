@@ -16,8 +16,12 @@ export interface AuthUser {
   id: string
   email: string
   fullName: string
+  nickname: string | null
   phoneNumber: string | null
+  avatarUrl: string | null
   role: 'STUDENT' | 'TEACHER' | 'ADMIN'
+  status: 'active' | 'locked' | 'pending' | 'deactivated'
+  isVerified: boolean
 }
 
 export interface AuthSession {
@@ -132,12 +136,29 @@ function tokenSession(result: unknown): AuthSession {
   if (
     !('id' in user) || typeof user.id !== 'string' ||
     !('email' in user) || typeof user.email !== 'string' ||
-    ('full_name' in user && typeof user.full_name !== 'string') ||
-    ('phone_number' in user && user.phone_number !== null && typeof user.phone_number !== 'string') ||
+    !('full_name' in user) || typeof user.full_name !== 'string' ||
+    !('nickname' in user) || (user.nickname !== null && typeof user.nickname !== 'string') ||
+    !('phone_number' in user) || (user.phone_number !== null && typeof user.phone_number !== 'string') ||
+    !('avatar_url' in user) ||
+    (user.avatar_url !== null && typeof user.avatar_url !== 'string') ||
     !('role' in user) ||
-    (user.role !== 'STUDENT' && user.role !== 'TEACHER' && user.role !== 'ADMIN')
+    (user.role !== 'STUDENT' && user.role !== 'TEACHER' && user.role !== 'ADMIN') ||
+    !('status' in user) ||
+    (user.status !== 'active' && user.status !== 'locked' && user.status !== 'pending' && user.status !== 'deactivated') ||
+    !('is_verified' in user) || typeof user.is_verified !== 'boolean'
   ) {
     throw new AuthApiError('Thông tin tài khoản trong phản hồi không hợp lệ.', 502)
+  }
+
+  // Prevent a response from pairing one profile with another user's access token.
+  try {
+    const payload = data.accessToken.split('.')[1]
+    if (!payload) throw new Error('Missing token claims')
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/')
+    const claims = JSON.parse(atob(normalized + '='.repeat((4 - normalized.length % 4) % 4))) as { sub?: unknown }
+    if (claims.sub !== user.id) throw new Error('Token subject does not match profile id')
+  } catch {
+    throw new AuthApiError('User profile does not match the authenticated account.', 502)
   }
 
   return {
@@ -145,11 +166,13 @@ function tokenSession(result: unknown): AuthSession {
     user: {
       id: user.id,
       email: user.email,
-      fullName: 'full_name' in user && typeof user.full_name === 'string' ? user.full_name : '',
-      phoneNumber: 'phone_number' in user && typeof user.phone_number === 'string'
-        ? user.phone_number
-        : null,
+      fullName: user.full_name,
+      nickname: user.nickname,
+      phoneNumber: user.phone_number,
+      avatarUrl: 'avatar_url' in user && typeof user.avatar_url === 'string' ? user.avatar_url : null,
       role: user.role,
+      status: user.status,
+      isVerified: user.is_verified,
     },
   }
 }
@@ -169,8 +192,8 @@ export const authApi = {
     return tokenSession(await request<unknown>('/google', payload))
   },
 
-  async completeGoogleLogin(): Promise<AuthSession> {
-    return tokenSession(await request<unknown>('/google/session', {}))
+  async completeGoogleLogin(token?: string): Promise<AuthSession> {
+    return tokenSession(await request<unknown>('/google/session', token ? { accessToken: token } : {}))
   },
 
   async googleIdentity(payload: {
@@ -283,6 +306,25 @@ export const authApi = {
 
   async refresh(): Promise<AuthSession> {
     return tokenSession(await request<unknown>('/refresh', {}))
+  },
+
+  async me(accessToken?: string): Promise<AuthUser> {
+    const result = await request<unknown>('/me', undefined, accessToken)
+    if (!result || typeof result !== 'object' || !('data' in result) || !result.data || typeof result.data !== 'object') {
+      throw new AuthApiError('Phản hồi /me không đúng định dạng.', 502)
+    }
+    const user = (result as { data: Record<string, unknown> }).data
+    return {
+      id: String(user.id),
+      email: String(user.email),
+      fullName: String(user.full_name),
+      nickname: user.nickname ? String(user.nickname) : null,
+      phoneNumber: user.phone_number ? String(user.phone_number) : null,
+      avatarUrl: user.avatar_url ? String(user.avatar_url) : null,
+      role: user.role as AuthUser['role'],
+      status: user.status as AuthUser['status'],
+      isVerified: Boolean(user.is_verified),
+    }
   },
 
   async logout(accessToken?: string): Promise<void> {

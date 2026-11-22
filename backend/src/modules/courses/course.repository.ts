@@ -38,7 +38,7 @@ const MANAGED_COURSE_COLUMNS =
   'id,title,slug,description,category,level,target_audience,price,discounted_price,total_lessons,thumbnail_url,status,teacher_id,created_at,updated_at'
 
 const PUBLIC_COURSE_COLUMNS =
-  'id,title,slug,description,category,level,target_audience,price,discounted_price,total_lessons,thumbnail_url,created_at,updated_at,teacher:profiles!courses_teacher_id_fkey(id,full_name,avatar_url),topics(id,title,description,sort_order,lessons(id,title,description,sort_order,status))'
+  'id,title,slug,description,category,level,target_audience,price,discounted_price,total_lessons,thumbnail_url,created_at,updated_at,teacher:profiles!courses_teacher_id_fkey(id,full_name,avatar_url),topics(id,title,description,sort_order,lessons(id,title,description,duration_seconds,video_url,sort_order,status))'
 
 function mapManagedCourse(row: ManagedCourseRow): ManagedCourse {
   return {
@@ -50,77 +50,41 @@ function mapManagedCourse(row: ManagedCourseRow): ManagedCourse {
 }
 
 function mapCatalogCourse(row: CourseCatalogRow): CourseCatalogEntry {
+  const topics = (row.topics ?? [])
+    .map((topic) => ({
+      ...topic,
+      lessons: (topic.lessons ?? [])
+        .filter((lesson) => lesson.status === 'published')
+        .map(({ status: _status, ...lesson }) => ({
+          ...lesson,
+          duration_seconds: lesson.duration_seconds ?? null,
+          video_url: lesson.video_url ?? null,
+        })),
+    }))
+    .sort((first, second) => first.sort_order - second.sort_order)
+
+  const actualLessonsCount = topics.reduce((acc, t) => acc + (t.lessons?.length || 0), 0)
+  const totalLessons = actualLessonsCount
+
   return {
     ...row,
     price: Number(row.price),
     discounted_price: row.discounted_price === null ? null : Number(row.discounted_price),
+    total_lessons: totalLessons,
     teacher: Array.isArray(row.teacher) ? row.teacher[0] ?? null : row.teacher,
-    topics: (row.topics ?? [])
-      .map((topic) => ({
-        ...topic,
-        lessons: topic.lessons
-          .filter((lesson) => lesson.status === 'published')
-          .map(({ status: _status, ...lesson }) => lesson),
-      }))
-      .sort((first, second) => first.sort_order - second.sort_order),
+    topics,
   }
 }
 
-const DEFAULT_CATALOG_COURSES: CourseCatalogEntry[] = [
-  {
-    id: 'c0a80101-0000-4000-8000-000000000001',
-    title: 'Phát âm tiếng Anh',
-    slug: 'phat-am-tieng-anh',
-    description: 'Tìm được chất giọng tiếng Anh của mình. Chữa lỗi phát âm 99% người Việt mắc phải. Các mẹo phát âm rõ ràng, giao tiếp hiệu quả.',
-    category: 'Tiếng Anh nền tảng',
-    level: 'beginner',
-    target_audience: 'Người mất gốc, người muốn cải thiện phát âm',
-    price: 1_200_000,
-    discounted_price: 1_200_000,
-    total_lessons: 20,
-    thumbnail_url: null,
-    teacher: { id: 'c0a80101-0000-4000-8000-000000000010', full_name: 'Đội ngũ Your English Voice', avatar_url: null },
-    topics: [],
-    created_at: '2026-11-08T00:00:00.000Z',
-    updated_at: '2026-11-08T00:00:00.000Z',
-  },
-  {
-    id: 'c0a80101-0000-4000-8000-000000000002',
-    title: 'Từ vựng tiếng Anh',
-    slug: 'tu-vung-tieng-anh',
-    description: 'Nắm vững loạt từ vựng thiết yếu cho các chủ đề thường gặp. Phân biệt các từ gần nghĩa. Xây dựng tư duy học từ vựng dựa trên gốc từ.',
-    category: 'Tiếng Anh nền tảng',
-    level: 'beginner',
-    target_audience: 'Người muốn xây dựng vốn từ vựng nền tảng',
-    price: 1_200_000,
-    discounted_price: 1_200_000,
-    total_lessons: 20,
-    thumbnail_url: null,
-    teacher: { id: 'c0a80101-0000-4000-8000-000000000010', full_name: 'Đội ngũ Your English Voice', avatar_url: null },
-    topics: [],
-    created_at: '2026-11-08T00:00:00.000Z',
-    updated_at: '2026-11-08T00:00:00.000Z',
-  },
-  {
-    id: 'c0a80101-0000-4000-8000-000000000003',
-    title: 'Ngữ pháp tiếng Anh',
-    slug: 'ngu-phap-tieng-anh',
-    description: 'Học các thì một cách nhẹ nhàng và vận dụng ngay trong ngữ cảnh thích hợp. Hiểu lý do của những quy tắc và ngoại lệ.',
-    category: 'Tiếng Anh nền tảng',
-    level: 'beginner',
-    target_audience: 'Người muốn nắm vững ngữ pháp thực hành',
-    price: 1_200_000,
-    discounted_price: 1_200_000,
-    total_lessons: 20,
-    thumbnail_url: null,
-    teacher: { id: 'c0a80101-0000-4000-8000-000000000010', full_name: 'Đội ngũ Your English Voice', avatar_url: null },
-    topics: [],
-    created_at: '2026-11-08T00:00:00.000Z',
-    updated_at: '2026-11-08T00:00:00.000Z',
-  },
-]
+function hideCatalogLessons(course: CourseCatalogEntry): CourseCatalogEntry {
+  return { ...course, topics: course.topics.map((topic) => ({ ...topic, lessons: [] })) }
+}
 
 export class CourseRepository {
+  constructor(
+    private readonly clientFactory: typeof createSupabaseClient = createSupabaseClient
+  ) {}
+
   async findPublishedCourses(): Promise<CourseCatalogEntry[]> {
     try {
       const { data, error } = await createSupabaseClient()
@@ -131,13 +95,15 @@ export class CourseRepository {
         .limit(100)
 
       if (error) {
-        return DEFAULT_CATALOG_COURSES
+        console.error('[CourseRepository] findPublishedCourses database error:', error)
+        return []
       }
 
       const rows = ((data ?? []) as unknown as CourseCatalogRow[]).map(mapCatalogCourse)
-      return rows.length > 0 ? rows : DEFAULT_CATALOG_COURSES
-    } catch {
-      return DEFAULT_CATALOG_COURSES
+      return rows.map(hideCatalogLessons)
+    } catch (err) {
+      console.error('[CourseRepository] findPublishedCourses unexpected error:', err)
+      return []
     }
   }
 
@@ -153,13 +119,37 @@ export class CourseRepository {
       if (!error && data) {
         return mapCatalogCourse(data as unknown as CourseCatalogRow)
       }
+      return null
     } catch {
-      // Fallback below
+      return null
     }
+  }
 
-    return (
-      DEFAULT_CATALOG_COURSES.find((item) => (isId ? item.id === identifier : item.slug === identifier)) ?? null
-    )
+  async hasStudentCourseAccess(studentId: string, courseId: string): Promise<boolean> {
+    const client = this.clientFactory()
+    const { data: enrollment, error: enrollmentError } = await client
+      .from('course_enrollments')
+      .select('id')
+      .eq('student_id', studentId)
+      .eq('course_id', courseId)
+      .in('status', ['active', 'completed'])
+      .limit(1)
+      .maybeSingle()
+    if (enrollmentError) throw new Error(`Unable to verify course enrollment: ${enrollmentError.message}`, { cause: enrollmentError })
+    if (enrollment) return true
+
+    const { data: paidOrder, error: orderError } = await client
+      .from('course_orders')
+      .select('id')
+      .eq('student_id', studentId)
+      .eq('course_id', courseId)
+      .eq('status', 'paid')
+      .eq('currency', 'VND')
+      .gt('amount', 0)
+      .limit(1)
+      .maybeSingle()
+    if (orderError) throw new Error(`Unable to verify paid course orders: ${orderError.message}`, { cause: orderError })
+    return paidOrder !== null
   }
 
   async findCourseById(courseId: string): Promise<CourseCatalogEntry | null> {
@@ -218,32 +208,14 @@ export class CourseRepository {
     let rows = (data ?? []) as unknown as ManagedCourseRow[]
     let total = count ?? rows.length
 
-    if (error || (rows.length === 0 && !filters.search && !filters.category)) {
-      const defaultItems: ManagedCourse[] = DEFAULT_CATALOG_COURSES.map((c) => ({
-        id: c.id,
-        title: c.title,
-        slug: c.slug,
-        description: c.description,
-        category: c.category,
-        level: c.level,
-        target_audience: c.target_audience,
-        price: c.price,
-        discounted_price: c.discounted_price,
-        total_lessons: c.total_lessons,
-        thumbnail_url: c.thumbnail_url,
-        status: 'published' as const,
-        teacher_id: c.teacher?.id ?? 'c0a80101-0000-4000-8000-000000000010',
-        teacher_ids: [],
-        lesson_count: 0,
-        created_at: c.created_at,
-        updated_at: c.updated_at,
-      }))
+    if (error) {
+      console.error('[CourseRepository] listManagedCourses error:', error)
       return {
-        items: defaultItems,
-        total: defaultItems.length,
+        items: [],
+        total: 0,
         page: filters.page,
         limit: filters.limit,
-        totalPages: 1,
+        totalPages: 0,
       }
     }
 
@@ -269,13 +241,17 @@ export class CourseRepository {
   }
 
   // Đếm số bài giảng thật của từng khóa (qua bảng topics trung gian)
-  private async demBaiGiangTheoKhoa(courseIds: string[]): Promise<Map<string, number>> {
+  private async demBaiGiangTheoKhoa(courseIds: string[], onlyPublished = false): Promise<Map<string, number>> {
     const map = new Map<string, number>()
     if (courseIds.length === 0) return map
-    const { data, error } = await createSupabaseClient()
+    let query = this.clientFactory()
       .from('lessons')
       .select('id, topics!inner(course_id)')
       .in('topics.course_id', courseIds)
+    if (onlyPublished) {
+      query = query.eq('status', 'published')
+    }
+    const { data, error } = await query
     if (error) return map
     for (const row of data ?? []) {
       const cid = (row as { topics?: { course_id?: string } }).topics?.course_id
@@ -395,7 +371,7 @@ export class CourseRepository {
 
   async findEnrolledCourses(studentId: string): Promise<EnrolledCourseItem[]> {
     try {
-      const client = createSupabaseClient()
+      const client = this.clientFactory()
 
       // 1. Fetch active enrollments
       const { data: enrollments, error: enrollError } = await client
@@ -410,14 +386,17 @@ export class CourseRepository {
           code: enrollError.code,
           message: enrollError.message,
         })
+        throw new Error('Unable to query course enrollments', { cause: enrollError })
       }
 
       // 2. Fetch paid course orders
       const { data: orders, error: orderError } = await client
         .from('course_orders')
-        .select('course_id, status, paid_at, created_at')
+        .select('course_id, status, paid_at, created_at, amount, currency')
         .eq('student_id', studentId)
         .eq('status', 'paid')
+        .eq('currency', 'VND')
+        .gt('amount', 0)
 
       if (orderError) {
         console.error('[CourseRepository] findEnrolledCourses: orders query failed', {
@@ -425,6 +404,7 @@ export class CourseRepository {
           code: orderError.code,
           message: orderError.message,
         })
+        throw new Error('Unable to query paid course orders', { cause: orderError })
       }
 
       console.info('[CourseRepository] findEnrolledCourses: data fetched', {
@@ -432,13 +412,6 @@ export class CourseRepository {
         enrollmentCount: Array.isArray(enrollments) ? enrollments.length : 'null',
         paidOrderCount: Array.isArray(orders) ? orders.length : 'null',
       })
-
-      // 3. Fetch courses selected during registration
-      const { data: regDetails } = await client
-        .from('auth_registration_details')
-        .select('selected_course_ids')
-        .eq('user_id', studentId)
-        .maybeSingle()
 
       const courseIdMap = new Map<string, { status: 'in_progress' | 'completed'; enrolledAt: string }>()
 
@@ -458,18 +431,6 @@ export class CourseRepository {
             courseIdMap.set(cid, {
               status: 'in_progress',
               enrolledAt: String(o.paid_at || o.created_at || new Date().toISOString()),
-            })
-          }
-        }
-      }
-
-      if (regDetails && Array.isArray(regDetails.selected_course_ids)) {
-        for (const cid of regDetails.selected_course_ids) {
-          const strId = String(cid)
-          if (!courseIdMap.has(strId)) {
-            courseIdMap.set(strId, {
-              status: 'in_progress',
-              enrolledAt: new Date().toISOString(),
             })
           }
         }
@@ -498,29 +459,57 @@ export class CourseRepository {
         teacher?: CourseTeacher | CourseTeacher[] | null
       }> = []
 
-      if (!courseError && Array.isArray(courses) && courses.length > 0) {
+      if (!courseError && Array.isArray(courses)) {
         resolvedCourses = courses as unknown as typeof resolvedCourses
       } else {
-        resolvedCourses = DEFAULT_CATALOG_COURSES.filter(
-          (c) => courseIds.includes(c.id) || courseIds.includes(c.slug)
-        )
+        if (courseError) throw new Error('Unable to load enrolled course details', { cause: courseError })
+        resolvedCourses = []
       }
+
+      const completedCountByCourse = new Map<string, number>()
+      try {
+        const { data: progressRows } = await client
+          .from('lesson_progress')
+          .select('lesson_id, lessons!inner(topic_id, topics!inner(course_id))')
+          .eq('student_id', studentId)
+          .eq('is_completed', true)
+
+        if (Array.isArray(progressRows)) {
+          for (const row of progressRows) {
+            // @ts-expect-error joined relation types
+            const courseId = row?.lessons?.topics?.course_id
+            if (courseId) {
+              completedCountByCourse.set(String(courseId), (completedCountByCourse.get(String(courseId)) ?? 0) + 1)
+            }
+          }
+        }
+      } catch {
+        // ignore fallback
+      }
+
+      const realLessonCountMap = await this.demBaiGiangTheoKhoa(courseIds, true)
 
       return resolvedCourses.map((c) => {
         const meta = courseIdMap.get(String(c.id))
         const teacher = Array.isArray(c.teacher) ? c.teacher[0] ?? null : c.teacher
-        const totalLessons = Number(c.total_lessons) || 20
+        const realCount = realLessonCountMap.get(String(c.id)) ?? 0
+        const totalLessons = realCount
         const isCompleted = meta?.status === 'completed'
-        const completedLessons = isCompleted ? totalLessons : Math.min(totalLessons, 4)
-        const progressPercent = Math.round((completedLessons / totalLessons) * 100)
+        const realCompleted = completedCountByCourse.get(String(c.id))
+        const completedLessons = isCompleted
+          ? totalLessons
+          : realCompleted !== undefined
+          ? Math.min(totalLessons, realCompleted)
+          : 0
+        const progressPercent = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0
 
         return {
           id: String(c.id),
           course_id: String(c.id),
           title: String(c.title),
           slug: String(c.slug),
-          category: String(c.category || 'Tiếng Anh nền tảng'),
-          level: String(c.level || 'beginner'),
+          category: String(c.category || ''),
+          level: String(c.level || ''),
           thumbnail_url: c.thumbnail_url ? String(c.thumbnail_url) : null,
           total_lessons: totalLessons,
           completed_lessons: completedLessons,
@@ -534,11 +523,7 @@ export class CourseRepository {
                 full_name: String(teacher.full_name),
                 avatar_url: teacher.avatar_url ? String(teacher.avatar_url) : null,
               }
-            : {
-                id: 'c0a80101-0000-4000-8000-000000000010',
-                full_name: 'Trang English',
-                avatar_url: null,
-              },
+            : null,
         }
       })
     } catch (err) {
@@ -546,7 +531,7 @@ export class CourseRepository {
         studentId: studentId.slice(0, 8) + '…',
         error: err instanceof Error ? err.message : String(err),
       })
-      return []
+      throw new Error('Unable to load enrolled courses', { cause: err })
     }
   }
 }

@@ -13,12 +13,21 @@ export interface Course {
   teacher: CourseTeacher | null
 }
 
+export interface CourseCatalogLesson {
+  id: string
+  title: string
+  description: string | null
+  duration_seconds: number | null
+  video_url?: string | null
+  sort_order: number
+}
+
 export interface CourseCatalogTopic {
   id: string
   title: string
   description: string | null
   sort_order: number
-  lessons: { id: string; title: string; description: string | null; sort_order: number }[]
+  lessons: CourseCatalogLesson[]
 }
 
 export interface CourseCatalogEntry extends Omit<ManagedCourse, 'teacher_id' | 'status'> {

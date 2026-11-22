@@ -65,18 +65,14 @@ export class PaymentService {
     const amount = course.discounted_price ?? course.price
     if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error('Course price is invalid.')
     const sepay = env.sepayCheckoutMode === 'hosted' ? getSePayClient() : null
-    const existingOrder = await this.repository.findPendingOrderForStudentCourse(input.studentId, input.courseId)
-    let order = existingOrder
-    if (!order) {
-      const id = randomUUID()
-      order = await this.repository.createOrder({
-        ...input,
-        id,
-        amount,
-        transferContent: `DH${id}`,
-        expiredAt: new Date(Date.now() + ORDER_HOLD_MINUTES * 60 * 1000).toISOString(),
-      })
-    }
+    const id = randomUUID()
+    const order = await this.repository.createOrReusePendingOrder({
+      ...input,
+      id,
+      amount,
+      transferContent: `DH${id}`,
+      expiredAt: new Date(Date.now() + ORDER_HOLD_MINUTES * 60 * 1000).toISOString(),
+    })
     const checkoutFields = sepay?.checkout.initOneTimePaymentFields({
       operation: 'PURCHASE',
       payment_method: 'BANK_TRANSFER',

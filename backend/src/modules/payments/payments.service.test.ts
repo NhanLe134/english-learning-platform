@@ -282,7 +282,7 @@ describe('SePay payment confirmation', () => {
 })
 
 describe('SePay pending order reuse', () => {
-  it('reuses an existing pending order and its payment reference instead of creating another', async () => {
+  it('delegates pending order reuse to the atomic database operation', async () => {
     const original = {
       mode: env.sepayCheckoutMode,
       bankCode: env.sepayBankCode,
@@ -310,15 +310,14 @@ describe('SePay pending order reuse', () => {
         discounted_price: null,
       }),
       findStudentSummary: async () => ({ id: STUDENT_ID, fullName: 'Student', email: 'student@example.test', phoneNumber: null }),
-      findPendingOrderForStudentCourse: async () => pendingOrder,
-      createOrder: async () => { createCalls += 1; return pendingOrder },
+      createOrReusePendingOrder: async () => { createCalls += 1; return pendingOrder },
     }
     try {
       const result = await new PaymentService(repository as never).createOrder({ studentId: STUDENT_ID, courseId: COURSE_ID })
       assert.equal(result.order.id, pendingOrder.id)
       assert.equal(result.paymentInformation?.transferContent, pendingOrder.transfer_content)
       assert.equal(result.course.price, pendingOrder.amount)
-      assert.equal(createCalls, 0)
+      assert.equal(createCalls, 1)
     } finally {
       Object.assign(env, {
         sepayCheckoutMode: original.mode,

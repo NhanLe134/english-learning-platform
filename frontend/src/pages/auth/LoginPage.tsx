@@ -63,7 +63,7 @@ export function LoginPage() {
     setSession(session)
     // Admin redirect
     if (session.user.role === 'ADMIN') {
-      window.location.assign('/admin/users')
+      window.location.assign('/admin/dashboard')
       return
     }
     if (session.user.role === 'TEACHER') {
@@ -132,10 +132,11 @@ export function LoginPage() {
   return (
     <div className="login-page">
       <SiteHeader brandName="Your English Voice" />
-      <main className="login-shell">
-        <LoginVisual />
+      <main className="login-main-container">
+        <div className="login-shell">
+          <LoginVisual />
 
-        <section className="login-form-panel" aria-labelledby="login-title">
+          <section className="login-form-panel" aria-labelledby="login-title">
           <div className="login-card">
             <div className="login-brand">
               <span className="login-brand-icon"><BookOpen size={22} strokeWidth={2.4} /></span>
@@ -204,7 +205,7 @@ export function LoginPage() {
             </form>
 
             <p className="signup-prompt">
-              Chưa có tài khoản? <a href={`/register${window.location.search}`}>Đăng ký ngay</a>
+              Chưa có tài khoản? <a href="/courses">Đăng ký ngay</a>
             </p>
 
             <div className="login-security">
@@ -214,6 +215,7 @@ export function LoginPage() {
             </div>
           </div>
         </section>
+        </div>
       </main>
       <SiteFooter brandName="Your English Voice" />
     </div>

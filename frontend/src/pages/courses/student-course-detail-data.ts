@@ -342,6 +342,7 @@ export const STUDENT_COURSE_DETAIL: CourseDetailData = {
       id: 'att-3',
       name: 'Bai_Tap_Thao_Luan_Ghi_Am_Khau_Hinh.docx',
       size: '1.1 MB',
+      
       type: 'docx',
       downloadUrl: '#',
     },

@@ -1,5 +1,6 @@
 import type { ErrorRequestHandler } from 'express'
 import { AuthError } from '../modules/auth/auth.errors.js'
+import { CorsOriginError } from './corsOriginError.js'
 
 export const errorHandler: ErrorRequestHandler = (error: unknown, _request, response, _next) => {
   if (error instanceof AuthError) {
@@ -7,6 +8,11 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _request, resp
       message: error.message,
       ...(error.errorCode ? { code: error.errorCode } : {}),
     })
+    return
+  }
+
+  if (error instanceof CorsOriginError) {
+    response.status(403).json({ message: 'Request origin is not allowed' })
     return
   }
 

@@ -7,6 +7,18 @@ import { sepayApi } from '../checkout/sepayApi'
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || ''
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
 
+let googleSessionExchangeInFlight: Promise<import('./auth-api').AuthSession> | undefined
+
+function completeGoogleLoginOnce(token?: string): Promise<import('./auth-api').AuthSession> {
+  if (!googleSessionExchangeInFlight) {
+    googleSessionExchangeInFlight = authApi.completeGoogleLogin(token).catch((error) => {
+      googleSessionExchangeInFlight = undefined
+      throw error
+    })
+  }
+  return googleSessionExchangeInFlight
+}
+
 export function OAuthCallbackPage() {
   const { setSession } = useAuth()
   const [error, setError] = useState<string | null>(null)
@@ -19,7 +31,8 @@ export function OAuthCallbackPage() {
       try {
         const provider = new URLSearchParams(window.location.search).get('provider')
         if (provider === 'google') {
-          const appSession = await authApi.completeGoogleLogin()
+          const urlToken = new URLSearchParams(window.location.search).get('token')
+          const appSession = await completeGoogleLoginOnce(urlToken ?? undefined)
           if (!active) return
           setSession(appSession)
           let paymentOrderId = new URLSearchParams(window.location.search).get('paymentOrderId')
@@ -41,7 +54,7 @@ export function OAuthCallbackPage() {
           }
           window.location.replace(
             appSession.user.role === 'ADMIN'
-              ? '/admin/users'
+              ? '/admin/dashboard'
               : appSession.user.role === 'TEACHER'
                 ? '/teacher/dashboard'
                 : '/my-courses'
@@ -81,7 +94,9 @@ export function OAuthCallbackPage() {
         setSession(appSession)
 
         if (appSession.user.role === 'ADMIN') {
-          window.location.replace('/admin/users')
+          window.location.replace('/admin/dashboard')
+        } else if (appSession.user.role === 'TEACHER') {
+          window.location.replace('/teacher/dashboard')
         } else {
           window.location.replace('/my-courses')
         }

@@ -74,6 +74,7 @@ const sampleUser: UserProfile = {
   id: 'd9101527-381f-45cb-8c6e-ea724eeb34a4',
   email: 'learner@example.test',
   full_name: 'Learner',
+  avatar_url: 'https://example.test/learner-avatar.png',
   role: 'STUDENT',
   status: 'active',
   is_verified: true,
@@ -82,7 +83,8 @@ const sampleUser: UserProfile = {
 }
 
 class FakeUsers {
-  users = new Map([[sampleUser.id, sampleUser]])
+  users = new Map([[sampleUser.id, { ...sampleUser }]])
+  googleIdentityProfiles = new Map<string, string>()
   createdRole: string | undefined
   updatedPassword: string | undefined
   passwords = new Map([[sampleUser.id, 'Correct-Horse-Password!']])
@@ -117,13 +119,14 @@ class FakeUsers {
       email,
       full_name: fullName,
       phone_number: phoneNumber,
-      status: 'pending',
+      status: 'active',
       is_verified: false,
     }
     this.createdRegistrationDetails = { fullName, dateOfBirth, phoneNumber, selectedCourseIds }
     this.registrationDetails.set(user.id, this.createdRegistrationDetails)
     this.createdRole = user.role
     this.users.set(user.id, user)
+    this.passwords.set(user.id, password)
     return user
   }
 
@@ -150,6 +153,46 @@ class FakeUsers {
     return user
   }
 
+  async resolveGoogleIdentity(
+    email: string,
+    googleSubject: string,
+    fullName: string,
+    avatarUrl: string | null
+  ): Promise<
+    | { status: 'resolved'; user: UserProfile }
+    | { status: 'link_required' | 'conflict' }
+  > {
+    const normalizedEmail = email.trim().toLowerCase()
+    const linkedUserId = this.googleIdentityProfiles.get(googleSubject)
+    if (linkedUserId) {
+      const linkedUser = this.users.get(linkedUserId)
+      return linkedUser ? { status: 'resolved', user: linkedUser } : { status: 'conflict' }
+    }
+
+    const existing = [...this.users.values()].find((item) => item.email.toLowerCase() === normalizedEmail)
+    if (existing) {
+      if (existing.role === 'ADMIN') existing.is_verified = true
+      if (!existing.is_verified) return { status: 'link_required' }
+      if ([...this.googleIdentityProfiles.values()].includes(existing.id)) return { status: 'conflict' }
+      this.googleIdentityProfiles.set(googleSubject, existing.id)
+      if (!existing.avatar_url?.trim() && avatarUrl) existing.avatar_url = avatarUrl
+      return { status: 'resolved', user: existing }
+    }
+
+    const user: UserProfile = {
+      ...sampleUser,
+      id: randomUUID(),
+      email: normalizedEmail,
+      full_name: fullName,
+      avatar_url: avatarUrl,
+      status: 'pending',
+      is_verified: true,
+    }
+    this.users.set(user.id, user)
+    this.googleIdentityProfiles.set(googleSubject, user.id)
+    return { status: 'resolved', user }
+  }
+
   async authenticatePassword(email: string, password: string): Promise<UserProfile | null> {
     const user = [...this.users.values()].find((item) => item.email === email)
     return user && this.passwords.get(user.id) === password ? user : null
@@ -169,6 +212,13 @@ class FakeUsers {
 
   async findByEmail(email: string): Promise<UserProfile | null> {
     return [...this.users.values()].find((user) => user.email === email) ?? null
+  }
+
+  async setAvatarIfMissing(userId: string, avatarUrl: string): Promise<UserProfile | null> {
+    const user = this.users.get(userId)
+    if (!user) return null
+    if (!user.avatar_url) user.avatar_url = avatarUrl
+    return user
   }
 
   async rollbackStudentAccount(userId: string): Promise<void> {
@@ -274,6 +324,7 @@ class FakeStore {
     }
     stored.consumed = true
     user.is_verified = true
+    user.status = 'pending'
     return { status: 'verified', user }
   }
 
@@ -804,16 +855,18 @@ describe('authentication service', () => {
     assert.equal((await service.authenticateAccessToken(session.accessToken)).id, adminProfile.id)
   })
 
-  it('reports a missing Admin profile after Supabase accepted the password', async () => {
+  it('rejects an Admin login when no canonical profile exists', async () => {
     const { users, store } = setup()
     let databasePasswordLookups = 0
+    let adminPasswordLookups = 0
     users.authenticatePassword = async () => {
       databasePasswordLookups += 1
       return null
     }
     const adminAuth = {
       async authenticatePassword() {
-        throw new AuthError('profile missing', 403, undefined, 'ADMIN_PROFILE_MISSING')
+        adminPasswordLookups += 1
+        return null
       },
       async findByEmail() { return null },
       async findById() { return null },
@@ -822,9 +875,9 @@ describe('authentication service', () => {
     }
     const service = new AuthService(users, store, undefined, undefined, undefined, adminAuth)
 
-    const error = await expectAuthError(() => service.login('orphan-admin@example.test', 'Correct-Password-1'), 403)
-    assert.equal(error.errorCode, 'ADMIN_PROFILE_MISSING')
-    assert.equal(databasePasswordLookups, 0)
+    await expectAuthError(() => service.login('orphan-admin@example.test', 'Correct-Password-1'), 401)
+    assert.equal(adminPasswordLookups, 0)
+    assert.equal(databasePasswordLookups, 1)
   })
 
   it('distinguishes an unconfirmed Admin email from bad credentials', async () => {
@@ -984,7 +1037,7 @@ describe('authentication service', () => {
     )
   })
 
-  it('authenticates an active unverified Admin from PostgreSQL when Supabase Auth has no password account', async () => {
+  it('requires a verified Admin profile when PostgreSQL password authentication is used as fallback', async () => {
     const { service, users, store } = setup()
     const admin: UserProfile = {
       ...sampleUser,
@@ -1000,8 +1053,13 @@ describe('authentication service', () => {
       () => service.login(admin.email, 'wrong-password'),
       401
     )
+    await expectAuthError(
+      () => service.login(admin.email, 'Database-Admin-Password!'),
+      401
+    )
     assert.equal(store.sessions.size, 0)
 
+    admin.is_verified = true
     const tokens = await service.login(admin.email, 'Database-Admin-Password!')
     assert.equal(tokens.user.id, admin.id)
     assert.equal(tokens.user.role, 'ADMIN')
@@ -1240,7 +1298,10 @@ describe('authentication service', () => {
 
     await expectAuthError(() => service.forgotPassword(sampleUser.email), 503)
     assert.equal(users.updatedPassword, undefined)
-    assert.equal((await service.login(sampleUser.email, 'Correct-Horse-Password!')).user.email, sampleUser.email)
+    const session = await service.login(sampleUser.email, 'Correct-Horse-Password!')
+    assert.equal(session.user.email, sampleUser.email)
+    assert.equal(session.user.id, sampleUser.id)
+    assert.equal(session.user.avatar_url, sampleUser.avatar_url)
   })
 
   it('rejects malformed and tampered access tokens', async () => {
@@ -1263,6 +1324,8 @@ describe('authentication service', () => {
       },
     })
     assert.equal(result.user.email, sampleUser.email)
+    assert.equal(result.user.id, sampleUser.id)
+    assert.equal(result.user.avatar_url, sampleUser.avatar_url)
     assert.equal(result.user.role, 'STUDENT')
     assert.ok(result.accessToken)
     assert.ok(result.refreshToken)
@@ -1274,6 +1337,7 @@ describe('authentication service', () => {
       },
     })
     assert.equal(secondLogin.user.id, result.user.id)
+    assert.equal(secondLogin.user.avatar_url, sampleUser.avatar_url)
     assert.equal(users.users.size, 1)
 
     await expectAuthError(() => service.loginWithGoogle({
@@ -1289,6 +1353,85 @@ describe('authentication service', () => {
     assert.equal(newAccount?.status, 'pending')
   })
 
+  it('recovers a missing Google avatar and preserves the same profile across login methods', async () => {
+    const { service, users } = setup()
+    const existingUser = users.users.get(sampleUser.id)
+    assert.ok(existingUser)
+    existingUser.avatar_url = null
+
+    const googleSession = await service.loginWithGoogle({
+      developmentDemoUser: {
+        email: sampleUser.email,
+        name: 'A different provider display name',
+        avatarUrl: 'https://example.test/recovered-google-avatar.png',
+      },
+    })
+    assert.equal(googleSession.user.id, existingUser.id)
+    assert.equal(googleSession.user.email, existingUser.email)
+    assert.equal(googleSession.user.full_name, existingUser.full_name)
+    assert.equal(googleSession.user.role, existingUser.role)
+    assert.equal(googleSession.user.avatar_url, 'https://example.test/recovered-google-avatar.png')
+    assert.equal(googleSession.user.nickname, null)
+    assert.equal(googleSession.user.status, existingUser.status)
+    assert.equal(googleSession.user.is_verified, existingUser.is_verified)
+
+    const passwordSession = await service.login(sampleUser.email, 'Correct-Horse-Password!')
+    assert.equal(passwordSession.user.id, googleSession.user.id)
+    assert.equal(passwordSession.user.email, googleSession.user.email)
+    assert.equal(passwordSession.user.full_name, googleSession.user.full_name)
+    assert.equal(passwordSession.user.role, googleSession.user.role)
+    assert.equal(passwordSession.user.avatar_url, googleSession.user.avatar_url)
+    assert.equal(passwordSession.user.nickname, googleSession.user.nickname)
+    assert.equal(passwordSession.user.status, googleSession.user.status)
+    assert.equal(passwordSession.user.is_verified, googleSession.user.is_verified)
+  })
+
+  it('requires independent email verification before linking an existing profile to Google', async () => {
+    const { service, users, store } = setup()
+    const unverified = {
+      ...sampleUser,
+      id: randomUUID(),
+      email: 'pending-link@example.test',
+      is_verified: false,
+    }
+    users.users.set(unverified.id, unverified)
+
+    await expectAuthError(() => service.loginWithGoogle({
+      developmentDemoUser: {
+        email: unverified.email,
+        name: 'Google Name Must Not Replace Profile Name',
+      },
+    }), 409)
+
+    assert.equal(users.users.size, 2)
+    assert.equal(users.googleIdentityProfiles.size, 0)
+    assert.equal(store.sessions.size, 0)
+  })
+
+  it('does not let a previously stored Google identity bypass registration email verification', async () => {
+    const { service, users, store } = setup()
+    const unverified = {
+      ...sampleUser,
+      id: randomUUID(),
+      email: 'google-linked-unverified@example.test',
+      is_verified: false,
+    }
+    users.users.set(unverified.id, unverified)
+    const subject = `dev-google-${unverified.email}`
+    users.googleIdentityProfiles.set(subject, unverified.id)
+
+    await expectAuthError(() => service.loginWithGoogle({
+      developmentDemoUser: {
+        email: unverified.email,
+        name: 'Verified Google Provider',
+      },
+    }), 403)
+
+    assert.equal(users.users.size, 2)
+    assert.equal(users.googleIdentityProfiles.get(subject), unverified.id)
+    assert.equal(store.sessions.size, 0)
+  })
+
   it('returns verified Google profile details for the registration form', async () => {
     const { service } = setup()
     const identity = await service.getGoogleIdentity({
@@ -1301,6 +1444,93 @@ describe('authentication service', () => {
       email: 'new-google@example.test',
       fullName: 'New Google User',
       avatarUrl: null,
+      phoneNumber: null,
+      dateOfBirth: null,
     })
+  })
+
+  it('authenticates an existing ADMIN account with Google and preserves the canonical profile and ADMIN role', async () => {
+    const { service, users } = setup()
+    const adminUser: UserProfile = {
+      ...sampleUser,
+      id: randomUUID(),
+      email: 'superadmin@example.test',
+      full_name: 'Platform Administrator',
+      role: 'ADMIN',
+      status: 'active',
+      is_verified: true,
+    }
+    users.users.set(adminUser.id, adminUser)
+
+    const session = await service.loginWithGoogle({
+      developmentDemoUser: {
+        email: adminUser.email,
+        name: 'Administrator Google',
+      },
+    })
+
+    assert.equal(session.user.id, adminUser.id)
+    assert.equal(session.user.email, adminUser.email)
+    assert.equal(session.user.role, 'ADMIN')
+    assert.equal(session.user.status, 'active')
+
+    // Session authentication check (simulates /me)
+    const verifiedUser = await service.authenticateAccessToken(session.accessToken)
+    assert.equal(verifiedUser.id, adminUser.id)
+    assert.equal(verifiedUser.role, 'ADMIN')
+  })
+
+  it('authenticates an existing TEACHER account with Google and preserves TEACHER role and allowed status', async () => {
+    const { service, users } = setup()
+    const teacherUser: UserProfile = {
+      ...sampleUser,
+      id: randomUUID(),
+      email: 'teacher.kim@example.test',
+      full_name: 'Teacher Kim',
+      role: 'TEACHER',
+      status: 'active',
+      is_verified: true,
+    }
+    users.users.set(teacherUser.id, teacherUser)
+
+    const session = await service.loginWithGoogle({
+      developmentDemoUser: {
+        email: teacherUser.email,
+        name: 'Teacher Kim Google',
+      },
+    })
+
+    assert.equal(session.user.id, teacherUser.id)
+    assert.equal(session.user.email, teacherUser.email)
+    assert.equal(session.user.role, 'TEACHER')
+
+    const verifiedUser = await service.authenticateAccessToken(session.accessToken)
+    assert.equal(verifiedUser.id, teacherUser.id)
+    assert.equal(verifiedUser.role, 'TEACHER')
+  })
+
+  it('blocks pending unpaid student accounts from completing Google login until payment', async () => {
+    const { service, users } = setup()
+    const pendingStudent: UserProfile = {
+      ...sampleUser,
+      id: randomUUID(),
+      email: 'pending.student@example.test',
+      full_name: 'Pending Student',
+      role: 'STUDENT',
+      status: 'pending',
+      is_verified: true,
+    }
+    users.users.set(pendingStudent.id, pendingStudent)
+
+    await expectAuthError(
+      () =>
+        service.loginWithGoogle({
+          developmentDemoUser: {
+            email: pendingStudent.email,
+            name: 'Pending Student',
+          },
+        }),
+      403
+    )
   })
 })

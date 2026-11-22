@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { authorize } from '../../middlewares/authorize.js'
-import { authenticate } from '../auth/auth.middleware.js'
+import { authenticate, authenticateOptional } from '../auth/auth.middleware.js'
 import { courseController } from './course.controller.js'
 
 export const coursesRouter = Router()
@@ -34,6 +34,6 @@ coursesRouter.delete('/admin/:id', (request, response, next) =>
   courseController.deleteManagedCourse(request, response, next)
 )
 
-coursesRouter.get('/:identifier', (request, response, next) =>
+coursesRouter.get('/:identifier', authenticateOptional, (request, response, next) =>
   courseController.getPublishedCourse(request, response, next)
 )

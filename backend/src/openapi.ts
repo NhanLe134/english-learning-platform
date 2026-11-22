@@ -43,6 +43,7 @@ const tags = [
   { name: 'Courses', description: 'Public course selection and ADMIN-only course management.' },
   { name: 'User Management', description: 'ADMIN-only user administration endpoints.' },
   { name: 'Payment Management', description: 'ADMIN-only payment order management, reconciliation, and audit.' },
+  { name: 'Lessons', description: 'Curriculum topics, lessons, and learning material endpoints.' },
 ]
 
 const adminSecurity = [{ bearerAuth: [] }]
@@ -244,6 +245,104 @@ export const openApiDocument = {
           '200': jsonResponse('Course status updated', { $ref: '#/components/schemas/ManagedCourseResponse' }),
           ...adminResponses,
           '404': jsonResponse('Course not found', { $ref: '#/components/schemas/ErrorResponse' }),
+        },
+      },
+    },
+    '/api/lessons/courses/{courseId}/topics': {
+      get: {
+        tags: ['Lessons'],
+        summary: 'Get course curriculum and lessons',
+        description:
+          'Accessible to ADMIN, TEACHER, and enrolled STUDENTs. Students only receive published lessons. Course ID can be a UUID or course slug.',
+        operationId: 'getCourseCurriculum',
+        security: adminSecurity,
+        parameters: [
+          {
+            in: 'path',
+            name: 'courseId',
+            required: true,
+            schema: { type: 'string' },
+            description: 'Course UUID or URL slug.',
+          },
+        ],
+        responses: {
+          '200': jsonResponse('Course topics with ordered lessons and materials'),
+          '401': jsonResponse('Unauthorized', { $ref: '#/components/schemas/ErrorResponse' }),
+          '403': jsonResponse('Student is not enrolled or active in this course', {
+            $ref: '#/components/schemas/ErrorResponse',
+          }),
+          '404': jsonResponse('Course not found', { $ref: '#/components/schemas/ErrorResponse' }),
+        },
+      },
+    },
+    '/api/lessons/lessons/{lessonId}': {
+      get: {
+        tags: ['Lessons'],
+        summary: 'Get lesson details and materials',
+        description:
+          'Accessible to ADMIN, TEACHER, and enrolled STUDENTs. Students can only access published lessons for courses they are actively enrolled in.',
+        operationId: 'getLessonDetails',
+        security: adminSecurity,
+        parameters: [
+          {
+            in: 'path',
+            name: 'lessonId',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+            description: 'Lesson UUID.',
+          },
+        ],
+        responses: {
+          '200': jsonResponse('Lesson details including video URL and learning materials'),
+          '401': jsonResponse('Unauthorized', { $ref: '#/components/schemas/ErrorResponse' }),
+          '403': jsonResponse('Forbidden - unenrolled student', {
+            $ref: '#/components/schemas/ErrorResponse',
+          }),
+          '404': jsonResponse('Lesson not found or unpublished', {
+            $ref: '#/components/schemas/ErrorResponse',
+          }),
+        },
+      },
+    },
+    '/api/lessons/lessons/{lessonId}/progress': {
+      put: {
+        tags: ['Lessons'],
+        summary: 'Update student lesson watch progress',
+        description:
+          'Updates last_position_seconds, watched progress_percent (capped at 99 until exercise completion), and is_completed (set true only upon passing all exercises; completed lessons preserve completion and 100% progress). Optionally backfills missing duration_seconds.',
+        operationId: 'updateLessonProgress',
+        security: adminSecurity,
+        parameters: [
+          {
+            in: 'path',
+            name: 'lessonId',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+            description: 'Lesson UUID.',
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['last_position_seconds'],
+                properties: {
+                  last_position_seconds: { type: 'number', minimum: 0 },
+                  progress_percent: { type: 'number', minimum: 0, maximum: 100 },
+                  is_completed: { type: 'boolean' },
+                  duration_seconds: { type: 'number', minimum: 0 },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': jsonResponse('Updated lesson progress'),
+          '400': jsonResponse('Validation error', { $ref: '#/components/schemas/ErrorResponse' }),
+          '401': jsonResponse('Unauthorized', { $ref: '#/components/schemas/ErrorResponse' }),
+          '403': jsonResponse('Forbidden', { $ref: '#/components/schemas/ErrorResponse' }),
         },
       },
     },
@@ -466,7 +565,7 @@ export const openApiDocument = {
         tags: ['Authentication'],
         summary: 'Log in or sign up with a Google token',
         description:
-          'Verifies the Google identity, creates an active STUDENT profile when needed, and issues a session. Google identity verification is required.',
+          'Verifies the Google identity and resolves its stable provider subject to one canonical profile. An unlinked existing profile must have independently verified its email before it can be linked; a new Google profile remains pending until payment activates it.',
         operationId: 'loginWithGoogle',
         requestBody: jsonBody('GoogleAuthRequest'),
         responses: {
@@ -981,13 +1080,20 @@ export const openApiDocument = {
       },
       PublicUser: {
         type: 'object',
-        required: ['id', 'email', 'full_name', 'role'],
+        required: [
+          'id', 'email', 'full_name', 'nickname', 'phone_number', 'avatar_url',
+          'role', 'status', 'is_verified',
+        ],
         properties: {
           id: { type: 'string', format: 'uuid' },
           email: { type: 'string', format: 'email' },
           full_name: { type: 'string' },
+          nickname: { type: 'string', nullable: true },
           phone_number: { type: 'string', nullable: true },
+          avatar_url: { type: 'string', nullable: true },
           role: { type: 'string', enum: ['STUDENT', 'TEACHER', 'ADMIN'] },
+          status: { type: 'string', enum: ['active', 'locked', 'pending', 'deactivated'] },
+          is_verified: { type: 'boolean' },
         },
       },
       TokenResponse: {

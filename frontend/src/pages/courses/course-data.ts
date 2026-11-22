@@ -19,11 +19,21 @@ export interface CourseReference {
   iconType?: 'award' | 'users' | 'briefcase'
 }
 
+export interface CourseLessonItem {
+  id: string
+  title: string
+  description?: string | null
+  duration?: string
+  durationSeconds?: number | null
+  thumbnailUrl?: string | null
+  videoUrl?: string | null
+}
+
 export interface CourseModule {
   id: string
   title: string
   description: string
-  lessons: string[]
+  lessons: CourseLessonItem[]
 }
 
 export function createCheckoutUrl(course: CourseReference): string {

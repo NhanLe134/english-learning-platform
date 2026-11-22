@@ -41,3 +41,11 @@ export const authenticate: RequestHandler = (request, response, next) => {
     })
     .catch(next)
 }
+
+export const authenticateOptional: RequestHandler = (request, response, next) => {
+  if (!request.get('authorization')) {
+    next()
+    return
+  }
+  authenticate(request, response, next)
+}

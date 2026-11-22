@@ -4,7 +4,7 @@ export interface StudentProfile {
   name: string
   email?: string
   role: string
-  avatarUrl: string
+  avatarUrl: string | null
   streakDays: number
   weeklyGoalPercent: number
 }
@@ -68,132 +68,17 @@ export interface ImprovementIssue {
 }
 
 export const CURRENT_STUDENT: StudentProfile = {
-  name: 'Sarah',
-  email: 'sarah.student@yev.edu.vn',
-  role: 'Member',
-  avatarUrl: '/giaovien.jpg',
-  streakDays: 14,
-  weeklyGoalPercent: 68,
+  name: '',
+  email: '',
+  role: 'Học viên',
+  avatarUrl: null,
+  streakDays: 0,
+  weeklyGoalPercent: 0,
 }
 
-export const MY_COURSES: MyCourse[] = [
-  {
-    id: 'my-course-1',
-    title: 'Ngữ pháp Tiếng Anh',
-    slug: 'ngu-phap-tieng-anh',
-    levelBadge: 'Cơ bản - B1',
-    instructor: 'Trang English',
-    thumbnailUrl: '/giaovien2.jpg',
-    status: 'in_progress',
-    statusLabel: 'Đang Học',
-    lastActive: 'Cập nhật 2 giờ trước',
-    totalLessons: 12,
-    completedLessons: 4,
-    progressPercent: 33,
-    nextLesson: {
-      lessonNumber: 5,
-      title: 'Thì hiện tại hoàn thành',
-    },
-  },
-  {
-    id: 'my-course-2',
-    title: 'Phát âm Tiếng Anh',
-    slug: 'phat-am-tieng-anh',
-    levelBadge: 'Trung cấp - B2',
-    instructor: 'ThS. David Nguyen',
-    thumbnailUrl: '/david.png',
-    status: 'in_progress',
-    statusLabel: 'Đang Học',
-    lastActive: 'Hôm qua',
-    totalLessons: 16,
-    completedLessons: 12,
-    progressPercent: 75,
-    nextLesson: {
-      lessonNumber: 13,
-      title: 'Phát âm từ phức',
-    },
-  },
-  {
-    id: 'my-course-3',
-    title: 'Từ vựng Tiếng Anh',
-    slug: 'tu-vung-tieng-anh',
-    levelBadge: 'Cơ bản',
-    instructor: 'Trang English',
-    thumbnailUrl: '/giaovien.jpg',
-    status: 'completed',
-    statusLabel: 'Đã Hoàn Thành',
-    lastActive: '3 ngày trước',
-    totalLessons: 10,
-    completedLessons: 10,
-    progressPercent: 100,
-  },
-]
+export const MY_COURSES: MyCourse[] = []
 
-export const OTHER_COURSES: OtherCourse[] = [
-  {
-    id: 'c0a80101-0000-4000-8000-000000000001',
-    title: 'Phát âm Tiếng Anh',
-    slug: 'phat-am-tieng-anh',
-    tagBadge: 'TIẾNG ANH NỀN TẢNG',
-    levelBadge: 'CƠ BẢN',
-    levelBadgeColor: 'blue',
-    lessonsCount: 20,
-    totalHours: 25,
-    instructor: 'Đội ngũ Your English Voice',
-    instructorRole: 'Chuyên gia Ngữ điệu & Giọng nói',
-    thumbnailUrl: '/david.png',
-    features: [
-      'Chấm điểm phổ âm thanh AI',
-      'Sửa giọng chuẩn khẩu hình',
-      'Chữa lỗi phát âm 99% người Việt mắc phải',
-    ],
-    price: 1200000,
-    originalPrice: 1800000,
-    discountPercent: 33,
-  },
-  {
-    id: 'c0a80101-0000-4000-8000-000000000002',
-    title: 'Từ vựng Tiếng Anh',
-    slug: 'tu-vung-tieng-anh',
-    tagBadge: 'TIẾNG ANH NỀN TẢNG',
-    levelBadge: 'CƠ BẢN',
-    levelBadgeColor: 'blue',
-    lessonsCount: 20,
-    totalHours: 25,
-    instructor: 'Trang English',
-    instructorRole: 'Giảng viên chuyên môn',
-    thumbnailUrl: '/giaovien.jpg',
-    features: [
-      'Bộ từ vựng thiết yếu theo chủ đề',
-      'Phân biệt từ gần nghĩa trong giao tiếp',
-      'Tư duy học từ vựng dựa trên gốc từ',
-    ],
-    price: 1200000,
-    originalPrice: 1800000,
-    discountPercent: 33,
-  },
-  {
-    id: 'c0a80101-0000-4000-8000-000000000003',
-    title: 'Ngữ pháp Tiếng Anh',
-    slug: 'ngu-phap-tieng-anh',
-    tagBadge: 'TIẾNG ANH NỀN TẢNG',
-    levelBadge: 'CƠ BẢN',
-    levelBadgeColor: 'rose',
-    lessonsCount: 20,
-    totalHours: 25,
-    instructor: 'Trang English',
-    instructorRole: 'Giảng viên chuyên môn',
-    thumbnailUrl: '/giaovien2.jpg',
-    features: [
-      'Học các thì nhẹ nhàng & thực tế',
-      'Vận dụng ngữ cảnh giao tiếp công sở',
-      'Làm chủ cấu trúc câu & phản xạ',
-    ],
-    price: 1200000,
-    originalPrice: 1800000,
-    discountPercent: 33,
-  },
-]
+export const OTHER_COURSES: OtherCourse[] = []
 
 export const DAILY_WORD: DailyWordData = {
   date: 'Hôm nay, 14 Th11',

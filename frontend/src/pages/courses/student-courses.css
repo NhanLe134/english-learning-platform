@@ -26,13 +26,27 @@
 }
 
 .student-navbar-container {
-  max-width: 1280px;
+  max-width: 80rem;
+  width: 100%;
   margin: 0 auto;
   height: 64px;
-  padding: 0 24px;
+  padding-inline: 1rem;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+@media (min-width: 640px) {
+  .student-navbar-container {
+    padding-inline: 1.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .student-navbar-container {
+    padding-inline: 2rem;
+  }
 }
 
 .student-navbar-brand {
@@ -149,6 +163,15 @@
   border: 1.5px solid #E5E7EB;
 }
 
+.student-avatar-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #f3f4f6;
+  color: #374151;
+  font-weight: 700;
+}
+
 .student-user-info {
   display: flex;
   flex-direction: column;
@@ -172,11 +195,23 @@
    -------------------------------------------------------------------------- */
 .student-portal-content {
   flex: 1;
-  max-width: 1280px;
+  max-width: 80rem;
   width: 100%;
   margin: 0 auto;
-  padding: 28px 24px 60px;
+  padding: 28px 1rem 60px;
   box-sizing: border-box;
+}
+
+@media (min-width: 640px) {
+  .student-portal-content {
+    padding-inline: 1.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .student-portal-content {
+    padding-inline: 2rem;
+  }
 }
 
 /* --------------------------------------------------------------------------

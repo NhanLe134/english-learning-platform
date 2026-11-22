@@ -41,43 +41,21 @@ export class PaymentOrderRepository {
     }
   }
 
-  async createOrder(input: CreatePaymentOrderInput): Promise<PaymentOrder> {
-    const { data, error } = await createSupabaseClient()
-      .from('course_orders')
-      .insert({
-        id: input.id,
-        student_id: input.studentId,
-        course_id: input.courseId,
-        amount: input.amount,
-        currency: 'VND',
-        status: 'pending',
-        transfer_content: input.transferContent,
-        provider: 'sepay',
-        expired_at: input.expiredAt,
-      })
-      .select(COURSE_ORDER_COLUMNS)
-      .single()
-
-    if (error) throw new Error(`Unable to create course order: ${error.message}`, { cause: error })
-    return mapPaymentOrder(data as unknown as PaymentOrderRow)
-  }
-
-  async findPendingOrderForStudentCourse(studentId: string, courseId: string): Promise<PaymentOrder | null> {
-    const { data, error } = await this.clientFactory()
-      .from('course_orders')
-      .select(COURSE_ORDER_COLUMNS)
-      .eq('student_id', studentId)
-      .eq('course_id', courseId)
-      .eq('provider', 'sepay')
-      .eq('status', 'pending')
-      .gt('expired_at', new Date().toISOString())
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    if (error) throw new Error(`Unable to find an existing pending course order: ${error.message}`, { cause: error })
-    if (!data) return null
-    return mapPaymentOrder(data as unknown as PaymentOrderRow)
+  async createOrReusePendingOrder(input: CreatePaymentOrderInput): Promise<PaymentOrder> {
+    const { data, error } = await this.clientFactory().rpc('create_or_reuse_pending_course_order', {
+      p_order_id: input.id,
+      p_student_id: input.studentId,
+      p_course_id: input.courseId,
+      p_amount: input.amount,
+      p_transfer_content: input.transferContent,
+      p_expired_at: input.expiredAt,
+    })
+    if (error) throw new Error(`Unable to create or reuse pending course order: ${error.message}`, { cause: error })
+    const result = data as { order?: PaymentOrderRow } | null
+    if (!result?.order || result.order.status !== 'pending') {
+      throw new Error('Pending course order operation did not return a pending order')
+    }
+    return mapPaymentOrder(result.order)
   }
 
   async findPublishedCourse(courseId: string): Promise<{

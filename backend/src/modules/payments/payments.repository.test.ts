@@ -20,6 +20,37 @@ const orderRow = {
 }
 
 describe('atomic verified payment repository', () => {
+  it('creates or reuses pending orders through the serialized database operation', async () => {
+    let rpcName = ''
+    let rpcArgs: Record<string, unknown> | undefined
+    const client = {
+      rpc: async (name: string, args: Record<string, unknown>) => {
+        rpcName = name
+        rpcArgs = args
+        return { data: { order: { ...orderRow, status: 'pending' } }, error: null }
+      },
+    }
+    const repository = new PaymentOrderRepository(() => client as never)
+    const pending = await repository.createOrReusePendingOrder({
+      id: orderRow.id,
+      studentId: orderRow.student_id,
+      courseId: orderRow.course_id,
+      amount: 50000,
+      transferContent: 'DH-e2c195be',
+      expiredAt: '2026-11-20T00:15:00.000Z',
+    })
+    assert.equal(pending.status, 'pending')
+    assert.equal(rpcName, 'create_or_reuse_pending_course_order')
+    assert.deepEqual(rpcArgs, {
+      p_order_id: orderRow.id,
+      p_student_id: orderRow.student_id,
+      p_course_id: orderRow.course_id,
+      p_amount: 50000,
+      p_transfer_content: 'DH-e2c195be',
+      p_expired_at: '2026-11-20T00:15:00.000Z',
+    })
+  })
+
   it('calls the database transaction with verified references and returns only a paid order', async () => {
     let rpcName = ''
     let rpcArgs: Record<string, unknown> | undefined

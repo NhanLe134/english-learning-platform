@@ -149,7 +149,7 @@ export function SiteHeader({ activeTab: explicitActiveTab, brandName = 'Your Eng
         {/* Actions */}
         <div className="flex items-center gap-3">
           <a
-            href="/register"
+            href={isLoginPage ? '/courses' : '/register'}
             className="rounded-full bg-brand-600 px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-brand-700"
           >
             Đăng ký
@@ -236,7 +236,7 @@ export function SiteHeader({ activeTab: explicitActiveTab, brandName = 'Your Eng
               {user ? `Đăng xuất (${user.email})` : isLoginPage ? 'Đang ở trang đăng nhập' : 'Đăng nhập'}
             </button>
             <a
-              href="/register"
+              href={isLoginPage ? '/courses' : '/register'}
               onClick={() => setMenuOpen(false)}
               className="flex items-center justify-center rounded-xl bg-brand-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-700"
             >

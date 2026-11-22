@@ -1,5 +1,5 @@
-import React from 'react'
-import { Clock3, CalendarCheck, Sparkles, BarChart2, MessageSquare, FileText } from 'lucide-react'
+import React, { useState } from 'react'
+import { Clock3, CalendarCheck, Sparkles, BarChart2, MessageSquare, FileText, BookOpen } from 'lucide-react'
 import type { OtherCourse } from '../student-courses-data'
 
 interface OtherCourseCardProps {
@@ -11,6 +11,7 @@ export const OtherCourseCard: React.FC<OtherCourseCardProps> = ({
   course,
   onEnroll,
 }) => {
+  const [imageError, setImageError] = useState(false)
   const formatPrice = (amount: number) => {
     return `${amount.toLocaleString('vi-VN')}đ`
   }
@@ -32,7 +33,7 @@ export const OtherCourseCard: React.FC<OtherCourseCardProps> = ({
     if (onEnroll) {
       onEnroll(course)
     } else {
-      window.location.assign(`/checkout?courseId=${encodeURIComponent(course.slug)}`)
+      window.location.assign(`/checkout?courseId=${encodeURIComponent(course.id || course.slug)}&slug=${encodeURIComponent(course.slug)}`)
     }
   }
 
@@ -40,18 +41,27 @@ export const OtherCourseCard: React.FC<OtherCourseCardProps> = ({
     <article className="other-course-card">
       {/* Thumbnail Box */}
       <div className="other-course-thumb-box">
-        <img
-          src={course.thumbnailUrl}
-          alt={course.title}
-          loading="lazy"
-        />
-        <span
-          className={`other-course-category-tag ${
-            course.tagBadge.includes('Tech') ? 'dark' : ''
-          }`}
-        >
-          {course.tagBadge}
-        </span>
+        {course.thumbnailUrl && !imageError ? (
+          <img
+            src={course.thumbnailUrl}
+            alt={course.title}
+            loading="lazy"
+            onError={() => setImageError(true)}
+          />
+        ) : (
+          <div className="flex size-full items-center justify-center bg-brand-50 text-brand-600">
+            <BookOpen size={36} />
+          </div>
+        )}
+        {course.tagBadge && (
+          <span
+            className={`other-course-category-tag ${
+              course.tagBadge.includes('Tech') ? 'dark' : ''
+            }`}
+          >
+            {course.tagBadge}
+          </span>
+        )}
       </div>
 
       {/* Content Column */}
@@ -59,13 +69,17 @@ export const OtherCourseCard: React.FC<OtherCourseCardProps> = ({
         <div>
           {/* Metadata Top Row */}
           <div className="other-course-meta-top">
-            <span className={`level-badge-pill ${course.levelBadgeColor}`}>
-              {course.levelBadge}
-            </span>
-            <span className="other-course-duration">
-              <Clock3 size={13} />
-              {course.lessonsCount} bài học • {course.totalHours} giờ
-            </span>
+            {course.levelBadge && (
+              <span className={`level-badge-pill ${course.levelBadgeColor}`}>
+                {course.levelBadge}
+              </span>
+            )}
+            {course.lessonsCount > 0 && (
+              <span className="other-course-duration">
+                <Clock3 size={13} />
+                {course.lessonsCount} bài học{course.totalHours > 0 ? ` • ${course.totalHours} giờ` : ''}
+              </span>
+            )}
           </div>
 
           {/* Title */}
@@ -77,27 +91,38 @@ export const OtherCourseCard: React.FC<OtherCourseCardProps> = ({
           </h3>
 
           {/* Instructor */}
-          <div className="other-course-instructor">
-            👤 <strong>{course.instructor}</strong> ({course.instructorRole})
-          </div>
+          {course.instructor && (
+            <div className="other-course-instructor">
+              👤 <strong>{course.instructor}</strong>
+              {course.instructorRole ? ` (${course.instructorRole})` : ''}
+            </div>
+          )}
 
           {/* Feature Highlights List */}
-          <div className="other-course-features-list">
-            {course.features.map((feature, idx) => (
-              <span key={idx} className="feature-pill-tag">
-                {getFeatureIcon(feature)}
-                <span>{feature}</span>
-              </span>
-            ))}
-          </div>
+          {course.features && course.features.length > 0 && (
+            <div className="other-course-features-list">
+              {course.features.map((feature, idx) => (
+                <span key={idx} className="feature-pill-tag">
+                  {getFeatureIcon(feature)}
+                  <span>{feature}</span>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Bottom Price & CTA */}
         <div className="other-course-bottom-row">
           <div className="other-course-price-group">
             <span className="sale-price">{formatPrice(course.price)}</span>
-            <span className="original-price">{formatPrice(course.originalPrice)}</span>
-            <span className="discount-badge">-{course.discountPercent}%</span>
+            {course.originalPrice > course.price && (
+              <>
+                <span className="original-price">{formatPrice(course.originalPrice)}</span>
+                {course.discountPercent > 0 && (
+                  <span className="discount-badge">-{course.discountPercent}%</span>
+                )}
+              </>
+            )}
           </div>
 
           <button

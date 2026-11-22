@@ -28,10 +28,10 @@ function buildEmbedUrl(url: string): string | null {
         parsed.pathname === '/watch'
           ? parsed.searchParams.get('v')
           : parsed.pathname.split('/').filter(Boolean).pop()
-      if (id) return `https://www.youtube.com/embed/${id}`
+      if (id) return `https://www.youtube.com/embed/${id}?enablejsapi=1&controls=0&modestbranding=1&rel=0&iv_load_policy=3&fs=0&disablekb=1&playsinline=1`
     }
     if (parsed.hostname === 'youtu.be') {
-      return `https://www.youtube.com/embed${parsed.pathname}`
+      return `https://www.youtube.com/embed${parsed.pathname}?enablejsapi=1&controls=0&modestbranding=1&rel=0&iv_load_policy=3&fs=0&disablekb=1&playsinline=1`
     }
     if (parsed.hostname.includes('drive.google.com')) {
       const match = parsed.pathname.match(/\/file\/d\/([^/]+)/)

@@ -4,10 +4,23 @@
 
 .checkout-success-main {
   box-sizing: border-box;
-  width: min(1120px, calc(100% - 64px));
+  width: 100%;
+  max-width: 80rem;
   flex: 1;
-  margin: 0 auto;
-  padding: 28px 0 34px;
+  margin-inline: auto;
+  padding: 28px 1rem 34px;
+}
+
+@media (min-width: 640px) {
+  .checkout-success-main {
+    padding-inline: 1.5rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .checkout-success-main {
+    padding-inline: 2rem;
+  }
 }
 
 .checkout-success-missing {
@@ -472,12 +485,11 @@
 .payment-result-course-summary small { color: #66758a; }
 
 @media (max-width: 820px) {
-  .checkout-success-main { width: calc(100% - 38px); }
   .payment-success-course-overview { grid-template-columns: minmax(140px, .75fr) minmax(0, 1.4fr); gap: 15px; }
 }
 
 @media (max-width: 640px) {
-  .checkout-success-main { width: calc(100% - 28px); padding: 16px 0 24px; }
+  .checkout-success-main { padding-block: 16px 24px; }
   .payment-success-empty { padding: 24px 16px; }
   .payment-success-details { padding: 12px; }
   .payment-success-metadata { grid-template-columns: minmax(0, 1fr); gap: 8px; }
@@ -491,7 +503,6 @@
 }
 
 @media (max-width: 390px) {
-  .checkout-success-main { width: calc(100% - 20px); }
   .payment-success-empty { padding: 20px 12px; }
   .payment-success-details { padding: 10px; }
   .payment-success-course > img,

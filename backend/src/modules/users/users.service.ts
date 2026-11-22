@@ -3,6 +3,10 @@ import type { CreateUserDto, PaginatedResult, UserProfile, UserQueryParams } fro
 import { env } from '../../config/env.js'
 
 export class UsersService {
+  async setAvatarIfMissing(userId: string, avatarUrl: string): Promise<UserProfile | null> {
+    return usersRepository.setAvatarIfMissing(userId, avatarUrl)
+  }
+
   /**
    * Get list of users with filtering, search, and pagination
    */

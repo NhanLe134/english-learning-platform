@@ -34,6 +34,16 @@ export class LessonsController {
     }
   }
 
+  async getLesson(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const user = getAuthUser(res)
+      const lesson = await lessonsService.getLesson(String(req.params.lessonId || ''), user)
+      res.status(200).json({ success: true, data: lesson })
+    } catch (error) {
+      handleError(error, res, next)
+    }
+  }
+
   async createTopic(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const user = getAuthUser(res)
@@ -62,6 +72,18 @@ export class LessonsController {
       const user = getAuthUser(res)
       const lessonId = String(req.params.lessonId || '')
       const result = await lessonsService.updateLesson(lessonId, user, req.body)
+      res.status(200).json({ success: true, data: result })
+    } catch (error) {
+      handleError(error, res, next)
+    }
+  }
+
+  // Cập nhật tiến độ xem video bài học của học viên
+  async updateProgress(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const user = getAuthUser(res)
+      const lessonId = String(req.params.lessonId || '')
+      const result = await lessonsService.updateLessonProgress(lessonId, user, req.body)
       res.status(200).json({ success: true, data: result })
     } catch (error) {
       handleError(error, res, next)

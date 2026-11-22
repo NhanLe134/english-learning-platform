@@ -23,11 +23,16 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   const { user, logout, reportError } = useAuth()
   const [loggingOut, setLoggingOut] = useState(false)
   const [profileMenuOpen, setProfileMenuOpen] = useState(false)
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null)
   const profileRef = useRef<HTMLDivElement>(null)
   const email = user?.email ?? ''
-  const displayName = email
-    ? (email.split('@')[0] ?? '').replace(/[._-]+/g, ' ').replace(/^./, (letter) => letter.toUpperCase())
-    : 'Quản trị viên'
+  const displayName =
+    user?.fullName?.trim() ||
+    (email
+      ? (email.split('@')[0] ?? '').replace(/[._-]+/g, ' ').replace(/^./, (letter) => letter.toUpperCase())
+      : 'Quản trị viên')
+  const avatarUrl = user?.avatarUrl?.trim() || null
+  const showAvatarImage = Boolean(avatarUrl && failedAvatarUrl !== avatarUrl)
 
   useEffect(() => {
     if (!profileMenuOpen) return
@@ -114,9 +119,19 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             aria-label="Mở menu tài khoản"
             onClick={() => setProfileMenuOpen((open) => !open)}
           >
-            <span className="admin-avatar admin-avatar-initial" aria-hidden="true">
-              {displayName.charAt(0).toUpperCase()}
-            </span>
+            {showAvatarImage && avatarUrl ? (
+              <img
+                src={avatarUrl}
+                alt={displayName}
+                className="admin-avatar"
+                referrerPolicy="no-referrer"
+                onError={() => setFailedAvatarUrl(avatarUrl)}
+              />
+            ) : (
+              <span className="admin-avatar admin-avatar-initial" aria-hidden="true">
+                {displayName.charAt(0).toUpperCase()}
+              </span>
+            )}
             <span className="admin-info">
               <span className="admin-name">{displayName}</span>
               <span className="admin-role">{user?.role ?? 'ADMIN'}</span>

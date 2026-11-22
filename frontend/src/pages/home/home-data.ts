@@ -1,10 +1,7 @@
 import type { ComponentType } from 'react'
 import {
-  BookOpen,
   ListChecks,
-  Mic,
   MonitorSmartphone,
-  NotebookPen,
   Sprout,
   UserCheck,
 } from 'lucide-react'
@@ -22,48 +19,7 @@ export interface FeaturedCourse {
   popular?: boolean
 }
 
-export const featuredCourses: FeaturedCourse[] = [
-  {
-    id: 'phat-am',
-    tag: 'Tiếng Anh nền tảng',
-    title: 'Phát âm tiếng Anh',
-    description:
-      'Tìm được chất giọng tiếng Anh của mình. Chữa lỗi phát âm 99% người Việt mắc phải. Các mẹo phát âm rõ ràng, giao tiếp hiệu quả.',
-    icon: Mic,
-    duration: 'Thời lượng: 20 video',
-    benefits: [
-      'Có bài tập thực hành sau mỗi video',
-      '1 buổi tư vấn 30 phút sau khi hoàn thành khoá học',
-    ],
-  },
-  {
-    id: 'tu-vung',
-    tag: 'Tiếng Anh nền tảng',
-    title: 'Từ vựng tiếng Anh',
-    description:
-      'Nắm vững loạt từ vựng thiết yếu cho các chủ đề thường gặp. Phân biệt các từ gần nghĩa. Xây dựng tư duy học từ vựng dựa trên gốc từ.',
-    icon: BookOpen,
-    duration: 'Thời lượng: 20 video',
-    benefits: [
-      'Bài tập thực hành sau mỗi video',
-      '1 buổi tư vấn 30 phút sau khi hoàn thành khoá học',
-    ],
-    popular: true,
-  },
-  {
-    id: 'ngu-phap',
-    tag: 'Tiếng Anh nền tảng',
-    title: 'Ngữ pháp tiếng Anh',
-    description:
-      'Học các thì một cách nhẹ nhàng và vận dụng ngay trong ngữ cảnh thích hợp. Hiểu lý do của những quy tắc và ngoại lệ.',
-    icon: NotebookPen,
-    duration: 'Thời lượng: 20 video',
-    benefits: [
-      'Bài tập thực hành sau mỗi video',
-      '1 buổi tư vấn 30 phút sau khi hoàn thành khoá học',
-    ],
-  },
-]
+export const featuredCourses: FeaturedCourse[] = []
 
 /* ---------- Section: Tủ Sách Tự Học ---------- */
 

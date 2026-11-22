@@ -1,6 +1,11 @@
 import { LessonRequestError } from './lessons.errors.js'
 import { LessonsRepository, UUID_PATTERN } from './lessons.repository.js'
-import type { AuthenticatedUser, LessonItem, LessonTopic } from './lessons.types.js'
+import type {
+  AuthenticatedUser,
+  LessonItem,
+  LessonProgressItem,
+  LessonTopic,
+} from './lessons.types.js'
 
 const TOPIC_TITLE_MAX = 200
 const LESSON_TITLE_MAX = 200
@@ -13,20 +18,31 @@ export class LessonsService {
     this.repo = repo
   }
 
-  private async assertCourseAccess(courseId: string, user: AuthenticatedUser): Promise<void> {
-    if (!UUID_PATTERN.test(courseId)) {
-      throw new LessonRequestError('Course ID must be a valid UUID.', 400)
+  private async assertCourseAccess(
+    courseIdentifier: string,
+    user: AuthenticatedUser
+  ): Promise<{ courseId: string; courseTitle: string }> {
+    const trimmed = typeof courseIdentifier === 'string' ? courseIdentifier.trim() : ''
+    if (!trimmed) {
+      throw new LessonRequestError('Course identifier is required.', 400)
     }
-    const access = await this.repo.findCourseAccess(courseId, user)
+    const access = await this.repo.findCourseAccess(trimmed, user)
     if (!access.exists) {
       throw new LessonRequestError('Course not found.', 404)
     }
     if (!access.allowed) {
+      if (user.role === 'STUDENT') {
+        throw new LessonRequestError(
+          'Học viên chưa đăng ký hoặc chưa hoàn tất thanh toán khóa học này.',
+          403
+        )
+      }
       throw new LessonRequestError(
         'Bạn chưa được phân công phụ trách khóa học này.',
         403
       )
     }
+    return { courseId: access.courseId, courseTitle: access.courseTitle }
   }
 
   private validateTitle(value: unknown, field: string, max: number): string {
@@ -68,10 +84,105 @@ export class LessonsService {
     throw new LessonRequestError('Status must be draft or published.', 400)
   }
 
-  /** Danh sách chủ đề + bài giảng của một khóa (gồm cả bản nháp) */
-  async getTopicsForCourse(courseId: string, user: AuthenticatedUser): Promise<LessonTopic[]> {
-    await this.assertCourseAccess(courseId, user)
-    return this.repo.findTopicsWithLessons(courseId)
+  /** Danh sách chủ đề + bài giảng của một khóa (Admin/Teacher thấy cả draft; Student chỉ thấy published) */
+  async getTopicsForCourse(courseIdentifier: string, user: AuthenticatedUser): Promise<LessonTopic[]> {
+    const access = await this.assertCourseAccess(courseIdentifier, user)
+    const publishedOnly = user.role === 'STUDENT'
+    const studentId = user.role === 'STUDENT' ? user.id : undefined
+    return this.repo.findTopicsWithLessons(access.courseId, publishedOnly, studentId)
+  }
+
+  /** Chi tiết một bài giảng kèm tài liệu đính kèm */
+  async getLesson(lessonId: string, user: AuthenticatedUser): Promise<LessonItem> {
+    if (!UUID_PATTERN.test(lessonId)) {
+      throw new LessonRequestError('Lesson ID must be a valid UUID.', 400)
+    }
+    const studentId = user.role === 'STUDENT' ? user.id : undefined
+    const result = await this.repo.findLessonWithCourse(lessonId, studentId)
+    if (!result) {
+      throw new LessonRequestError('Lesson not found.', 404)
+    }
+    await this.assertCourseAccess(result.courseId, user)
+    if (user.role === 'STUDENT' && result.lesson.status !== 'published') {
+      throw new LessonRequestError('Lesson not found.', 404)
+    }
+    return result.lesson
+  }
+
+  /** Cập nhật tiến độ xem video bài giảng */
+  async updateLessonProgress(
+    lessonId: string,
+    user: AuthenticatedUser,
+    value: unknown
+  ): Promise<LessonProgressItem> {
+    if (!UUID_PATTERN.test(lessonId)) {
+      throw new LessonRequestError('Lesson ID must be a valid UUID.', 400)
+    }
+    const result = await this.repo.findLessonWithCourse(lessonId)
+    if (!result) {
+      throw new LessonRequestError('Lesson not found.', 404)
+    }
+    await this.assertCourseAccess(result.courseId, user)
+    if (user.role === 'STUDENT' && result.lesson.status !== 'published') {
+      throw new LessonRequestError('Lesson not found.', 404)
+    }
+
+    if (!value || typeof value !== 'object') {
+      throw new LessonRequestError('Progress details are required.', 400)
+    }
+    const body = value as Record<string, unknown>
+    const lastPosition = Number(body.last_position_seconds ?? 0)
+    if (!Number.isFinite(lastPosition) || lastPosition < 0) {
+      throw new LessonRequestError('last_position_seconds must be a non-negative number.', 400)
+    }
+    const flooredPosition = Math.floor(lastPosition)
+
+    const existing = await this.repo.findLessonProgress(lessonId, user.id)
+
+    let validDuration: number | undefined
+    if ('duration_seconds' in body && body.duration_seconds !== undefined && body.duration_seconds !== null && body.duration_seconds !== '') {
+      const dur = Number(body.duration_seconds)
+      if (Number.isFinite(dur) && dur > 0) {
+        validDuration = Math.round(dur)
+        if (!result.lesson.duration_seconds || result.lesson.duration_seconds <= 0) {
+          await this.repo.updateLessonDuration(lessonId, validDuration).catch(() => {})
+        }
+      }
+    }
+    const effectiveDuration =
+      result.lesson.duration_seconds && result.lesson.duration_seconds > 0
+        ? result.lesson.duration_seconds
+        : (validDuration ?? 0)
+
+    if ('is_completed' in body && body.is_completed !== undefined && typeof body.is_completed !== 'boolean') {
+      throw new LessonRequestError('is_completed must be a boolean.', 400)
+    }
+    const isCompleted = Boolean(existing?.is_completed) || body.is_completed === true
+
+    let incomingPercent: number
+    if ('progress_percent' in body && body.progress_percent !== undefined) {
+      const pct = Number(body.progress_percent)
+      if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+        throw new LessonRequestError('progress_percent must be a number between 0 and 100.', 400)
+      }
+      incomingPercent = pct
+    } else if (effectiveDuration > 0) {
+      incomingPercent = Math.min(99, Math.round((flooredPosition / effectiveDuration) * 100))
+    } else {
+      incomingPercent = Number(existing?.progress_percent ?? 0)
+    }
+
+    const progressPercent = isCompleted
+      ? 100
+      : Math.min(99, Math.max(Number(existing?.progress_percent ?? 0), incomingPercent))
+
+    return this.repo.upsertLessonProgress({
+      lesson_id: lessonId,
+      student_id: user.id,
+      last_position_seconds: flooredPosition,
+      progress_percent: progressPercent,
+      is_completed: isCompleted,
+    })
   }
 
   /** Tạo chủ đề mới cho khóa học */
@@ -80,15 +191,15 @@ export class LessonsService {
     user: AuthenticatedUser,
     value: unknown
   ): Promise<LessonTopic> {
-    await this.assertCourseAccess(courseId, user)
+    const access = await this.assertCourseAccess(courseId, user)
     if (!value || typeof value !== 'object') {
       throw new LessonRequestError('Topic details are required.', 400)
     }
     const body = value as Record<string, unknown>
     const title = this.validateTitle(body.title, 'Topic title', TOPIC_TITLE_MAX)
     const description = this.validateDescription(body.description)
-    const sortOrder = await this.repo.nextTopicSortOrder(courseId)
-    return this.repo.insertTopic({ course_id: courseId, title, description, sort_order: sortOrder })
+    const sortOrder = await this.repo.nextTopicSortOrder(access.courseId)
+    return this.repo.insertTopic({ course_id: access.courseId, title, description, sort_order: sortOrder })
   }
 
   /** Tạo bài giảng mới trong một chủ đề */

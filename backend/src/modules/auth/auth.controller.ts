@@ -187,10 +187,10 @@ export class AuthController {
       const tokens = await authService.loginWithGoogle({ accessToken })
       setRefreshCookie(response, tokens.refreshToken, true)
       setGoogleAccessHandoffCookie(response, tokens.accessToken)
-      response.redirect(
-        302,
-        new URL('/auth/callback?provider=google', env.frontendUrl).toString()
-      )
+      const redirectUrl = new URL('/auth/callback', env.frontendUrl)
+      redirectUrl.searchParams.set('provider', 'google')
+      redirectUrl.searchParams.set('token', tokens.accessToken)
+      response.redirect(302, redirectUrl.toString())
     } catch (error) {
       next(error)
     }
@@ -269,7 +269,9 @@ export class AuthController {
   }
 
   async consumeGoogleLogin(request: Request, response: Response, next: NextFunction): Promise<void> {
-    const accessToken = googleAccessHandoffCookie(request)
+    const accessToken =
+      (typeof request.body?.accessToken === 'string' && request.body.accessToken.trim()) ||
+      googleAccessHandoffCookie(request)
     clearGoogleAccessHandoffCookie(response)
     try {
       if (!accessToken) throw new AuthError('Google login handoff is missing or expired.', 401)
@@ -282,8 +284,12 @@ export class AuthController {
             id: user.id,
             email: user.email,
             full_name: user.full_name,
-            phone_number: user.phone_number,
+            nickname: user.nickname ?? null,
+            phone_number: user.phone_number ?? null,
+            avatar_url: user.avatar_url ?? null,
             role: user.role,
+            status: user.status,
+            is_verified: user.is_verified ?? false,
           },
         },
       })
@@ -363,7 +369,17 @@ export class AuthController {
 
     response.status(200).json({
       success: true,
-      data: { id: user.id, email: user.email, role: user.role },
+      data: {
+        id: user.id,
+        email: user.email,
+        full_name: user.full_name,
+        nickname: user.nickname ?? null,
+        phone_number: user.phone_number ?? null,
+        avatar_url: user.avatar_url ?? null,
+        role: user.role,
+        status: user.status,
+        is_verified: user.is_verified ?? false,
+      },
     })
   }
 }

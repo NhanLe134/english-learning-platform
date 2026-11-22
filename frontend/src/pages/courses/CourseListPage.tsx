@@ -4,12 +4,13 @@ import {
   Award,
   Briefcase,
   CalendarDays,
-  CheckCircle2,
   Clock3,
   GraduationCap,
   LoaderCircle,
   Search,
+  Sparkles,
   Users,
+  X,
 } from 'lucide-react'
 import { SiteHeader } from '../../components/layout/SiteHeader'
 import { SiteFooter } from '../../components/layout/SiteFooter'
@@ -76,7 +77,7 @@ function CourseCard({ course }: { course: CourseReference }) {
         <div className="public-course-card-copy">
           <div className="public-course-meta">
             <span>{course.level || course.category}</span>
-            <span className="public-course-lesson-count"><CalendarDays size={14} /> {course.totalLessons} buổi học</span>
+            <span className="public-course-lesson-count"><CalendarDays size={14} /> {course.totalLessons} bài học</span>
           </div>
           <h2>{course.title}</h2>
           <p>{course.description}</p>
@@ -90,10 +91,12 @@ function CourseCard({ course }: { course: CourseReference }) {
               ))}
             </ul>
           )}
-          <div className="public-course-instructor-row">
-            <span className="public-course-instructor-avatar" aria-hidden="true">{instructorInitials}</span>
-            <span className="public-course-instructor-name">{course.instructor}</span>
-          </div>
+          {course.instructor && course.instructor.trim() && (
+            <div className="public-course-instructor-row">
+              <span className="public-course-instructor-avatar" aria-hidden="true">{instructorInitials}</span>
+              <span className="public-course-instructor-name">{course.instructor}</span>
+            </div>
+          )}
           <div className="public-course-card-bottom">
             <span className="public-course-price-group">
               {course.originalPrice > course.price && <del>{originalPrice}</del>}
@@ -111,9 +114,9 @@ export function CourseListPage() {
   const [courses, setCourses] = useState<CourseReference[]>([])
   const [query, setQuery] = useState('')
   const [submittedQuery, setSubmittedQuery] = useState('')
-  const [guaranteedOnly, setGuaranteedOnly] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [showPromoBanner, setShowPromoBanner] = useState(true)
 
   async function loadCourses() {
     try {
@@ -142,10 +145,9 @@ export function CourseListPage() {
     return courses.filter((course) => {
       const text = `${course.title} ${course.category} ${course.instructor} ${course.description} ${course.details} ${course.targetAudience}`.toLocaleLowerCase('vi')
       if (normalizedQuery && !text.includes(normalizedQuery)) return false
-      if (guaranteedOnly && !/cam kết|guarantee/i.test(`${course.description} ${course.targetAudience}`)) return false
       return true
     })
-  }, [courses, guaranteedOnly, submittedQuery])
+  }, [courses, submittedQuery])
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -158,6 +160,27 @@ export function CourseListPage() {
       <main className="public-course-main">
         <section className="public-course-hero">
           <div className="public-course-container">
+            {showPromoBanner && (
+              <div className="public-course-promo-banner" role="region" aria-label="Thông báo khám phá khóa học">
+                <span className="public-course-promo-icon" aria-hidden="true">
+                  <Sparkles size={20} />
+                </span>
+                <div className="public-course-promo-copy">
+                  <strong>Khám phá khóa học – Mở rộng cơ hội học tập!</strong>
+                  <p>
+                    Lựa chọn và đăng ký khóa học ngay hôm nay để mở khóa nội dung học tập, theo dõi tiến độ và tận hưởng đầy đủ quyền lợi dành cho học viên.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="public-course-promo-dismiss"
+                  onClick={() => setShowPromoBanner(false)}
+                  aria-label="Đóng thông báo"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            )}
             <span className="public-course-eyebrow"><GraduationCap size={16} /> CHƯƠNG TRÌNH ĐÀO TẠO</span>
             <h1>Danh Sách Khóa Học</h1>
             <p>Chọn lộ trình phù hợp và bắt đầu hành trình chinh phục tiếng Anh của bạn.</p>
@@ -172,45 +195,42 @@ export function CourseListPage() {
                 onChange={(event) => setQuery(event.target.value)}
               />
             </label>
-            <button
-              type="button"
-              className={`public-course-guarantee${guaranteedOnly ? ' active' : ''}`}
-              aria-pressed={guaranteedOnly}
-              onClick={() => setGuaranteedOnly((active) => !active)}
-            >
-              <CheckCircle2 size={15} /> Bảo đảm đầu ra
-            </button>
+            
             <button className="public-course-search-button" type="submit">Tìm Kiếm <ArrowRight size={17} /></button>
             </form>
           </div>
         </section>
 
         {error && (
-          <div className="public-course-error" role="alert">
-            <p>{error}</p>
-            <button type="button" onClick={retryLoadCourses}>Thử lại</button>
+          <div className="public-course-container">
+            <div className="public-course-error" role="alert">
+              <p>{error}</p>
+              <button type="button" onClick={retryLoadCourses}>Thử lại</button>
+            </div>
           </div>
         )}
 
-        <section className="public-course-results public-course-container" id="all-courses" aria-label="Danh sách khóa học">
-          <div className="public-course-section-header">
-            <div>
-              <span className="public-course-eyebrow">CHƯƠNG TRÌNH ĐÀO TẠO</span>
-              <h2 className="public-course-section-title">Danh Sách Khóa Học</h2>
+        <section className="public-course-results" id="all-courses" aria-label="Danh sách khóa học">
+          <div className="public-course-container">
+            <div className="public-course-section-header">
+              <div>
+                <span className="public-course-eyebrow">CHƯƠNG TRÌNH ĐÀO TẠO</span>
+                <h2 className="public-course-section-title">Danh Sách Khóa Học</h2>
+              </div>
+              {!loading && <span className="public-course-result-count">{visibleCourses.length} khóa học</span>}
             </div>
-            {!loading && <span className="public-course-result-count">{visibleCourses.length} khóa học</span>}
+            {loading ? (
+              <div className="public-course-status" role="status"><LoaderCircle size={20} /> Đang tải khóa học…</div>
+            ) : visibleCourses.length > 0 ? (
+              <div className="public-course-grid">
+                {visibleCourses.map((course) => <CourseCard key={course.id} course={course} />)}
+              </div>
+            ) : !error ? (
+              <div className="public-course-status public-course-empty">
+                {submittedQuery ? 'Không tìm thấy khóa học phù hợp với bộ lọc.' : 'Hiện chưa có khóa học nào được mở đăng ký.'}
+              </div>
+            ) : null}
           </div>
-          {loading ? (
-            <div className="public-course-status" role="status"><LoaderCircle size={20} /> Đang tải khóa học…</div>
-          ) : visibleCourses.length > 0 ? (
-            <div className="public-course-grid">
-              {visibleCourses.map((course) => <CourseCard key={course.id} course={course} />)}
-            </div>
-          ) : !error ? (
-            <div className="public-course-status public-course-empty">
-              {submittedQuery || guaranteedOnly ? 'Không tìm thấy khóa học phù hợp với bộ lọc.' : 'Hiện chưa có khóa học nào được mở đăng ký.'}
-            </div>
-          ) : null}
         </section>
       </main>
       <SiteFooter />

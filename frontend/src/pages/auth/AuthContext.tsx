@@ -3,6 +3,7 @@ import { authApi, getAuthApiErrorStatus, type AuthSession } from './auth-api'
 import { AuthContext } from './auth-context'
 
 const AUTH_SESSION_STORAGE_KEY = 'your-voice-auth-session'
+const AUTH_SESSION_PROFILE_VERSION = 2
 const LOGOUT_HISTORY_LOCK_KEY = 'your-voice-logout-history-lock'
 let refreshInFlight: Promise<AuthSession> | undefined
 
@@ -28,15 +29,20 @@ function readStoredSession(): AuthSession | null {
   try {
     const value = localStorage.getItem(AUTH_SESSION_STORAGE_KEY)
     if (!value) return null
-    const parsed = JSON.parse(value) as Partial<AuthSession>
+    const parsed = JSON.parse(value) as Partial<AuthSession> & { profileVersion?: unknown }
     const user = parsed.user
     if (
       typeof parsed.accessToken !== 'string' ||
+      parsed.profileVersion !== AUTH_SESSION_PROFILE_VERSION ||
       !user || typeof user !== 'object' ||
       typeof user.id !== 'string' || typeof user.email !== 'string' ||
       typeof user.fullName !== 'string' ||
+      (user.nickname !== null && typeof user.nickname !== 'string') ||
       (user.phoneNumber !== null && typeof user.phoneNumber !== 'string') ||
-      (user.role !== 'STUDENT' && user.role !== 'TEACHER' && user.role !== 'ADMIN')
+      (user.avatarUrl !== null && typeof user.avatarUrl !== 'string') ||
+      (user.role !== 'STUDENT' && user.role !== 'TEACHER' && user.role !== 'ADMIN') ||
+      (user.status !== 'active' && user.status !== 'locked' && user.status !== 'pending' && user.status !== 'deactivated') ||
+      typeof user.isVerified !== 'boolean'
     ) {
       localStorage.removeItem(AUTH_SESSION_STORAGE_KEY)
       return null
@@ -52,7 +58,12 @@ function readStoredSession(): AuthSession | null {
 
 function storeSession(session: AuthSession | null): void {
   try {
-    if (session) localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(session))
+    if (session) {
+      localStorage.setItem(
+        AUTH_SESSION_STORAGE_KEY,
+        JSON.stringify({ ...session, profileVersion: AUTH_SESSION_PROFILE_VERSION })
+      )
+    }
     else localStorage.removeItem(AUTH_SESSION_STORAGE_KEY)
   } catch {
     // The in-memory session remains available if browser storage is blocked.
@@ -69,21 +80,30 @@ function refreshSessionOnce(): Promise<AuthSession> {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const isOAuthCallbackRoute =
+    typeof window !== 'undefined' && window.location.pathname === '/auth/callback'
   const initialSession = readStoredSession()
   const [session, setCurrentSession] = useState<AuthSession | null>(initialSession)
-  const [isInitializing, setIsInitializing] = useState<boolean>(() => initialSession === null)
+  const [isInitializing, setIsInitializing] = useState<boolean>(
+    () => !isOAuthCallbackRoute && initialSession === null
+  )
   const [initializationError, setInitializationError] = useState<string | null>(null)
 
-  // Initial silent refresh on mount if access token is not immediately usable in localStorage
+  // Initial silent refresh on mount if access token is not immediately usable in localStorage.
+  // Never run on /auth/callback (which owns the OAuth handoff) and always deduplicate via
+  // refreshSessionOnce() so React StrictMode double-mounts never revoke the refresh session.
   useEffect(() => {
+    if (isOAuthCallbackRoute) {
+      setIsInitializing(false)
+      return
+    }
     // If access token was already valid from storage, no initial refresh needed
     if (initialSession && accessTokenIsUsable(initialSession.accessToken)) {
       return
     }
 
     let active = true
-    authApi
-      .refresh()
+    refreshSessionOnce()
       .then((refreshedSession) => {
         if (active) {
           setCurrentSession(refreshedSession)
@@ -107,7 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false
     }
-  }, [])
+  }, [isOAuthCallbackRoute])
 
   useEffect(() => {
     const syncSessionAcrossTabs = (event: StorageEvent) => {

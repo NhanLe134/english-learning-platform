@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { User, BookOpen, Play, CheckCircle2, RotateCcw } from 'lucide-react'
 import type { MyCourse } from '../student-courses-data'
 
@@ -14,6 +14,7 @@ export const MyCourseCard: React.FC<MyCourseCardProps> = ({
   onReview,
 }) => {
   const isCompleted = course.status === 'completed'
+  const [imageError, setImageError] = useState(false)
 
   const handleCardClick = () => {
     if (isCompleted && onReview) {
@@ -29,12 +30,19 @@ export const MyCourseCard: React.FC<MyCourseCardProps> = ({
     <article className="my-course-card">
       {/* Thumbnail Box */}
       <div className="my-course-thumb-box">
-        <img
-          src={course.thumbnailUrl}
-          alt={course.title}
-          loading="lazy"
-        />
-        <span className="my-course-level-pill">{course.levelBadge}</span>
+        {course.thumbnailUrl && !imageError ? (
+          <img
+            src={course.thumbnailUrl}
+            alt={course.title}
+            loading="lazy"
+            onError={() => setImageError(true)}
+          />
+        ) : (
+          <div className="flex size-full items-center justify-center bg-brand-50 text-brand-600">
+            <BookOpen size={36} />
+          </div>
+        )}
+        {course.levelBadge && <span className="my-course-level-pill">{course.levelBadge}</span>}
       </div>
 
       {/* Content Column */}
@@ -53,7 +61,7 @@ export const MyCourseCard: React.FC<MyCourseCardProps> = ({
                 Đang Học
               </span>
             )}
-            <span className="my-course-last-active">{course.lastActive}</span>
+            {course.lastActive && <span className="my-course-last-active">{course.lastActive}</span>}
           </div>
 
           {/* Title */}
@@ -65,21 +73,29 @@ export const MyCourseCard: React.FC<MyCourseCardProps> = ({
           </h3>
 
           {/* Instructor */}
-          <div className="my-course-instructor-row">
-            <User size={13} />
-            <span>{course.instructor}</span>
-          </div>
+          {course.instructor && (
+            <div className="my-course-instructor-row">
+              <User size={13} />
+              <span>{course.instructor}</span>
+            </div>
+          )}
         </div>
 
         {/* Progress Section */}
         <div>
           <div className="my-course-progress-meta">
             <span className="my-course-progress-text">
-              {course.totalLessons} bài học •{' '}
-              <strong>
-                {course.completedLessons}/{course.totalLessons} bài hoàn thành
-                {isCompleted ? ' trọn vẹn' : ''}
-              </strong>
+              {course.totalLessons > 0 ? (
+                <>
+                  {course.totalLessons} bài học •{' '}
+                  <strong>
+                    {course.completedLessons}/{course.totalLessons} bài hoàn thành
+                    {isCompleted ? ' trọn vẹn' : ''}
+                  </strong>
+                </>
+              ) : (
+                <strong>Đang cập nhật bài học</strong>
+              )}
             </span>
             <span
               className={`my-course-progress-percent ${
@@ -102,20 +118,15 @@ export const MyCourseCard: React.FC<MyCourseCardProps> = ({
 
           {/* Bottom Action Row */}
           <div className="my-course-bottom-action-row">
-            {course.nextLesson ? (
-              <div className="my-course-next-lesson">
-                <BookOpen size={14} className="shrink-0 text-ink-500" />
-                <span>
-                  Bài tiếp theo:{' '}
-                  <strong>
-                    Bài {course.nextLesson.lessonNumber} - {course.nextLesson.title}
-                  </strong>
-                </span>
-              </div>
-            ) : (
+            {isCompleted ? (
               <div className="my-course-next-lesson">
                 <CheckCircle2 size={14} className="shrink-0 text-emerald-600" />
                 <span>Bạn đã hoàn thành tất cả các bài học</span>
+              </div>
+            ) : (
+              <div className="my-course-next-lesson">
+                <BookOpen size={14} className="shrink-0 text-ink-500" />
+                <span>Tiếp tục học theo lộ trình</span>
               </div>
             )}
 

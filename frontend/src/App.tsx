@@ -44,7 +44,7 @@ function AppRoutes() {
       // 1 trình duyệt 1 tài khoản: Đã đăng nhập Admin thì chỉ hiển thị trang Admin.
       // Dù mở tab mới hay nhập bất kỳ link nào (/, /courses, /login, /register...), đều tự chuyển về trang quản trị
       if (!isAdminRoute) {
-        window.location.replace('/admin/users')
+        window.location.replace('/admin/dashboard')
       }
     } else if (user?.role === 'TEACHER') {
       if (isAdminRoute || isStudentArea || pathname === '/login' || pathname === '/register') {
@@ -132,6 +132,8 @@ function AppRoutes() {
     case '/teacher/forgot-password':
       page = <ForgotPasswordPage />
       break
+    case '/admin':
+    case '/admin/dashboard':
     case '/admin/users':
       page = <QuanLyNguoiDungPage />
       break

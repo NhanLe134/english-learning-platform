@@ -1,5 +1,32 @@
 export type LessonStatus = 'draft' | 'published'
 
+export interface LessonMaterialItem {
+  id: string
+  name: string
+  file_url: string
+  file_type: string
+}
+
+export interface LessonProgressData {
+  last_position_seconds: number
+  progress_percent: number
+  is_completed: boolean
+}
+
+export interface LessonProgressItem extends LessonProgressData {
+  id?: string
+  lesson_id: string
+  student_id: string
+  updated_at?: string
+}
+
+export interface UpdateLessonProgressInput {
+  last_position_seconds: number
+  progress_percent?: number
+  is_completed?: boolean
+  duration_seconds?: number
+}
+
 export interface LessonItem {
   id: string
   topic_id: string
@@ -9,6 +36,8 @@ export interface LessonItem {
   duration_seconds: number | null
   sort_order: number
   status: LessonStatus
+  materials?: LessonMaterialItem[]
+  progress?: LessonProgressData
 }
 
 export interface LessonTopic {

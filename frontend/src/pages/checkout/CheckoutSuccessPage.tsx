@@ -296,7 +296,7 @@ function CheckoutSuccessView({ initialOrder }: { initialOrder?: CreateOrderRespo
                     {course.modules.map((module, index) => <details key={module.id}>
                       <summary><span>{String(index + 1).padStart(2, '0')}</span><strong>{module.title}</strong>{module.lessons.length > 0 && <small>{module.lessons.length} bài học</small>}</summary>
                       {module.description && <p>{module.description}</p>}
-                      {module.lessons.length > 0 && <ul>{module.lessons.map((lesson, lessonIndex) => <li key={`${module.id}-${lessonIndex}`}>{lesson}</li>)}</ul>}
+                      {module.lessons.length > 0 && <ul>{module.lessons.map((lesson, lessonIndex) => <li key={`${module.id}-${lessonIndex}`}>{typeof lesson === 'string' ? lesson : lesson.title}</li>)}</ul>}
                     </details>)}
                   </div>}
                   <p className="payment-success-access"><BadgeCheck size={16} /> Thanh toán đã được xác nhận cho khóa học này.</p>

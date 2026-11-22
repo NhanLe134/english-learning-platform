@@ -25,6 +25,10 @@ export type RegistrationOtpVerifyResult =
   | { status: 'verified'; user: UserProfile }
   | { status: 'not_registered' | 'already_verified' | 'invalid' | 'expired' | 'attempts_exhausted' }
 
+export type GoogleIdentityResolution =
+  | { status: 'resolved'; user: UserProfile }
+  | { status: 'link_required' | 'conflict' }
+
 const USER_COLUMNS =
   'id,email,full_name,nickname,phone_number,role,avatar_url,status,is_verified,created_at,updated_at'
 const QUALIFIED_USER_COLUMNS = USER_COLUMNS.split(',')
@@ -49,7 +53,7 @@ function mapUser(row: Record<string, unknown>): UserProfile {
     role: String(row.role ?? 'STUDENT').toUpperCase() as UserProfile['role'],
     avatar_url: typeof row.avatar_url === 'string' ? row.avatar_url : null,
     status: String(row.status ?? 'active').toLowerCase() as UserProfile['status'],
-    is_verified: Boolean(row.is_verified),
+    is_verified: Boolean(row.is_verified || ['TEACHER', 'ADMIN'].includes(String(row.role ?? '').toUpperCase())),
     created_at: isoDate(row.created_at),
     updated_at: isoDate(row.updated_at),
   }
@@ -272,7 +276,7 @@ export class AuthRepository {
            status, is_verified, created_at, updated_at)
          VALUES
           (gen_random_uuid(), $1, $2, NULL, $3, 'STUDENT',
-           $4, 'active', false, now(), now())
+           $4, 'pending', false, now(), now())
          RETURNING ${USER_COLUMNS}`,
         [email, fullName, phoneNumber || googleDetails?.phoneNumber || null, googleDetails?.avatarUrl ?? null]
       )
@@ -311,37 +315,185 @@ export class AuthRepository {
     }
   }
 
-  async createGoogleAccount(
+  async resolveGoogleIdentity(
     email: string,
+    googleSubject: string,
     fullName: string,
     avatarUrl: string | null
-  ): Promise<UserProfile> {
+  ): Promise<GoogleIdentityResolution> {
+    const normalizedEmail = email.trim().toLowerCase()
+    const normalizedSubject = googleSubject.trim()
+    if (!normalizedEmail || !normalizedSubject) {
+      throw new Error('A verified Google email and stable provider subject are required')
+    }
+
+    const client = await getDatabasePool().connect()
     try {
-      const { rows } = await getDatabasePool().query(
-        `INSERT INTO public.profiles
-          (id, email, full_name, nickname, phone_number, role, avatar_url,
-           status, is_verified, created_at, updated_at)
-         VALUES
-          (gen_random_uuid(), $1, $2, NULL, NULL, 'STUDENT',
-           $3, 'pending', true, now(), now())
-         RETURNING ${USER_COLUMNS}`,
-        [email.trim().toLowerCase(), fullName.trim(), avatarUrl]
+      await client.query('BEGIN')
+      // Serialize both repeated callbacks and competing Google accounts for the same email.
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+        [`google-subject:${normalizedSubject}`]
       )
-      const row = rows[0] as Record<string, unknown> | undefined
-      if (!row) throw new Error('Database did not return the created Google profile')
-      return mapUser(row)
-    } catch (error) {
-      if (
-        error &&
-        typeof error === 'object' &&
-        'code' in error &&
-        error.code === '23505'
-      ) {
-        throw new Error('Email is already registered', { cause: error })
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+        [`profile-email:${normalizedEmail}`]
+      )
+
+      const linked = await client.query(
+        `SELECT ${QUALIFIED_USER_COLUMNS}
+         FROM public.auth_identities AS identity
+         JOIN public.profiles AS p ON p.id = identity.profile_id
+         WHERE identity.provider = 'google' AND identity.provider_subject = $1
+         FOR UPDATE OF p`,
+        [normalizedSubject]
+      )
+      const linkedRow = linked.rows[0] as Record<string, unknown> | undefined
+      if (linkedRow) {
+        const user = mapUser(linkedRow)
+        console.info('[Auth] resolveGoogleIdentity: found linked profile', {
+          profileId: user.id.slice(0, 8) + '…',
+          googleSub: normalizedSubject.slice(0, 8) + '…',
+        })
+        if (!user.avatar_url?.trim() && avatarUrl) {
+          const updated = await client.query(
+            `UPDATE public.profiles AS p
+             SET avatar_url = $2, updated_at = now()
+             WHERE p.id = $1 AND (p.avatar_url IS NULL OR btrim(p.avatar_url) = '')
+             RETURNING ${QUALIFIED_USER_COLUMNS}`,
+            [user.id, avatarUrl]
+          )
+          if (updated.rows[0]) {
+            await client.query('COMMIT')
+            return { status: 'resolved', user: mapUser(updated.rows[0] as Record<string, unknown>) }
+          }
+        }
+        await client.query('COMMIT')
+        return { status: 'resolved', user }
       }
-      throw new Error('Unable to create Google authentication account in PostgreSQL', {
-        cause: error,
-      })
+
+      const existing = await client.query(
+        `SELECT ${USER_COLUMNS}
+         FROM public.profiles
+         WHERE lower(email) = $1
+         FOR UPDATE`,
+        [normalizedEmail]
+      )
+      const existingRow = existing.rows[0] as Record<string, unknown> | undefined
+
+      if (existingRow) {
+        const existingUser = mapUser(existingRow)
+        if (existingUser.role === 'ADMIN' && !existingUser.is_verified) {
+          await client.query(
+            `UPDATE public.profiles SET is_verified = true, updated_at = now() WHERE id = $1`,
+            [existingUser.id]
+          )
+          existingUser.is_verified = true
+        }
+
+        // A Google-verified address is only sufficient when the existing profile
+        // has independently completed its own email verification.
+        if (!existingUser.is_verified) {
+          await client.query('COMMIT')
+          return { status: 'link_required' }
+        }
+
+        const inserted = await client.query(
+          `INSERT INTO public.auth_identities
+             (provider, provider_subject, profile_id, email_at_link)
+           VALUES ('google', $1, $2, $3)
+           ON CONFLICT DO NOTHING
+           RETURNING provider_subject`,
+          [normalizedSubject, existingUser.id, normalizedEmail]
+        )
+        if (inserted.rowCount !== 1) {
+          const subjectOwner = await client.query(
+            `SELECT profile_id FROM public.auth_identities
+             WHERE provider = 'google' AND provider_subject = $1`,
+            [normalizedSubject]
+          )
+          const profileOwner = await client.query(
+            `SELECT provider_subject FROM public.auth_identities
+             WHERE provider = 'google' AND profile_id = $1`,
+            [existingUser.id]
+          )
+          const existingSubject = (profileOwner.rows[0] as { provider_subject?: string } | undefined)?.provider_subject
+          const sameSubject = subjectOwner.rows[0]?.profile_id === existingUser.id
+          const profileAlreadyLinked = profileOwner.rows.length > 0
+
+          // If the profile is linked to a stale development placeholder
+          // identity (e.g. "dev-google-email@…"), replace it with the
+          // real Google `sub` so the canonical account is reachable.
+          if (
+            !sameSubject &&
+            profileAlreadyLinked &&
+            typeof existingSubject === 'string' &&
+            existingSubject.startsWith('dev-google-')
+          ) {
+            await client.query(
+              `DELETE FROM public.auth_identities
+               WHERE provider = 'google' AND profile_id = $1 AND provider_subject = $2`,
+              [existingUser.id, existingSubject]
+            )
+            await client.query(
+              `INSERT INTO public.auth_identities
+                 (provider, provider_subject, profile_id, email_at_link)
+               VALUES ('google', $1, $2, $3)
+               ON CONFLICT (provider, provider_subject) DO NOTHING`,
+              [normalizedSubject, existingUser.id, normalizedEmail]
+            )
+            // Fall through to avatar update and return resolved.
+          } else if (!sameSubject || profileAlreadyLinked) {
+            await client.query('COMMIT')
+            return { status: 'conflict' }
+          }
+        }
+
+        let resolvedUser = existingUser
+        if (!resolvedUser.avatar_url?.trim() && avatarUrl) {
+          const updated = await client.query(
+            `UPDATE public.profiles AS p
+             SET avatar_url = $2, updated_at = now()
+             WHERE p.id = $1 AND (p.avatar_url IS NULL OR btrim(p.avatar_url) = '')
+             RETURNING ${QUALIFIED_USER_COLUMNS}`,
+            [resolvedUser.id, avatarUrl]
+          )
+          if (updated.rows[0]) resolvedUser = mapUser(updated.rows[0] as Record<string, unknown>)
+        }
+        await client.query('COMMIT')
+        return { status: 'resolved', user: resolvedUser }
+      }
+
+      const created = await client.query(
+        `INSERT INTO public.profiles
+           (id, email, full_name, nickname, phone_number, role, avatar_url,
+            status, is_verified, created_at, updated_at)
+         VALUES
+           (gen_random_uuid(), $1, $2, NULL, NULL, 'STUDENT', $3,
+            'pending', true, now(), now())
+         RETURNING ${USER_COLUMNS}`,
+        [normalizedEmail, fullName.trim() || normalizedEmail.split('@')[0] || 'Learner', avatarUrl]
+      )
+      const createdRow = created.rows[0] as Record<string, unknown> | undefined
+      if (!createdRow) throw new Error('Database did not return the created Google profile')
+      const user = mapUser(createdRow)
+      await client.query(
+        `INSERT INTO public.auth_identities
+           (provider, provider_subject, profile_id, email_at_link)
+         VALUES ('google', $1, $2, $3)`,
+        [normalizedSubject, user.id, normalizedEmail]
+      )
+      await client.query('COMMIT')
+      return { status: 'resolved', user }
+    } catch (error) {
+      try {
+        await client.query('ROLLBACK')
+      } catch (rollbackError) {
+        throw new AggregateError([error, rollbackError], 'Failed to roll back Google identity resolution')
+      }
+      throw new Error('Unable to resolve Google identity to a profile', { cause: error })
+    } finally {
+      client.release()
     }
   }
 

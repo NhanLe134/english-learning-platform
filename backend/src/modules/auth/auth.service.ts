@@ -33,7 +33,6 @@ import {
 } from './auth.tokens.js'
 import type { GoogleAuthInput } from './google.types.js'
 import { getGoogleRegistrationDetails, verifyGoogleAuthInput } from './google.verifier.js'
-import { teacherService } from '../teachers/teacher.service.js'
 
 interface UserService {
   createStudentAccount(
@@ -45,7 +44,15 @@ interface UserService {
     selectedCourseIds: string[],
     googleDetails?: { phoneNumber: string | null; dateOfBirth: string | null; avatarUrl: string | null; googleId: string }
   ): Promise<UserProfile>
-  createGoogleAccount(email: string, fullName: string, avatarUrl: string | null): Promise<UserProfile>
+  resolveGoogleIdentity(
+    email: string,
+    googleSubject: string,
+    fullName: string,
+    avatarUrl: string | null
+  ): Promise<
+    | { status: 'resolved'; user: UserProfile }
+    | { status: 'link_required' | 'conflict' }
+  >
   rollbackStudentAccount(userId: string): Promise<void>
   authenticatePassword(email: string, password: string): Promise<UserProfile | null>
   updatePasswordAndVerifyEmail(id: string, password: string): Promise<void>
@@ -122,7 +129,7 @@ export interface RegistrationOtpRequestResult {
 }
 
 export const GENERIC_FORGOT_MESSAGE =
-  'If an account exists for that address, recovery instructions will be sent.'
+  'If an account exists for that address, a temporary password will be sent.'
 
 export interface ForgotPasswordResult {
   message: string
@@ -131,7 +138,10 @@ export interface ForgotPasswordResult {
 export interface TokenPair {
   accessToken: string
   refreshToken: string
-  user: Pick<UserProfile, 'id' | 'email' | 'full_name' | 'phone_number' | 'role'>
+  user: Pick<
+    UserProfile,
+    'id' | 'email' | 'full_name' | 'nickname' | 'phone_number' | 'role' | 'avatar_url' | 'status' | 'is_verified'
+  >
 }
 
 function publicUser(user: UserProfile): TokenPair['user'] {
@@ -139,13 +149,17 @@ function publicUser(user: UserProfile): TokenPair['user'] {
     id: user.id,
     email: user.email,
     full_name: user.full_name,
+    nickname: user.nickname ?? null,
     phone_number: user.phone_number ?? null,
     role: user.role,
+    avatar_url: user.avatar_url ?? null,
+    status: user.status,
+    is_verified: user.is_verified ?? false,
   }
 }
 
 function genericCredentialsError(): AuthError {
-  return new AuthError('Invalid email or password', 401, undefined, 'INVALID_CREDENTIALS')
+  return new AuthError('Invalid email or password', 401)
 }
 
 function invalidTokenError(): AuthError {
@@ -191,12 +205,19 @@ function hasMissingAuthSchema(error: unknown, seen = new Set<unknown>()): boolea
   return false
 }
 
-function missingAuthSchemaError(cause: unknown, includeOtpMigration = false): AuthError {
+function missingAuthSchemaError(
+  cause: unknown,
+  includeOtpMigration = false,
+  includeGoogleIdentityMigration = false
+): AuthError {
   const otpMigration = includeOtpMigration
     ? ' and supabase/migrations/20261031031000_add_registration_email_otps.sql'
     : ''
+  const googleIdentityMigration = includeGoogleIdentityMigration
+    ? ' and supabase/migrations/20261120000000_add_google_auth_identities.sql'
+    : ''
   return new AuthError(
-    `Authentication database schema is incomplete. Apply supabase/migrations/20261025003000_database_url_auth.sql and supabase/migrations/20261031024400_add_private_registration_details.sql${otpMigration}, then restart the backend.`,
+    `Authentication database schema is incomplete. Apply supabase/migrations/20261025003000_database_url_auth.sql and supabase/migrations/20261031024400_add_private_registration_details.sql${otpMigration}${googleIdentityMigration}, then restart the backend.`,
     503,
     cause
   )
@@ -216,7 +237,7 @@ export class AuthService {
       if (error) throw new Error('Resend rejected the verification email')
     },
     private readonly adminAuth: AdminAuthProvider = usersService
-  ) {}
+  ) { }
 
   private assertSigningSecretConfigured(): void {
     if (Buffer.byteLength(env.authJwtSecret, 'utf8') < 32) {
@@ -465,79 +486,49 @@ export class AuthService {
       )
     }
     if (storedUser?.role === 'ADMIN' && adminLookupError) {
-      throw new AuthError('The Admin authentication service is unavailable. Please try again later.', 503, adminLookupError, 'AUTH_PROVIDER_UNAVAILABLE')
+      throw new AuthError('Admin authentication provider is unavailable.', 503, adminLookupError)
     }
 
     if (!adminProfile || adminProfile.role !== 'ADMIN') {
-      if ((!storedUser || storedUser.role === 'ADMIN') && !databaseLookupError) {
-        const authenticatedProfile = await this.authenticateAdminProvider(email.trim().toLowerCase(), password)
-        if (authenticatedProfile) {
-          if (authenticatedProfile.role !== 'ADMIN') {
-            throw new AuthError('This account does not have Admin access.', 403, undefined, 'ADMIN_ROLE_REQUIRED')
-          }
-          return this.createAdminSession(authenticatedProfile)
-        }
-      }
       return this.loginWithDatabasePassword(email, password)
     }
 
-    const user = await this.authenticateAdminProvider(email.trim().toLowerCase(), password)
+    let user: UserProfile | null = null
+    try {
+      user = await this.adminAuth.authenticatePassword(email.trim().toLowerCase(), password)
+    } catch (error) {
+      if (error instanceof AuthError) throw error
+      if (
+        error instanceof Error &&
+        /SUPABASE_PUBLISHABLE_KEY/.test(error.message)
+      ) {
+        throw new AuthError(
+          'Admin login is not configured. Set SUPABASE_PUBLISHABLE_KEY (or SUPABASE_ANON_KEY) in backend/.env and restart the backend.',
+          503,
+          error
+        )
+      }
+      throw new AuthError('Admin authentication provider is unavailable.', 503, error)
+    }
     if (!user) {
       return this.loginWithDatabasePassword(email, password)
     }
     if (user.role !== 'ADMIN') {
-      throw new AuthError('This account does not have Admin access.', 403, undefined, 'ADMIN_ROLE_REQUIRED')
+      throw new AuthError('This account is not permitted to sign in through Admin authentication.', 403, undefined, 'ADMIN_ROLE_REQUIRED')
     }
-    return this.createAdminSession(user)
-  }
-
-  private async authenticateAdminProvider(email: string, password: string): Promise<UserProfile | null> {
-    try {
-      return await this.adminAuth.authenticatePassword(email, password)
-    } catch (error) {
-      if (error instanceof AuthError) throw error
-      if (error instanceof Error && /SUPABASE_URL|SUPABASE_PUBLISHABLE_KEY/.test(error.message)) {
-        throw new AuthError(
-          'Admin login is not configured. Verify the Supabase URL and publishable key on the backend.',
-          503,
-          error,
-          'AUTH_CONFIGURATION'
-        )
-      }
-      console.warn('[AdminAuth] Authentication provider failed', {
-        stage: 'provider_request',
-        errorType: error instanceof Error ? error.name : 'UnknownError',
-      })
-      throw new AuthError('The Admin authentication service is unavailable. Please try again later.', 503, error, 'AUTH_PROVIDER_UNAVAILABLE')
-    }
-
-  }
-
-  private async createAdminSession(user: UserProfile): Promise<TokenPair> {
-    if (user.status !== 'active') {
-      throw new AuthError('This Admin account is inactive. Contact an administrator.', 403, undefined, 'ACCOUNT_INACTIVE')
-    }
+    if (user.status !== 'active') throw genericCredentialsError()
     try {
       await this.adminAuth.verifyEmail(user.id)
     } catch (error) {
-      console.warn('[AdminAuth] Authenticated Admin profile could not be verified', {
-        stage: 'profile_verification',
-        errorType: error instanceof Error ? error.name : 'UnknownError',
-      })
-      throw new AuthError('Your account was authenticated, but its Admin profile could not be verified.', 503, error, 'ADMIN_PROFILE_LOOKUP_FAILED')
+      throw new AuthError('Unable to update Admin email verification status.', 503, error)
     }
     try {
       return await this.createSession(user)
     } catch (error) {
-      console.warn('[AdminAuth] Authenticated Admin session could not be created', {
-        stage: 'session_creation',
-        errorType: error instanceof Error ? error.name : 'UnknownError',
-      })
       throw new AuthError(
         'Authentication session storage is unavailable. Verify PostgreSQL access and apply the auth database migration.',
         503,
-        error,
-        'SESSION_STORAGE_UNAVAILABLE'
+        error
       )
     }
   }
@@ -554,16 +545,13 @@ export class AuthService {
         error
       )
     }
-    // Admin accounts may use the PostgreSQL credential store without a matching
-    // Supabase Auth user, so email verification is not available for that path.
-    // Their role, password hash, and active status are still checked below.
-    if (!user || (user.role !== 'ADMIN' && user.is_verified !== true)) {
+    if (!user || user.is_verified !== true) {
       throw genericCredentialsError()
     }
     if (user.role === 'STUDENT' && user.status === 'pending') {
       throw new AuthError('Complete course payment before logging in.', 403)
     }
-    if (user.status !== 'active') {
+    if (user.status !== 'active' && !(user.role === 'TEACHER' && user.status === 'pending')) {
       throw genericCredentialsError()
     }
     try {
@@ -584,54 +572,44 @@ export class AuthService {
       throw new AuthError('Địa chỉ email Google chưa được xác minh.', 400)
     }
 
-    let user: UserProfile | null = null
+    let user: UserProfile
     try {
-      user = await this.users.findByEmail(userInfo.email)
-    } catch (error) {
-      if (hasMissingAuthSchema(error)) throw missingAuthSchemaError(error)
-      throw new AuthError('Không thể kiểm tra tài khoản Google trong cơ sở dữ liệu.', 503, error)
-    }
-
-    if (!user) {
-      try {
-        const admin = await this.adminAuth.findByEmail(userInfo.email)
-        if (admin?.role === 'ADMIN') user = admin
-      } catch (error) {
-        throw new AuthError('Không thể kiểm tra tài khoản Google trong cơ sở dữ liệu.', 503, error)
-      }
-    }
-
-    if (!user) {
-      try {
-        user = await this.users.createGoogleAccount(
-          userInfo.email,
-          userInfo.name,
-          userInfo.avatarUrl
+      const resolution = await this.users.resolveGoogleIdentity(
+        userInfo.email,
+        userInfo.googleId,
+        userInfo.name,
+        userInfo.avatarUrl
+      )
+      if (resolution.status !== 'resolved') {
+        const linkRequired = resolution.status === 'link_required'
+        throw new AuthError(
+          linkRequired
+            ? 'Verify the existing email account before linking it to Google.'
+            : 'This Google identity is already linked to another account.',
+          409,
+          undefined,
+          linkRequired ? 'GOOGLE_ACCOUNT_LINK_REQUIRED' : 'GOOGLE_IDENTITY_CONFLICT'
         )
-      } catch (error) {
-        if (error instanceof Error && error.message.toLowerCase().includes('already registered')) {
-          try {
-            user = await this.users.findByEmail(userInfo.email)
-          } catch (lookupError) {
-            throw new AuthError(
-              'Không thể kiểm tra tài khoản Google trong cơ sở dữ liệu.',
-              503,
-              lookupError
-            )
-          }
-          if (!user) {
-            throw new AuthError('Không thể tạo tài khoản Google trong cơ sở dữ liệu.', 503, error)
-          }
-        } else {
-          if (hasMissingAuthSchema(error)) throw missingAuthSchemaError(error)
-          throw new AuthError('Không thể tạo tài khoản Google trong cơ sở dữ liệu.', 503, error)
-        }
       }
+      user = resolution.user
+    } catch (error) {
+      if (error instanceof AuthError) throw error
+      if (hasMissingAuthSchema(error)) throw missingAuthSchemaError(error, false, true)
+      throw new AuthError('Unable to resolve the Google identity to an account.', 503, error)
     }
-    if (user.status === 'pending') {
+
+    if (!user.is_verified && user.role !== 'ADMIN' && user.role !== 'TEACHER') {
+      throw new AuthError(
+        'Complete email verification before signing in with Google.',
+        403,
+        undefined,
+        'EMAIL_VERIFICATION_REQUIRED'
+      )
+    }
+    if (user.role === 'STUDENT' && user.status === 'pending') {
       throw new AuthError('Complete course payment before logging in.', 403)
     }
-    if (user.status !== 'active') {
+    if (user.status !== 'active' && !(user.role === 'TEACHER' && user.status === 'pending')) {
       throw new AuthError('Tài khoản này đã bị khóa hoặc ngừng hoạt động.', 403)
     }
 
@@ -688,7 +666,9 @@ export class AuthService {
     }
 
     const user = await this.findSessionUser(session.user_id)
-    if (!user || user.status !== 'active' || (user.role !== 'ADMIN' && user.is_verified !== true)) {
+    const isAllowedStatus = Boolean(user && (user.status === 'active' || (user.role === 'TEACHER' && user.status === 'pending')))
+    const isVerified = Boolean(user && (user.is_verified === true || user.role === 'ADMIN' || user.role === 'TEACHER'))
+    if (!user || !isAllowedStatus || !isVerified) {
       await this.store.revokeSession(session.id)
       throw invalidTokenError()
     }
@@ -761,7 +741,9 @@ export class AuthService {
     }
 
     const user = await this.findSessionUser(claims.sub)
-    if (!user || user.status !== 'active' || (user.role !== 'ADMIN' && user.is_verified !== true)) {
+    const isAllowedStatus = Boolean(user && (user.status === 'active' || (user.role === 'TEACHER' && user.status === 'pending')))
+    const isVerified = Boolean(user && (user.is_verified === true || user.role === 'ADMIN' || user.role === 'TEACHER'))
+    if (!user || !isAllowedStatus || !isVerified) {
       await this.store.revokeSession(session.id)
       throw invalidTokenError()
     }
@@ -811,11 +793,6 @@ export class AuthService {
       throw new AuthError('Admin authentication provider is unavailable.', 503, adminLookupError)
     }
     if (!user || user.status !== 'active') return { message: GENERIC_FORGOT_MESSAGE }
-
-    if (user.role === 'TEACHER') {
-      await teacherService.requestPasswordReset(user.email)
-      return { message: GENERIC_FORGOT_MESSAGE }
-    }
 
     const temporaryPassword = generateTemporaryPassword()
     try {

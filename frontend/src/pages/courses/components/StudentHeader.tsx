@@ -17,7 +17,7 @@ export const StudentHeader: React.FC<StudentHeaderProps> = ({ student, onLogout,
   const displayName = user?.fullName || student?.name || 'Sarah'
   const displayEmail = user?.email || student?.email || 'sarah.student@yev.edu.vn'
   const displayRole = user?.role === 'STUDENT' ? 'Member' : (user?.role || student?.role || 'Member')
-  const displayAvatar = student?.avatarUrl || '/giaovien.jpg'
+  const displayAvatar = student?.avatarUrl || user?.avatarUrl || null
 
   const notifications = [
     {
@@ -134,11 +134,11 @@ export const StudentHeader: React.FC<StudentHeaderProps> = ({ student, onLogout,
                 }
               }}
             >
-              <img
-                src={displayAvatar}
-                alt={displayName}
-                className="student-avatar-img"
-              />
+              {displayAvatar ? <img src={displayAvatar} alt={displayName} className="student-avatar-img" /> : (
+                <span className="student-avatar-img student-avatar-fallback" aria-label={displayName}>
+                  {displayName.trim().charAt(0).toUpperCase() || '?'}
+                </span>
+              )}
               <div className="student-user-info">
                 <span className="student-user-name">{displayName}</span>
                 <span className="student-user-role">{displayRole}</span>

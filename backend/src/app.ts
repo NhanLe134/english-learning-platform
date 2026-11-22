@@ -4,6 +4,7 @@ import type { Request } from 'express'
 import swaggerUi from 'swagger-ui-express'
 import { env } from './config/env.js'
 import { errorHandler } from './middlewares/errorHandler.js'
+import { CorsOriginError } from './middlewares/corsOriginError.js'
 import { authRouter } from './modules/auth/auth.routes.js'
 import { coursesRouter } from './modules/courses/course.routes.js'
 import { usersRouter } from './modules/users/users.routes.js'
@@ -43,7 +44,7 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true)
     } else {
-      callback(new Error('Not allowed by CORS'))
+      callback(new CorsOriginError())
     }
   },
   credentials: true,

@@ -39,7 +39,8 @@ export class CourseController {
     next: NextFunction
   ): Promise<void> {
     try {
-      const course = await courseService.getPublishedCourse(String(request.params.identifier))
+      const user = response.locals.authUser as { id?: string } | undefined
+      const course = await courseService.getPublishedCourse(String(request.params.identifier), user?.id)
       if (!course) {
         response.status(404).json({ success: false, message: 'Published course not found.' })
         return

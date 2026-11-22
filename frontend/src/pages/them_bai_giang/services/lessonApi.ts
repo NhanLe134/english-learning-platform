@@ -1,8 +1,35 @@
 const API_BASE_URL = (
-  import.meta.env.VITE_API_URL ||
-  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env?.VITE_API_URL ||
+  import.meta.env?.VITE_API_BASE_URL ||
   'http://localhost:5000/api'
 ).replace(/\/+$/, '')
+
+export interface LessonMaterialItem {
+  id: string
+  name: string
+  file_url: string
+  file_type: string
+}
+
+export interface LessonProgressDetails {
+  last_position_seconds: number
+  progress_percent: number
+  is_completed: boolean
+}
+
+export interface LessonItemDetails {
+  id: string
+  topic_id: string
+  title: string
+  description: string | null
+  video_url: string | null
+  thumbnail_url?: string | null
+  duration_seconds: number | null
+  sort_order: number
+  status: 'draft' | 'published'
+  materials?: LessonMaterialItem[]
+  progress?: LessonProgressDetails
+}
 
 export interface LessonTopicItem {
   id: string
@@ -10,16 +37,94 @@ export interface LessonTopicItem {
   title: string
   description: string | null
   sort_order: number
-  lessons: {
-    id: string
-    topic_id: string
-    title: string
-    description: string | null
-    video_url: string | null
-    duration_seconds: number | null
-    sort_order: number
-    status: 'draft' | 'published'
-  }[]
+  lessons: LessonItemDetails[]
+}
+
+/** Trích xuất YouTube Video ID từ bất kỳ định dạng link YouTube nào */
+export function extractYouTubeVideoId(url: string | null | undefined): string | null {
+  if (!url) return null
+  const trimmed = url.trim()
+  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) {
+    return trimmed
+  }
+  try {
+    const parsed = new URL(trimmed.startsWith('http://') || trimmed.startsWith('https://') ? trimmed : `https://${trimmed}`)
+    const host = parsed.hostname.toLowerCase()
+    if (host.includes('youtube.com') || host.includes('youtube-nocookie.com')) {
+      if (parsed.searchParams.has('v')) {
+        const v = parsed.searchParams.get('v')
+        if (v && /^[a-zA-Z0-9_-]{11}$/.test(v)) return v
+      }
+      const parts = parsed.pathname.split('/').filter(Boolean)
+      const first = parts[0]?.toLowerCase()
+      if (first === 'embed' || first === 'v' || first === 'shorts' || first === 'live') {
+        const id = parts[1]
+        if (id && /^[a-zA-Z0-9_-]{11}$/.test(id)) return id
+      }
+    }
+    if (host === 'youtu.be' || host.endsWith('.youtu.be')) {
+      const parts = parsed.pathname.split('/').filter(Boolean)
+      const id = parts[0]
+      if (id && /^[a-zA-Z0-9_-]{11}$/.test(id)) return id
+    }
+  } catch {
+    // fallback regex
+  }
+  const match = trimmed.match(/(?:youtu\.be\/|(?:youtube|youtube-nocookie)\.com\/(?:embed\/|v\/|watch\?v=|shorts\/|live\/))([a-zA-Z0-9_-]{11})/)
+  return match ? match[1] : null
+}
+
+/** Trích xuất link nhúng xem trước Google Drive (trả null nếu không phải link Drive) */
+export function extractGoogleDriveEmbedUrl(url: string | null | undefined): string | null {
+  if (!url) return null
+  try {
+    const parsed = new URL(url.startsWith('http') ? url : `https://${url}`)
+    if (parsed.hostname.includes('drive.google.com')) {
+      const match = parsed.pathname.match(/\/file\/d\/([^/]+)/)
+      const fileId = match?.[1] ?? parsed.searchParams.get('id')
+      if (fileId) return `https://drive.google.com/file/d/${fileId}/preview`
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+/** Chuyển URL YouTube / Google Drive thành link nhúng (embed) an toàn */
+export function buildEmbedUrl(url: string | null | undefined): string | null {
+  if (!url) return null
+  const ytId = extractYouTubeVideoId(url)
+  if (ytId) {
+    const origin = typeof window !== 'undefined' && window.location.origin ? encodeURIComponent(window.location.origin) : ''
+    let startSeconds: number | null = null
+    try {
+      const parsed = new URL(url.startsWith('http') ? url : `https://${url}`)
+      const tParam = parsed.searchParams.get('t') || parsed.searchParams.get('start')
+      if (tParam) {
+        const parsedSec = parseInt(tParam.replace(/s$/i, ''), 10)
+        if (!isNaN(parsedSec) && parsedSec > 0) startSeconds = parsedSec
+      }
+    } catch {
+      // ignore
+    }
+
+    const queryParts = [
+      'enablejsapi=1',
+      'controls=0',
+      'modestbranding=1',
+      'rel=0',
+      'iv_load_policy=3',
+      'fs=0',
+      'disablekb=1',
+      'playsinline=1',
+      'cc_load_policy=0',
+    ]
+    if (origin) queryParts.push(`origin=${origin}`)
+    if (startSeconds !== null) queryParts.push(`start=${startSeconds}`)
+    return `https://www.youtube.com/embed/${ytId}?${queryParts.join('&')}`
+  }
+
+  return extractGoogleDriveEmbedUrl(url)
 }
 
 export interface CreatedTopic {
@@ -81,7 +186,7 @@ async function authenticatedRequest<T>(
 }
 
 export const lessonApi = {
-  /** Danh sách chủ đề + bài giảng của khóa học (gồm cả bản nháp) */
+  /** Danh sách chủ đề + bài giảng của khóa học (gồm cả bản nháp với Admin/Teacher, chỉ published với Student) */
   async getTopics(
     courseId: string,
     accessToken: string | null,
@@ -89,6 +194,20 @@ export const lessonApi = {
   ): Promise<LessonTopicItem[]> {
     return authenticatedRequest<LessonTopicItem[]>(
       `/courses/${encodeURIComponent(courseId)}/topics`,
+      { method: 'GET' },
+      accessToken,
+      refreshAccessToken
+    )
+  },
+
+  /** Chi tiết một bài giảng kèm tài liệu đính kèm */
+  async getLesson(
+    lessonId: string,
+    accessToken: string | null,
+    refreshAccessToken: () => Promise<string>
+  ): Promise<LessonItemDetails> {
+    return authenticatedRequest<LessonItemDetails>(
+      `/lessons/${encodeURIComponent(lessonId)}`,
       { method: 'GET' },
       accessToken,
       refreshAccessToken
@@ -173,6 +292,38 @@ export const lessonApi = {
           sort_order: input.sortOrder,
           topic_id: input.topicId,
         }),
+      },
+      accessToken,
+      refreshAccessToken
+    )
+  },
+
+  /** Cập nhật tiến độ xem video bài học */
+  async updateProgress(
+    lessonId: string,
+    payload: {
+      last_position_seconds: number
+      progress_percent?: number
+      is_completed?: boolean
+      duration_seconds?: number
+    },
+    accessToken: string | null,
+    refreshAccessToken: () => Promise<string>,
+    keepalive = false
+  ): Promise<{
+    lesson_id: string
+    student_id: string
+    last_position_seconds: number
+    progress_percent: number
+    is_completed: boolean
+  }> {
+    return authenticatedRequest(
+      `/lessons/${encodeURIComponent(lessonId)}/progress`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        keepalive,
       },
       accessToken,
       refreshAccessToken
