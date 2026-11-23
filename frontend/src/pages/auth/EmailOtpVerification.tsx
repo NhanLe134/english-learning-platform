@@ -22,6 +22,8 @@ interface EmailOtpVerificationProps {
   successMessage: string
   developmentOtp?: string
   canResendImmediately?: boolean
+  initialRemainingSeconds?: number
+  initialResendSeconds?: number
   onVerify: (otp: string) => void
   onResend: () => Promise<boolean>
   onChangeEmail: () => void
@@ -42,14 +44,22 @@ export function EmailOtpVerification({
   successMessage,
   developmentOtp,
   canResendImmediately = false,
+  initialRemainingSeconds,
+  initialResendSeconds,
   onVerify,
   onResend,
   onChangeEmail,
 }: EmailOtpVerificationProps) {
   const [digits, setDigits] = useState<string[]>(() => Array(OTP_LENGTH).fill(''))
-  const [remainingSeconds, setRemainingSeconds] = useState(OTP_VALIDITY_SECONDS)
-  const [resendSeconds, setResendSeconds] = useState(
-    canResendImmediately ? 0 : RESEND_COOLDOWN_SECONDS
+  const [remainingSeconds, setRemainingSeconds] = useState(() =>
+    initialRemainingSeconds !== undefined
+      ? Math.max(0, Math.min(OTP_VALIDITY_SECONDS, Math.floor(initialRemainingSeconds)))
+      : OTP_VALIDITY_SECONDS
+  )
+  const [resendSeconds, setResendSeconds] = useState(() =>
+    initialResendSeconds !== undefined
+      ? Math.max(0, Math.floor(initialResendSeconds))
+      : canResendImmediately ? 0 : RESEND_COOLDOWN_SECONDS
   )
   const [resending, setResending] = useState(false)
   const inputs = useRef<Array<HTMLInputElement | null>>([])

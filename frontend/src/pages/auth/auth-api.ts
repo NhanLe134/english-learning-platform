@@ -41,9 +41,19 @@ export interface ForgotPasswordResponse {
   message: string
 }
 
+export interface SavedRegistrationDetails {
+  fullName: string
+  dateOfBirth: string | null
+  phoneNumber: string | null
+  selectedCourseIds: string[]
+}
+
 export interface RegistrationResult {
-  verificationRequired: true
+  verificationRequired: boolean
   email: string
+  selectedCourseIds?: string[]
+  reusedExistingAccount?: boolean
+  savedRegistration?: SavedRegistrationDetails
 }
 
 export class AuthApiError extends Error {
@@ -251,12 +261,38 @@ export const authApi = {
     if (
       !result || typeof result !== 'object' ||
       !('data' in result) || !result.data || typeof result.data !== 'object' ||
-      !('verificationRequired' in result.data) || result.data.verificationRequired !== true ||
+      !('verificationRequired' in result.data) || typeof result.data.verificationRequired !== 'boolean' ||
       !('email' in result.data) || typeof result.data.email !== 'string'
     ) {
       throw new AuthApiError('Phản hồi đăng ký không đúng định dạng.', 502)
     }
-    return { verificationRequired: true, email: result.data.email }
+    const data = result.data as Record<string, unknown>
+    const returnedCourseIds = Array.isArray(data.selectedCourseIds)
+      ? data.selectedCourseIds.filter((item): item is string => typeof item === 'string')
+      : undefined
+    const reusedExistingAccount = typeof data.reusedExistingAccount === 'boolean'
+      ? data.reusedExistingAccount
+      : undefined
+    const rawSaved = data.savedRegistration && typeof data.savedRegistration === 'object'
+      ? data.savedRegistration as Record<string, unknown>
+      : null
+    const savedRegistration: SavedRegistrationDetails | undefined = rawSaved && typeof rawSaved.fullName === 'string'
+      ? {
+          fullName: rawSaved.fullName,
+          dateOfBirth: typeof rawSaved.dateOfBirth === 'string' ? rawSaved.dateOfBirth : null,
+          phoneNumber: typeof rawSaved.phoneNumber === 'string' ? rawSaved.phoneNumber : null,
+          selectedCourseIds: Array.isArray(rawSaved.selectedCourseIds)
+            ? rawSaved.selectedCourseIds.filter((item): item is string => typeof item === 'string')
+            : [],
+        }
+      : undefined
+    return {
+      verificationRequired: data.verificationRequired as boolean,
+      email: data.email as string,
+      ...(returnedCourseIds ? { selectedCourseIds: returnedCourseIds } : {}),
+      ...(reusedExistingAccount !== undefined ? { reusedExistingAccount } : {}),
+      ...(savedRegistration ? { savedRegistration } : {}),
+    }
   },
 
   async requestRegistrationOtp(email: string): Promise<{

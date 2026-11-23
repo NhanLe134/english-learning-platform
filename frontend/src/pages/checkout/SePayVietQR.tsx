@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertCircle, Check, CheckCircle2, Clipboard, ExternalLink, Loader2, XCircle } from 'lucide-react'
+import { AlertCircle, ArrowRight, Check, CheckCircle2, Clipboard, ExternalLink, Loader2, XCircle } from 'lucide-react'
 import { useAuth } from '../auth/auth-context'
+import { paymentPollingIntervalMs } from './payment-config'
 import { sepayApi, type CreateOrderResponse } from './sepayApi'
 
 interface SePayVietQRProps {
@@ -35,6 +36,7 @@ export default function SePayVietQR({ courseId, studentEmail, onPaymentError, on
   const [order, setOrder] = useState<CreateOrderResponse | null>(null)
   const [error, setError] = useState('')
   const [status, setStatus] = useState('pending')
+  const [enrollmentExists, setEnrollmentExists] = useState<boolean | null>(null)
   const [copyStatus, setCopyStatus] = useState<'idle' | 'account' | 'description' | 'error'>('idle')
   const [remainingSeconds, setRemainingSeconds] = useState(0)
   const [qrImageError, setQrImageError] = useState(false)
@@ -77,8 +79,10 @@ export default function SePayVietQR({ courseId, studentEmail, onPaymentError, on
     }
   }, [])
 
+  const hasPaymentInformation = Boolean(order?.paymentInformation)
+
   useEffect(() => {
-    if (!order?.expiredAt || order.checkoutMode !== 'direct_qr') return
+    if (!order?.expiredAt || (!hasPaymentInformation && order.checkoutMode !== 'direct_qr')) return
     expiryCheckedRef.current = false
     const updateCountdown = () => {
       const remaining = Math.max(0, Math.ceil((Date.parse(order.expiredAt!) - Date.now()) / 1000))
@@ -90,6 +94,7 @@ export default function SePayVietQR({ courseId, studentEmail, onPaymentError, on
             const verifiedStatus = orderStatusRef.current === 'paid' ? 'paid' : current.status
             orderStatusRef.current = verifiedStatus
             setStatus(verifiedStatus)
+            setEnrollmentExists(current.enrollmentExists)
             onOrderStatusChange(verifiedStatus)
           })
           .catch(() => undefined)
@@ -98,54 +103,57 @@ export default function SePayVietQR({ courseId, studentEmail, onPaymentError, on
     updateCountdown()
     const interval = window.setInterval(updateCountdown, 1000)
     return () => window.clearInterval(interval)
-  }, [accessToken, onOrderStatusChange, order?.checkoutMode, order?.expiredAt, order?.orderId])
+  }, [accessToken, hasPaymentInformation, onOrderStatusChange, order?.checkoutMode, order?.expiredAt, order?.orderId])
 
   const orderId = order?.orderId
-  const checkoutMode = order?.checkoutMode
   useEffect(() => {
-    if (!orderId || checkoutMode !== 'direct_qr' || isTerminalStatus(status)) return
+    if (!orderId || isTerminalStatus(status)) return
     let active = true
-    let connected = false
     let inFlight = false
     let refreshQueued = false
     let timer: ReturnType<typeof setTimeout> | undefined
+    const scheduleNextPoll = () => {
+      if (!active || isTerminalStatus(orderStatusRef.current) || timer) return
+      timer = setTimeout(() => {
+        timer = undefined
+        void refresh()
+      }, paymentPollingIntervalMs)
+    }
     const refresh = async () => {
-      if (!active || isTerminalStatus(status)) return
+      if (!active || isTerminalStatus(orderStatusRef.current)) return
       if (inFlight) {
         refreshQueued = true
         return
       }
       inFlight = true
-      let requestFailed = false
       try {
         const current = await sepayApi.getOrderStatus(orderId, accessToken)
         if (active) {
           const verifiedStatus = orderStatusRef.current === 'paid' ? 'paid' : current.status
           orderStatusRef.current = verifiedStatus
           setStatus(verifiedStatus)
+          setEnrollmentExists(current.enrollmentExists)
           onOrderStatusChange(verifiedStatus)
         }
       } catch {
-        // Continue listening and retry via the fallback timer when needed.
-        requestFailed = true
+        // Continue polling and listening until backend status is confirmed.
       } finally {
         inFlight = false
-        if (refreshQueued && active) {
+        if (refreshQueued && active && !isTerminalStatus(orderStatusRef.current)) {
           refreshQueued = false
           queueMicrotask(() => void refresh())
-        } else if (active && (!connected || requestFailed) && !isTerminalStatus(status) && !timer) {
-          timer = setTimeout(() => { timer = undefined; void refresh() }, 1500)
+        } else {
+          scheduleNextPoll()
         }
       }
     }
     const stopWatching = accessToken ? sepayApi.watchOrderStatus(orderId, accessToken, (message) => {
       if (!active) return
       if (message.kind === 'connection') {
-        connected = message.status === 'subscribed'
-        if (timer) { clearTimeout(timer); timer = undefined }
-        if (connected) void refresh()
-        else if (!isTerminalStatus(status) && !timer) timer = setTimeout(() => { timer = undefined; void refresh() }, 1500)
+        if (message.status === 'subscribed') void refresh()
+        else scheduleNextPoll()
       } else if (isTerminalStatus(message.status)) {
+        // SSE only triggers a backend check; never trust event status directly.
         void refresh()
       }
     }) : () => undefined
@@ -155,7 +163,7 @@ export default function SePayVietQR({ courseId, studentEmail, onPaymentError, on
       if (timer) clearTimeout(timer)
       stopWatching()
     }
-  }, [accessToken, checkoutMode, onOrderStatusChange, orderId, status])
+  }, [accessToken, onOrderStatusChange, orderId, status])
 
   async function copyValue(value: string, kind: 'account' | 'description') {
     try {
@@ -175,12 +183,19 @@ export default function SePayVietQR({ courseId, studentEmail, onPaymentError, on
     return <div className="sepay-vietqr pay-error" role="alert"><AlertCircle size={20} /> Thiếu thông tin nhận thanh toán. Vui lòng liên hệ bộ phận hỗ trợ trước khi chuyển tiền.</div>
   }
 
-  if (order.checkoutMode === 'direct_qr' && order.paymentInformation) {
+  if (order.paymentInformation) {
     const payment = order.paymentInformation
     const paid = status === 'paid'
     const expired = status === 'expired'
     const failed = status === 'failed' || status === 'cancelled'
     const accountText = `Ngân hàng: ${payment.bankName}\nSố tài khoản: ${payment.accountNumber}\nChủ tài khoản: ${payment.accountName}`
+    const courseAccessHref = paid
+      ? accessToken
+        ? enrollmentExists === true && order.course.slug
+          ? `/courses/${encodeURIComponent(order.course.slug)}`
+          : undefined
+        : `/login?paymentOrderId=${encodeURIComponent(order.orderId)}`
+      : undefined
 
     return (
       <section className="sepay-order-card sepay-custom-qr" aria-labelledby="sepay-custom-title" aria-live="polite">
@@ -190,7 +205,7 @@ export default function SePayVietQR({ courseId, studentEmail, onPaymentError, on
           </span>
           <div>
             <h3 id="sepay-custom-title">{paid ? 'Thanh toán thành công' : expired ? 'Đơn hàng đã hết hạn' : failed ? 'Thanh toán chưa hoàn tất' : 'Quét mã QR để thanh toán'}</h3>
-            <p>Trạng thái: <strong className={paid ? 'is-paid' : ''}>{paid ? 'Đã xác nhận' : expired ? 'Đã hết hạn' : failed ? 'Chưa hoàn tất' : 'Đang chờ thanh toán'}</strong></p>
+            <p>Trạng thái: <strong className={paid ? 'is-paid' : ''}>{paid ? 'Đã thanh toán' : expired ? 'Đã hết hạn' : failed ? 'Chưa hoàn tất' : 'Đang chờ thanh toán'}</strong></p>
           </div>
         </header>
 
@@ -201,6 +216,11 @@ export default function SePayVietQR({ courseId, studentEmail, onPaymentError, on
       <CheckCircle2 size={42} />
       <strong>SePay đã xác nhận giao dịch</strong>
       <span>Khóa học đã được kích hoạt cho tài khoản của bạn.</span>
+      {courseAccessHref && (
+        <a className="checkout-primary-button sepay-continue-button" href={courseAccessHref}>
+          {accessToken ? 'Vào học ngay' : 'Đăng nhập để vào học'} <ArrowRight size={16} />
+        </a>
+      )}
     </div>
   ) : expired || failed ? (
     <div className="sepay-payment-result">

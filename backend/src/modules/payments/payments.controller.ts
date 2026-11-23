@@ -108,7 +108,7 @@ export class PaymentController {
     response: Response,
   ): Promise<void> {
     try {
-      if (env.sepayCheckoutMode !== 'direct_qr') {
+      if (env.sepayCheckoutMode !== 'direct_qr' && !env.sepayBankWebhookSecret) {
         response.status(503).json({ success: false, message: 'Direct bank QR payments are not enabled.' })
         return
       }

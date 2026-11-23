@@ -208,6 +208,14 @@ export class AuthController {
         selectedCourseIds: request.body?.selectedCourseIds,
         googleAccessToken: typeof request.body?.googleAccessToken === 'string' ? request.body.googleAccessToken : undefined,
       })
+      if (!registration.verificationRequired) {
+        response.status(200).json({
+          success: true,
+          message: 'Email is already verified. Redirecting to checkout.',
+          data: registration,
+        })
+        return
+      }
       response.status(202).json({
         success: true,
         message: 'Registration is awaiting email verification.',
