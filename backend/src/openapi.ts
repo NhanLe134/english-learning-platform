@@ -753,7 +753,7 @@ export const openApiDocument = {
         parameters: [{ in: 'path', name: 'orderId', required: true, schema: { type: 'string', format: 'uuid' } }],
         responses: {
           ...errorResponses,
-          '200': jsonResponse('Order status payload'),
+          '200': jsonResponse('Order status payload (pending orders include paymentInformation when SePay bank details are configured)'),
           '403': jsonResponse('Order belongs to another user', { $ref: '#/components/schemas/ErrorResponse' }),
           '404': jsonResponse('Order not found', { $ref: '#/components/schemas/ErrorResponse' }),
         },
@@ -767,7 +767,7 @@ export const openApiDocument = {
         parameters: [{ in: 'path', name: 'orderId', required: true, schema: { type: 'string', format: 'uuid' } }],
         responses: {
           ...errorResponses,
-          '200': jsonResponse('Public order status payload'),
+          '200': jsonResponse('Public order status payload (pending orders include paymentInformation when SePay bank details are configured)'),
           '404': jsonResponse('Order not found', { $ref: '#/components/schemas/ErrorResponse' }),
         },
       },

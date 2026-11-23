@@ -58,6 +58,7 @@ interface RawOrderStatusResponse {
   amount: number
   paymentMethod: string | null
   transferContent: string
+  paymentInformation?: CreateOrderResponse['paymentInformation']
   providerTransactionId: string | null
   paidAt: string | null
   expiredAt: string | null

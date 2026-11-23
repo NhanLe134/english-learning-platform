@@ -1,24 +1,28 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertCircle, ArrowRight, Check, CheckCircle2, Clipboard, ExternalLink, Loader2, XCircle } from 'lucide-react'
-import { useAuth } from '../auth/auth-context'
-import { paymentPollingIntervalMs } from './payment-config'
-import { sepayApi, type CreateOrderResponse } from './sepayApi'
+import { AlertCircle, Check, Clipboard, QrCode } from 'lucide-react'
+import type { CreateOrderResponse } from './sepayApi'
 
-interface SePayVietQRProps {
-  courseId: string
-  studentEmail: string
-  onPaymentError: (message: string) => void
-  onOrderReady: (order: CreateOrderResponse) => void
-  onOrderStatusChange: (status: string) => void
+export interface SePayQrPaymentCardProps {
+  orderId: string
+  status: string
+  createdAt: string | null
+  amount: number
+  transferContent: string
+  expiredAt: string | null
+  paymentInformation: CreateOrderResponse['paymentInformation']
+  onCountdownExpired?: () => void
 }
 
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat('vi-VN', {
-    style: 'currency', currency: 'VND', maximumFractionDigits: 0,
+    style: 'currency',
+    currency: 'VND',
+    maximumFractionDigits: 0,
   }).format(amount)
 }
 
-function formatCreatedAt(value: string): string {
+function formatCreatedAt(value: string | null): string {
+  if (!value) return 'Đang cập nhật…'
   const date = new Date(value)
   return Number.isNaN(date.getTime())
     ? 'Không có thông tin'
@@ -29,49 +33,50 @@ function formatCountdown(seconds: number) {
   return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`
 }
 
-const isTerminalStatus = (status: string) => ['paid', 'expired', 'failed', 'cancelled'].includes(status)
-
-export default function SePayVietQR({ courseId, studentEmail, onPaymentError, onOrderReady, onOrderStatusChange }: SePayVietQRProps) {
-  const { accessToken } = useAuth()
-  const [order, setOrder] = useState<CreateOrderResponse | null>(null)
-  const [error, setError] = useState('')
-  const [status, setStatus] = useState('pending')
-  const [enrollmentExists, setEnrollmentExists] = useState<boolean | null>(null)
-  const [copyStatus, setCopyStatus] = useState<'idle' | 'account' | 'description' | 'error'>('idle')
-  const [remainingSeconds, setRemainingSeconds] = useState(0)
-  const [qrImageError, setQrImageError] = useState(false)
-  const orderRequestRef = useRef<ReturnType<typeof sepayApi.createOrder> | null>(null)
-  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const expiryCheckedRef = useRef(false)
-  const orderStatusRef = useRef('pending')
-
-  useEffect(() => { orderStatusRef.current = status }, [status])
+function PaymentCountdown({ expiresAt, onExpired }: { expiresAt: string; onExpired?: () => void }) {
+  const [remainingSeconds, setRemainingSeconds] = useState(() => {
+    const target = Date.parse(expiresAt)
+    return Number.isFinite(target) ? Math.max(0, Math.ceil((target - Date.now()) / 1000)) : 0
+  })
+  const expiredNotifiedRef = useRef(false)
 
   useEffect(() => {
-    let active = true
-    if (!accessToken && !studentEmail) {
-      onPaymentError('Vui lòng nhập email đã xác minh để tạo đơn thanh toán.')
-      return () => { active = false }
+    const target = Date.parse(expiresAt)
+    if (!Number.isFinite(target)) return
+    if (remainingSeconds <= 0) {
+      if (!expiredNotifiedRef.current) {
+        expiredNotifiedRef.current = true
+        onExpired?.()
+      }
+      return
     }
-    orderRequestRef.current ??= sepayApi.createOrder({ courseId, email: studentEmail }, accessToken)
-    void orderRequestRef.current
-      .then((createdOrder) => {
-        if (!active) return
-        setOrder(createdOrder)
-        orderStatusRef.current = createdOrder.status
-        setStatus(createdOrder.status)
-        onOrderStatusChange(createdOrder.status)
-        onOrderReady(createdOrder)
-      })
-      .catch((cause: unknown) => {
-        orderRequestRef.current = null
-        if (!active) return
-        const message = cause instanceof Error ? cause.message : 'Không thể tạo đơn thanh toán.'
-        setError(message)
-        onPaymentError(message)
-      })
-    return () => { active = false }
-  }, [accessToken, courseId, studentEmail, onOrderReady, onOrderStatusChange, onPaymentError])
+    const timer = window.setTimeout(() => {
+      setRemainingSeconds(Math.max(0, Math.ceil((target - Date.now()) / 1000)))
+    }, 1000)
+    return () => window.clearTimeout(timer)
+  }, [expiresAt, onExpired, remainingSeconds])
+
+  return (
+    <span className={`sepay-payment-countdown${remainingSeconds <= 60 ? ' is-urgent' : ''}`} role="timer">
+      <span>Đơn hết hạn sau</span>
+      <b>{formatCountdown(remainingSeconds)}</b>
+    </span>
+  )
+}
+
+export function SePayQrPaymentCard({
+  orderId,
+  status,
+  createdAt,
+  amount,
+  transferContent,
+  expiredAt,
+  paymentInformation,
+  onCountdownExpired,
+}: SePayQrPaymentCardProps) {
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'account' | 'description' | 'error'>('idle')
+  const [qrImageError, setQrImageError] = useState(false)
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     return () => {
@@ -79,93 +84,8 @@ export default function SePayVietQR({ courseId, studentEmail, onPaymentError, on
     }
   }, [])
 
-  const hasPaymentInformation = Boolean(order?.paymentInformation)
-
-  useEffect(() => {
-    if (!order?.expiredAt || (!hasPaymentInformation && order.checkoutMode !== 'direct_qr')) return
-    expiryCheckedRef.current = false
-    const updateCountdown = () => {
-      const remaining = Math.max(0, Math.ceil((Date.parse(order.expiredAt!) - Date.now()) / 1000))
-      setRemainingSeconds(remaining)
-      if (remaining === 0 && !expiryCheckedRef.current) {
-        expiryCheckedRef.current = true
-        void sepayApi.getOrderStatus(order.orderId, accessToken)
-          .then((current) => {
-            const verifiedStatus = orderStatusRef.current === 'paid' ? 'paid' : current.status
-            orderStatusRef.current = verifiedStatus
-            setStatus(verifiedStatus)
-            setEnrollmentExists(current.enrollmentExists)
-            onOrderStatusChange(verifiedStatus)
-          })
-          .catch(() => undefined)
-      }
-    }
-    updateCountdown()
-    const interval = window.setInterval(updateCountdown, 1000)
-    return () => window.clearInterval(interval)
-  }, [accessToken, hasPaymentInformation, onOrderStatusChange, order?.checkoutMode, order?.expiredAt, order?.orderId])
-
-  const orderId = order?.orderId
-  useEffect(() => {
-    if (!orderId || isTerminalStatus(status)) return
-    let active = true
-    let inFlight = false
-    let refreshQueued = false
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const scheduleNextPoll = () => {
-      if (!active || isTerminalStatus(orderStatusRef.current) || timer) return
-      timer = setTimeout(() => {
-        timer = undefined
-        void refresh()
-      }, paymentPollingIntervalMs)
-    }
-    const refresh = async () => {
-      if (!active || isTerminalStatus(orderStatusRef.current)) return
-      if (inFlight) {
-        refreshQueued = true
-        return
-      }
-      inFlight = true
-      try {
-        const current = await sepayApi.getOrderStatus(orderId, accessToken)
-        if (active) {
-          const verifiedStatus = orderStatusRef.current === 'paid' ? 'paid' : current.status
-          orderStatusRef.current = verifiedStatus
-          setStatus(verifiedStatus)
-          setEnrollmentExists(current.enrollmentExists)
-          onOrderStatusChange(verifiedStatus)
-        }
-      } catch {
-        // Continue polling and listening until backend status is confirmed.
-      } finally {
-        inFlight = false
-        if (refreshQueued && active && !isTerminalStatus(orderStatusRef.current)) {
-          refreshQueued = false
-          queueMicrotask(() => void refresh())
-        } else {
-          scheduleNextPoll()
-        }
-      }
-    }
-    const stopWatching = accessToken ? sepayApi.watchOrderStatus(orderId, accessToken, (message) => {
-      if (!active) return
-      if (message.kind === 'connection') {
-        if (message.status === 'subscribed') void refresh()
-        else scheduleNextPoll()
-      } else if (isTerminalStatus(message.status)) {
-        // SSE only triggers a backend check; never trust event status directly.
-        void refresh()
-      }
-    }) : () => undefined
-    void refresh()
-    return () => {
-      active = false
-      if (timer) clearTimeout(timer)
-      stopWatching()
-    }
-  }, [accessToken, onOrderStatusChange, orderId, status])
-
   async function copyValue(value: string, kind: 'account' | 'description') {
+    if (!value) return
     try {
       await navigator.clipboard.writeText(value)
       setCopyStatus(kind)
@@ -176,164 +96,110 @@ export default function SePayVietQR({ courseId, studentEmail, onPaymentError, on
     copyTimerRef.current = setTimeout(() => setCopyStatus('idle'), 2500)
   }
 
-  const visibleError = error
-  if (visibleError && !order) return <div className="sepay-vietqr pay-error" role="alert"><AlertCircle size={20} /> {visibleError}</div>
-  if (!order) return <div className="sepay-vietqr pay-waiting" role="status"><Loader2 className="sepay-loader" size={22} /> Đang tạo đơn thanh toán…</div>
-  if (order.checkoutMode === 'direct_qr' && !order.paymentInformation) {
-    return <div className="sepay-vietqr pay-error" role="alert"><AlertCircle size={20} /> Thiếu thông tin nhận thanh toán. Vui lòng liên hệ bộ phận hỗ trợ trước khi chuyển tiền.</div>
-  }
+  const displayAmount = paymentInformation?.amount ?? amount
+  const displayTransferContent = paymentInformation?.transferContent || transferContent
+  const displayExpiresAt = paymentInformation?.expiresAt || expiredAt
+  const statusLabel = status === 'pending' ? 'Đang chờ thanh toán' : 'Đang kiểm tra'
+  const accountText = paymentInformation
+    ? `Ngân hàng: ${paymentInformation.bankName}\nSố tài khoản: ${paymentInformation.accountNumber}\nChủ tài khoản: ${paymentInformation.accountName}`
+    : ''
 
-  if (order.paymentInformation) {
-    const payment = order.paymentInformation
-    const paid = status === 'paid'
-    const expired = status === 'expired'
-    const failed = status === 'failed' || status === 'cancelled'
-    const accountText = `Ngân hàng: ${payment.bankName}\nSố tài khoản: ${payment.accountNumber}\nChủ tài khoản: ${payment.accountName}`
-    const courseAccessHref = paid
-      ? accessToken
-        ? enrollmentExists === true && order.course.slug
-          ? `/courses/${encodeURIComponent(order.course.slug)}`
-          : undefined
-        : `/login?paymentOrderId=${encodeURIComponent(order.orderId)}`
-      : undefined
+  return (
+    <section className="sepay-order-card sepay-custom-qr" aria-labelledby="sepay-custom-title" aria-live="polite">
+      <header className="sepay-order-heading">
+        <span className="sepay-order-icon">
+          <QrCode size={18} />
+        </span>
+        <div>
+          <h3 id="sepay-custom-title">Quét mã QR để thanh toán</h3>
+        </div>
+      </header>
 
-    return (
-      <section className="sepay-order-card sepay-custom-qr" aria-labelledby="sepay-custom-title" aria-live="polite">
-        <header className="sepay-order-heading">
-          <span className={`sepay-order-icon${paid ? ' is-paid' : ''}`}>
-            {paid ? <CheckCircle2 size={18} /> : failed || expired ? <XCircle size={18} /> : <Check size={17} />}
-          </span>
-          <div>
-            <h3 id="sepay-custom-title">{paid ? 'Thanh toán thành công' : expired ? 'Đơn hàng đã hết hạn' : failed ? 'Thanh toán chưa hoàn tất' : 'Quét mã QR để thanh toán'}</h3>
-            <p>Trạng thái: <strong className={paid ? 'is-paid' : ''}>{paid ? 'Đã thanh toán' : expired ? 'Đã hết hạn' : failed ? 'Chưa hoàn tất' : 'Đang chờ thanh toán'}</strong></p>
-          </div>
-        </header>
+      <div className="sepay-custom-qr-layout">
+        <div className="sepay-custom-qr-panel">
+          {!paymentInformation ? (
+            <div className="sepay-qr-image-fallback" role="alert">
+              <AlertCircle size={22} />
+              <span>Chưa cấu hình thông tin tài khoản nhận thanh toán SePay. Vui lòng liên hệ bộ phận hỗ trợ trước khi chuyển tiền.</span>
+            </div>
+          ) : qrImageError ? (
+            <div className="sepay-qr-image-fallback" role="status">
+              Không tải được ảnh mã QR. Bạn vẫn có thể sử dụng thông tin chuyển khoản ở bên cạnh.
+            </div>
+          ) : (
+            <img
+              className="sepay-custom-qr-image"
+              src={paymentInformation.qrCodeUrl}
+              alt={`Mã VietQR thanh toán ${formatCurrency(displayAmount)} tới ${paymentInformation.accountName || paymentInformation.accountNumber}`}
+              onError={() => setQrImageError(true)}
+            />
+          )}
 
-        <div className="sepay-custom-qr-layout">
-          <div className="sepay-custom-qr-panel">
-  {paid ? (
-    <div className="sepay-payment-result is-paid">
-      <CheckCircle2 size={42} />
-      <strong>SePay đã xác nhận giao dịch</strong>
-      <span>Khóa học đã được kích hoạt cho tài khoản của bạn.</span>
-      {courseAccessHref && (
-        <a className="checkout-primary-button sepay-continue-button" href={courseAccessHref}>
-          {accessToken ? 'Vào học ngay' : 'Đăng nhập để vào học'} <ArrowRight size={16} />
-        </a>
-      )}
-    </div>
-  ) : expired || failed ? (
-    <div className="sepay-payment-result">
-      <XCircle size={42} />
-      <strong>{expired ? 'Đơn hàng đã hết hạn' : 'Thanh toán chưa hoàn tất'}</strong>
-      <span>Vui lòng tạo đơn mới để tiếp tục.</span>
-    </div>
-  ) : qrImageError ? (
-    <div className="sepay-qr-image-fallback" role="status">
-      Không tải được mã QR. Bạn vẫn có thể sử dụng thông tin chuyển khoản ở bên cạnh.
-    </div>
-  ) : (
-    <img 
-      className="sepay-custom-qr-image" 
-      src={payment.qrCodeUrl} 
-      alt={`Mã VietQR thanh toán ${formatCurrency(payment.amount)} tới ${payment.accountName}`} 
-      onError={() => setQrImageError(true)} 
-    />
-  )}
+          <strong className="sepay-custom-qr-amount">{formatCurrency(displayAmount)}</strong>
+          <p>Mở ứng dụng ngân hàng bất kỳ để quét mã và thanh toán tự động.</p>
 
-  <strong className="sepay-custom-qr-amount">{formatCurrency(payment.amount)}</strong>
+          {status === 'pending' && displayExpiresAt && (
+            <PaymentCountdown
+              key={displayExpiresAt}
+              expiresAt={displayExpiresAt}
+              onExpired={onCountdownExpired}
+            />
+          )}
+        </div>
 
-  {!paid && !expired && !failed && (
-    <p>Mở ứng dụng ngân hàng bất kỳ để quét mã và thanh toán tự động.</p>
-  )}
+        <div className="sepay-custom-transfer-details">
+          <dl className="sepay-order-meta">
+            <div><dt>Mã đơn hàng</dt><dd title={orderId}>{orderId}</dd></div>
+            <div><dt>Trạng thái</dt><dd>{statusLabel}</dd></div>
+            <div><dt>Thời gian tạo đơn</dt><dd>{formatCreatedAt(createdAt)}</dd></div>
+            <div><dt>Số tiền cần thanh toán</dt><dd>{formatCurrency(displayAmount)}</dd></div>
+            {paymentInformation && (
+              <>
+                <div><dt>Ngân hàng</dt><dd>{paymentInformation.bankName}</dd></div>
+                <div><dt>Số tài khoản</dt><dd>{paymentInformation.accountNumber}</dd></div>
+                <div><dt>Chủ tài khoản</dt><dd>{paymentInformation.accountName}</dd></div>
+              </>
+            )}
+          </dl>
 
-  {status === 'pending' && (
-    <span className={`sepay-payment-countdown${remainingSeconds <= 60 ? ' is-urgent' : ''}`}>
-      <span>Đơn hết hạn sau</span>
-      <b>{formatCountdown(remainingSeconds)}</b>
-    </span>
-  )}
-          </div>
-
-          <div className="sepay-custom-transfer-details">
-            <dl className="sepay-order-meta">
-              <div><dt>Mã đơn hàng</dt><dd title={order.orderId}>{order.orderId}</dd></div>
-              <div><dt>Ngày tạo</dt><dd>{formatCreatedAt(order.createdAt)}</dd></div>
-              <div><dt>Ngân hàng</dt><dd>{payment.bankName}</dd></div>
-              <div><dt>Số tài khoản</dt><dd>{payment.accountNumber}</dd></div>
-              <div><dt>Chủ tài khoản</dt><dd>{payment.accountName}</dd></div>
-            </dl>
-            <button type="button" className="sepay-copy-details-button" onClick={() => void copyValue(accountText, 'account')}>
+          {paymentInformation && (
+            <button
+              type="button"
+              className="sepay-copy-details-button"
+              onClick={() => void copyValue(accountText, 'account')}
+            >
               {copyStatus === 'account' ? <Check size={16} /> : <Clipboard size={16} />}
               {copyStatus === 'account' ? 'Đã sao chép thông tin' : 'Sao chép thông tin tài khoản'}
             </button>
+          )}
+
+          {displayTransferContent && (
             <div className="sepay-transfer-reference">
               <span>Nội dung chuyển khoản chính xác</span>
               <div>
-                <code>{payment.transferContent}</code>
-                <button type="button" onClick={() => void copyValue(payment.transferContent, 'description')} aria-label="Sao chép nội dung chuyển khoản">
+                <code>{displayTransferContent}</code>
+                <button
+                  type="button"
+                  onClick={() => void copyValue(displayTransferContent, 'description')}
+                  aria-label="Sao chép nội dung chuyển khoản"
+                >
                   {copyStatus === 'description' ? <Check size={16} /> : <Clipboard size={16} />}
                   {copyStatus === 'description' ? 'Đã sao chép' : 'Sao chép'}
                 </button>
               </div>
               <p>Chuyển đúng số tiền và giữ nguyên nội dung trên để hệ thống nhận diện đơn hàng.</p>
             </div>
-            <ol className="sepay-payment-instructions">
-              <li>Mở ứng dụng ngân hàng và quét mã QR.</li>
-              <li>Kiểm tra người nhận, số tiền và nội dung chuyển khoản.</li>
-              <li>Xác nhận chuyển tiền; trạng thái sẽ cập nhật tự động sau khi SePay gửi thông báo đã xác thực.</li>
-            </ol>
-            <p className="sepay-copy-feedback" aria-live="polite">
-              {copyStatus === 'error' ? 'Không thể sao chép tự động. Vui lòng chọn và sao chép nội dung thủ công.' : ''}
-            </p>
-          </div>
-        </div>
-      </section>
-    )
-  }
+          )}
 
-  return (
-    <section className="sepay-order-card" aria-labelledby="sepay-order-title">
-      <header className="sepay-order-heading">
-        <span className="sepay-order-icon"><Check size={17} /></span>
-        <div>
-          <h3 id="sepay-order-title">Đơn hàng đã sẵn sàng</h3>
-          <p>Trạng thái: <strong>Đang chờ thanh toán</strong></p>
-        </div>
-      </header>
+        
 
-      <dl className="sepay-order-meta">
-        <div><dt>Mã đơn hàng</dt><dd title={order.orderId}>{order.orderId.slice(0, 8)}…{order.orderId.slice(-4)}</dd></div>
-        <div><dt>Ngày tạo</dt><dd>{formatCreatedAt(order.createdAt)}</dd></div>
-        <div className="sepay-order-total"><dt>Số tiền cần chuyển</dt><dd>{formatCurrency(order.amount)}</dd></div>
-      </dl>
-
-      <div className="sepay-transfer-reference">
-        <span>Nội dung chuyển khoản chính xác</span>
-        <div>
-          <code>{order.transferContent}</code>
-          <button type="button" onClick={() => void copyValue(order.transferContent, 'description')} aria-label="Sao chép nội dung chuyển khoản">
-            {copyStatus === 'description' ? <Check size={16} /> : <Clipboard size={16} />}
-            {copyStatus === 'description' ? 'Đã sao chép' : 'Sao chép nội dung'}
-          </button>
+          <p className="sepay-copy-feedback" aria-live="polite">
+            {copyStatus === 'error' ? 'Không thể sao chép tự động. Vui lòng chọn và sao chép nội dung thủ công.' : ''}
+          </p>
         </div>
-        <p>Vui lòng nhập chính xác nội dung này để hệ thống tự động nhận diện và xác nhận giao dịch.</p>
       </div>
-
-      <div className="sepay-hosted-checkout-note">
-        <strong>Thanh toán bảo mật qua SePay</strong>
-        <p>Tiếp tục tới trang SePay để hoàn tất thanh toán bằng phương thức đã chọn.</p>
-      </div>
-
-      {visibleError && <p className="checkout-inline-error" role="alert">{visibleError}</p>}
-      {order.checkoutUrl && order.checkoutFields && <form action={order.checkoutUrl} method="POST" className="sepay-checkout-form">
-        {Object.entries(order.checkoutFields).map(([name, value]) => (
-          <input key={name} type="hidden" name={name} value={String(value)} />
-        ))}
-        <button type="submit" className="checkout-primary-button sepay-continue-button">
-          Pay Now <ExternalLink size={16} />
-        </button>
-      </form>}
     </section>
   )
 }
+
+export default SePayQrPaymentCard

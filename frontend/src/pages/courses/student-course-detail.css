@@ -6,7 +6,7 @@
 
 .student-detail-page {
   min-height: 100vh;
-  background-color: #F8F9FA;
+  background-color: #F9FAFB;
   font-family: var(--font-sans, "Be Vietnam Pro", Inter, sans-serif);
   color: var(--color-ink-900, #17181C);
   display: flex;
@@ -92,8 +92,8 @@
 
 .student-back-link:hover {
   color: var(--color-brand-600, #C8102E);
-  border-color: #FBB5BC;
-  background: #FFF1F2;
+  border-color: var(--color-brand-200, #F7B4B9);
+  background: var(--color-brand-50, #FEF1F2);
 }
 
 /* --------------------------------------------------------------------------
@@ -121,10 +121,10 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  background: #FFF1F2;
-  color: #BE123C;
+  background: var(--color-brand-50, #FEF1F2);
+  color: var(--color-brand-600, #C8102E);
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
   padding: 3px 10px;
   border-radius: 9999px;
   margin-bottom: 8px;
@@ -268,7 +268,7 @@
   border: 1px solid transparent;
   border-radius: 8px;
   background: #fff;
-  font: inherit;
+  font-family: inherit;
 }
 
 .curriculum-sidebar-card .curriculum-lesson-item:hover,
@@ -333,8 +333,9 @@
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
-  font-size: 10px;
-  line-height: 1.35;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 .curriculum-sidebar-card .lesson-item-meta {
@@ -343,8 +344,8 @@
   gap: 2px;
   margin-top: 3px;
   white-space: normal;
-  font-size: 10px;
-  line-height: 1.35;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .curriculum-sidebar-card .lesson-meta-line {
@@ -429,7 +430,7 @@
 .quiz-overlay .quiz-option-item {
   padding: 8px 12px;
   text-align: left;
-  font: inherit;
+  font-family: inherit;
 }
 
 .quiz-option-item:disabled {
@@ -629,7 +630,7 @@
 
 .video-center-play-btn:hover {
   transform: translate(-50%, -50%) scale(1.1);
-  background: #A30D26;
+  background: var(--color-brand-700, #A30D26);
   box-shadow: 0 6px 25px rgba(200, 16, 46, 0.6);
 }
 
@@ -851,7 +852,7 @@
 
 .lesson-status-text p {
   font-size: 12px;
-  color: var(--color-ink-500, #6B7076);
+  color: var(--color-ink-500, #6E7179);
   margin: 0;
   line-height: 1.4;
 }
@@ -875,7 +876,7 @@
 }
 
 .btn-start-quiz-cta:hover {
-  background: #A30D26;
+  background: var(--color-brand-700, #A30D26);
   box-shadow: 0 4px 10px rgba(200, 16, 46, 0.35);
 }
 
@@ -1029,7 +1030,7 @@
 }
 
 .question-text-heading strong {
-  color: #C8102E;
+  color: var(--color-brand-600, #C8102E);
 }
 
 /* Audio Native Speaker Button */
@@ -1047,8 +1048,8 @@
 }
 
 .quiz-audio-pronounce-card:hover {
-  background: #FFF1F2;
-  border-color: #FBB5BC;
+  background: var(--color-brand-50, #FEF1F2);
+  border-color: var(--color-brand-200, #F7B4B9);
 }
 
 .audio-icon-circle {
@@ -1205,7 +1206,7 @@
 }
 
 .btn-submit-quiz:hover {
-  background: #A30D26;
+  background: var(--color-brand-700, #A30D26);
   box-shadow: 0 4px 10px rgba(200, 16, 46, 0.35);
 }
 

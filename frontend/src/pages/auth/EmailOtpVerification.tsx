@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from 'react'
 import {
+  ArrowLeft,
   BadgeCheck,
   Clock3,
   Headset,
@@ -27,6 +28,7 @@ interface EmailOtpVerificationProps {
   onVerify: (otp: string) => void
   onResend: () => Promise<boolean>
   onChangeEmail: () => void
+  onBack?: () => void
 }
 
 function formatTime(seconds: number): string {
@@ -49,6 +51,7 @@ export function EmailOtpVerification({
   onVerify,
   onResend,
   onChangeEmail,
+  onBack,
 }: EmailOtpVerificationProps) {
   const [digits, setDigits] = useState<string[]>(() => Array(OTP_LENGTH).fill(''))
   const [remainingSeconds, setRemainingSeconds] = useState(() =>
@@ -141,6 +144,18 @@ export function EmailOtpVerification({
 
   return (
     <section className="email-otp-card" aria-labelledby="email-otp-title">
+      <div className="email-otp-top-bar">
+        <button
+          type="button"
+          className="email-otp-back-btn"
+          onClick={onBack ?? onChangeEmail}
+          disabled={submitting || verified}
+          aria-label="Quay lại biểu mẫu đăng ký"
+        >
+          <ArrowLeft size={16} aria-hidden="true" />
+          <span>Quay lại</span>
+        </button>
+      </div>
       <div className="email-otp-icon" aria-hidden="true">
         <Mail size={27} strokeWidth={1.8} />
         <span><ShieldCheck size={15} strokeWidth={2.5} /></span>
@@ -219,9 +234,9 @@ export function EmailOtpVerification({
       </p>
 
       <div className="email-otp-options">
-        <button type="button" onClick={onChangeEmail} disabled={submitting || verified}>
+        <button type="button" onClick={onBack ?? onChangeEmail} disabled={submitting || verified}>
           <PencilLine size={15} aria-hidden="true" />
-          Đổi địa chỉ email khác
+          Quay lại chỉnh sửa thông tin
         </button>
         <a href="tel:19008888">
           <Headset size={16} aria-hidden="true" />

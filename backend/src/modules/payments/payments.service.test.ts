@@ -562,4 +562,57 @@ describe('SePay direct bank QR payment confirmation', () => {
       Object.assign(env, { sepayAccountNumber: previousAccount })
     }
   })
+
+  it('computes paymentInformation only for pending orders when SePay bank config is available', () => {
+    const original = {
+      mode: env.sepayCheckoutMode,
+      bankCode: env.sepayBankCode,
+      bankName: env.sepayBankName,
+      accountNumber: env.sepayAccountNumber,
+      accountName: env.sepayAccountName,
+    }
+    const service = new PaymentService({} as never)
+    try {
+      Object.assign(env, {
+        sepayCheckoutMode: 'hosted',
+        sepayBankCode: '',
+        sepayBankName: '',
+        sepayAccountNumber: '',
+        sepayAccountName: '',
+      })
+      assert.equal(service.getPaymentInformation(createOrder('pending')), null)
+
+      Object.assign(env, {
+        sepayCheckoutMode: 'hosted',
+        sepayBankCode: 'MB',
+        sepayBankName: 'MB Bank',
+        sepayAccountNumber: '0987654321',
+        sepayAccountName: 'NGUYEN VAN A',
+      })
+      const pendingOrder = { ...createOrder('pending'), expired_at: new Date(Date.now() + 60_000).toISOString() }
+      const info = service.getPaymentInformation(pendingOrder)
+      assert.ok(info)
+      assert.equal(info.bankName, 'MB Bank')
+      assert.equal(info.accountNumber, '0987654321')
+      assert.equal(info.accountName, 'NGUYEN VAN A')
+      assert.equal(info.amount, pendingOrder.amount)
+      assert.equal(info.transferContent, pendingOrder.transfer_content)
+      const qrUrl = new URL(info.qrCodeUrl)
+      assert.equal(qrUrl.searchParams.get('acc'), '0987654321')
+      assert.equal(qrUrl.searchParams.get('bank'), 'MB')
+      assert.equal(qrUrl.searchParams.get('amount'), String(pendingOrder.amount))
+      assert.equal(qrUrl.searchParams.get('des'), pendingOrder.transfer_content)
+
+      assert.equal(service.getPaymentInformation(createOrder('paid')), null)
+      assert.equal(service.getPaymentInformation(createOrder('expired')), null)
+    } finally {
+      Object.assign(env, {
+        sepayCheckoutMode: original.mode,
+        sepayBankCode: original.bankCode,
+        sepayBankName: original.bankName,
+        sepayAccountNumber: original.accountNumber,
+        sepayAccountName: original.accountName,
+      })
+    }
+  })
 })

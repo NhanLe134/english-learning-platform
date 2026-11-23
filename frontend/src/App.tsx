@@ -167,7 +167,7 @@ function AppRoutes() {
       break
     case '/courses':
     case '/khoa-hoc':
-      page = user?.role === 'STUDENT' ? <StudentCoursesPage /> : <CourseListPage />
+      page = <CourseListPage />
       break
     case '/student/courses':
     case '/my-courses':
@@ -205,6 +205,8 @@ function AppRoutes() {
     case '/thanh-toan':
       page = <CheckoutPage />
       break
+    case '/checkout/payment':
+    case '/thanh-toan/qr':
     case '/checkout/success':
     case '/payment-success':
     case '/thanh-toan/thanh-cong':
@@ -230,9 +232,7 @@ function AppRoutes() {
         const courseRoute = pathname.match(/^\/(?:courses|khoa-hoc)\/([^/]+)$/)
         if (courseRoute && courseRoute[1]) {
           const decodedSlug = decodeURIComponent(courseRoute[1])
-          page = user?.role === 'STUDENT'
-            ? <StudentCourseDetailPage courseSlug={decodedSlug} />
-            : <CourseDetailPage identifier={decodedSlug} />
+          page = <CourseDetailPage identifier={decodedSlug} />
           break
         }
 

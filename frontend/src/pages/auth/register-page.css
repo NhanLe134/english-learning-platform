@@ -2,10 +2,10 @@
   width: 100%;
   min-width: 0;
   padding: 25px 26px 22px;
-  border: 1px solid #eeeceb;
-  border-radius: 15px;
+  border: 1px solid #E5E7EB;
+  border-radius: 16px;
   background: #fff;
-  box-shadow: 0 10px 30px #2f1c180c;
+  box-shadow: 0 1px 2px rgba(23, 24, 28, 0.04);
   text-align: center;
 }
 
@@ -16,9 +16,9 @@
 .register-card h2 {
   margin: 0 0 5px;
   color: var(--heading);
-  font-size: 19px;
-  font-weight: 750;
-  letter-spacing: -0.5px;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   line-height: 1.35;
 }
 
@@ -34,9 +34,9 @@
 .register-form > label:not(.terms-option) {
   display: block;
   margin: 0 0 5px;
-  color: var(--description);
+  color: var(--color-ink-700);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .register-form > label:not(.terms-option):not(:first-child) {
@@ -87,7 +87,7 @@
 }
 
 .terms-option > input:focus-visible + .custom-checkbox {
-  outline: 2px solid rgba(188, 0, 2, 0.4);
+  outline: 2px solid var(--color-brand-200);
   outline-offset: 2px;
 }
 
@@ -113,9 +113,9 @@
   border: 0;
   background: transparent;
   color: var(--accent-red);
-  font: inherit;
+  font-family: inherit;
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -186,12 +186,12 @@
 
 .register-page-shell {
   background: #FFFFFF;
-  color: #1A1C1D;
-  --heading: #1A1C1D;
-  --description: #5F3E39;
-  --accent-red: #BC0002;
-  --brand-red: #BC0002;
-  --primary-button: #E00004;
+  color: var(--color-ink-900);
+  --heading: var(--color-ink-900);
+  --description: var(--color-ink-700);
+  --accent-red: var(--color-brand-600);
+  --brand-red: var(--color-brand-700);
+  --primary-button: var(--color-brand-600);
   --input-bg: #FFFFFF;
 }
 
@@ -261,11 +261,61 @@
 .email-otp-card {
   width: 100%;
   padding: clamp(26px, 5vw, 44px);
-  border: 1px solid #EEE9E8;
-  border-radius: 12px;
+  border: 1px solid #E5E7EB;
+  border-radius: 16px;
   background: #FFFFFF;
-  box-shadow: 0 12px 36px rgba(26, 28, 29, 0.1);
+  box-shadow: 0 8px 30px rgba(200, 16, 46, 0.08);
   text-align: center;
+}
+
+.email-otp-top-bar {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 12px;
+}
+
+.email-otp-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  background: #F9FAFB;
+  color: var(--description);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.email-otp-back-btn:hover:not(:disabled) {
+  border-color: var(--accent-red);
+  color: var(--accent-red);
+  background: var(--color-brand-50);
+}
+
+.email-otp-back-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.register-breadcrumb-back {
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: var(--description);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.register-breadcrumb-back:hover {
+  color: var(--accent-red);
 }
 
 .email-otp-icon {
@@ -276,7 +326,7 @@
   place-items: center;
   margin: 0 auto 17px;
   border-radius: 50%;
-  background: #FFF1F0;
+  background: var(--color-brand-50);
   color: var(--accent-red);
 }
 
@@ -296,8 +346,8 @@
 
 .email-otp-step {
   margin: 0 0 8px;
-  color: var(--description);
-  font-size: 11px;
+  color: var(--color-ink-500);
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
 }
@@ -309,16 +359,17 @@
 .email-otp-card h1 {
   margin: 0;
   color: var(--heading);
-  font-size: clamp(23px, 3vw, 30px);
-  font-weight: 750;
-  letter-spacing: -0.035em;
+  font-size: clamp(24px, 3vw, 30px);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
 }
 
 .email-otp-description {
   margin: 12px 0 4px;
-  color: var(--description);
+  color: var(--color-ink-500);
   font-size: 14px;
-  line-height: 1.55;
+  line-height: 1.625;
 }
 
 .email-otp-address {
@@ -331,7 +382,7 @@
 
 .email-otp-note {
   margin: 6px 0 23px;
-  color: var(--description);
+  color: var(--color-ink-500);
   font-size: 12px;
 }
 
@@ -356,30 +407,31 @@
   height: clamp(46px, 9vw, 60px);
   min-width: 0;
   box-sizing: border-box;
-  border: 1px solid #DED8D6;
+  border: 1px solid #E5E7EB;
   border-radius: 8px;
-  background: #FFFFFF;
+  background: #F9FAFB;
   color: var(--heading);
-  font: inherit;
+  font-family: inherit;
   font-size: 24px;
   font-weight: 700;
   text-align: center;
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+  transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
 }
 
 .email-otp-inputs input:focus {
   border-color: var(--accent-red);
+  background: #FFFFFF;
   outline: 0;
-  box-shadow: 0 0 0 3px rgba(188, 0, 2, 0.1);
+  box-shadow: 0 0 0 3px var(--color-brand-200);
 }
 
 .email-otp-inputs input.filled {
-  border-color: #D7B5B4;
-  background: #FFFCFC;
+  border-color: var(--color-brand-200);
+  background: #FFFFFF;
 }
 
 .email-otp-inputs input[aria-invalid="true"] {
-  border-color: #B42318;
+  border-color: var(--color-brand-700);
 }
 
 .email-otp-inputs:disabled input {
@@ -403,9 +455,9 @@
   gap: 7px;
   margin: 20px 0 17px;
   padding: 8px 12px;
-  border: 1px solid #F0D8D7;
+  border: 1px solid var(--color-brand-100);
   border-radius: 999px;
-  background: #FFF8F7;
+  background: var(--color-brand-50);
   color: var(--accent-red);
   font-size: 12px;
 }
@@ -415,9 +467,9 @@
 }
 
 .email-otp-timer.expired {
-  border-color: #F2C7C8;
-  background: #FFF2F2;
-  color: #A90002;
+  border-color: var(--color-brand-200);
+  background: var(--color-brand-50);
+  color: var(--color-brand-800);
 }
 
 .email-otp-form > .auth-feedback {
@@ -427,8 +479,9 @@
 
 .email-otp-submit {
   min-height: 46px;
-  border-radius: 7px;
+  border-radius: 12px;
   font-size: 14px;
+  font-weight: 700;
 }
 
 .email-otp-submit:disabled {
@@ -438,7 +491,7 @@
 
 .email-otp-resend {
   margin: 17px 0 21px;
-  color: var(--description);
+  color: var(--color-ink-500);
   font-size: 13px;
 }
 
@@ -447,22 +500,22 @@
   border: 0;
   background: transparent;
   color: var(--accent-red);
-  font: inherit;
+  font-family: inherit;
   font-weight: 700;
   cursor: pointer;
 }
 
 .email-otp-resend button:disabled {
-  color: #8A7773;
+  color: var(--color-ink-400);
   cursor: not-allowed;
 }
 
 .email-otp-options {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  border: 1px solid #EEE9E8;
+  border: 1px solid #E5E7EB;
   border-radius: 8px;
-  background: #FAF8F7;
+  background: #F9FAFB;
 }
 
 .email-otp-options > * {
@@ -473,13 +526,14 @@
   gap: 7px;
   padding: 8px;
   color: var(--description);
-  font: inherit;
+  font-family: inherit;
   font-size: 12px;
+  font-weight: 700;
   text-decoration: none;
 }
 
 .email-otp-options > * + * {
-  border-left: 1px solid #EEE9E8;
+  border-left: 1px solid #E5E7EB;
 }
 
 .email-otp-options button {
@@ -505,8 +559,8 @@
   flex-wrap: wrap;
   gap: 10px 18px;
   margin-top: 22px;
-  color: var(--description);
-  font-size: 10px;
+  color: var(--color-ink-500);
+  font-size: 11px;
 }
 
 .email-otp-security span {
@@ -521,32 +575,32 @@
 
 .register-card {
   padding: clamp(24px, 3vw, 38px);
-  border: 1px solid #EEE9E8;
-  border-radius: 12px;
+  border: 1px solid #E5E7EB;
+  border-radius: 16px;
   background: #FFFFFF;
-  box-shadow: 0 8px 26px rgba(26, 28, 29, 0.06);
+  box-shadow: 0 8px 30px rgba(200, 16, 46, 0.08);
   text-align: left;
 }
 
 .register-card h1 {
   margin: 0 0 5px;
   color: var(--heading);
-  font-size: clamp(22px, 2.4vw, 30px);
-  font-weight: 750;
-  letter-spacing: -0.5px;
+  font-size: clamp(24px, 2.4vw, 30px);
+  font-weight: 800;
+  letter-spacing: -0.025em;
   line-height: 1.25;
 }
 
 .register-card .card-description {
   max-width: none;
   margin: 0 0 18px;
-  color: var(--description);
-  font-size: 13px;
-  line-height: 1.6;
+  color: var(--color-ink-500);
+  font-size: 14px;
+  line-height: 1.625;
 }
 
 .register-card .google-login-button {
-  min-height: 42px;
+  min-height: 44px;
 }
 
 .register-card .auth-divider {
@@ -575,9 +629,9 @@
 .register-field > label {
   display: block;
   margin: 0 0 6px;
-  color: var(--heading);
-  font-size: 11px;
-  font-weight: 700;
+  color: var(--color-ink-700);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .register-field > label > span {
@@ -585,22 +639,25 @@
 }
 
 .register-page-shell .register-field .input-wrap {
-  height: 42px;
-  border-color: #E5E0DF;
-  background: #FFFFFF;
+  height: 44px;
+  border-color: #E5E7EB;
+  border-radius: 8px;
+  background: #F9FAFB;
 }
 
 .register-page-shell .register-field .input-wrap > svg {
-  color: #BC0002;
+  color: var(--accent-red);
 }
 
 .register-page-shell .register-field .input-wrap:focus-within {
-  border-color: #BC0002;
-  box-shadow: 0 0 0 3px rgba(188, 0, 2, 0.08);
+  border-color: var(--accent-red);
+  background: #FFFFFF;
+  box-shadow: 0 0 0 2px var(--color-brand-200);
 }
 
 .register-field .input-wrap input {
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .register-card .terms-option {
@@ -608,35 +665,36 @@
 }
 
 .register-card .terms-copy {
-  color: #5F3E39;
-  font-size: 12px;
+  color: var(--color-ink-700);
+  font-size: 13px;
 }
 
 .register-card .submit-button {
   min-height: 46px;
-  border-radius: 6px;
-  background: #E00004;
+  border-radius: 12px;
+  background: var(--color-brand-600);
   color: #FFFFFF;
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .register-card .submit-button:hover {
-  background: #BC0002;
+  background: var(--color-brand-700);
 }
 
 .register-card .signup-prompt {
   margin: 18px 0 0;
-  color: #5F3E39;
+  color: var(--color-ink-500);
   text-align: center;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .register-course-panel {
   overflow: hidden;
-  border: 1px solid #EEE9E8;
-  border-radius: 12px;
+  border: 1px solid #E5E7EB;
+  border-radius: 16px;
   background: #FFFFFF;
-  box-shadow: 0 8px 26px rgba(26, 28, 29, 0.08);
+  box-shadow: 0 1px 2px rgba(23, 24, 28, 0.04);
 }
 
 .register-course-visual {
@@ -647,7 +705,7 @@
   overflow: hidden;
   background:
     radial-gradient(ellipse at 70% 20%, rgba(255, 255, 255, 0.24), transparent 35%),
-    linear-gradient(140deg, #542B2C 0%, #9A3D38 52%, #BC0002 100%);
+    linear-gradient(140deg, var(--color-brand-900) 0%, var(--color-brand-700) 52%, var(--color-brand-600) 100%);
 }
 
 .register-course-visual > img {
@@ -694,7 +752,7 @@
   padding-left: 3px;
   border-radius: 50%;
   background: #FFFFFF;
-  color: #BC0002;
+  color: var(--color-brand-600);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
 }
 
@@ -708,15 +766,15 @@
   gap: 6px;
   padding: 7px 10px;
   border: 1px solid #FFFFFF;
-  border-radius: 20px;
+  border-radius: 9999px;
   background: #FFFFFF;
-  color: #BC0002;
-  font-size: 10px;
+  color: var(--color-brand-600);
+  font-size: 11px;
   font-weight: 700;
 }
 
 .register-course-visual-caption svg {
-  color: #BC0002;
+  color: var(--color-brand-600);
 }
 
 .register-course-content {
@@ -726,23 +784,24 @@
 .register-course-kicker {
   margin: 0 0 7px;
   color: var(--accent-red);
-  font-size: 10px;
-  font-weight: 750;
-  letter-spacing: 0.1em;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
 }
 
 .register-course-content h2 {
   margin: 0;
   color: var(--heading);
   font-size: clamp(20px, 2vw, 24px);
+  font-weight: 800;
   line-height: 1.35;
 }
 
 .register-course-description {
   margin: 8px 0 15px;
-  color: var(--description);
-  font-size: 13px;
-  line-height: 1.55;
+  color: var(--color-ink-500);
+  font-size: 14px;
+  line-height: 1.625;
 }
 
 .register-course-price {
@@ -751,19 +810,19 @@
   align-items: baseline;
   gap: 9px 12px;
   padding-bottom: 14px;
-  border-bottom: 1px solid #F0EEEE;
+  border-bottom: 1px solid #F3F4F6;
 }
 
 .register-course-price del {
-  color: #5F3E39;
-  font-size: 13px;
+  color: var(--color-ink-500);
+  font-size: 14px;
 }
 
 .register-course-price strong {
-  color: #BC0002;
-  font-size: 27px;
+  color: var(--color-brand-600);
+  font-size: 24px;
   font-weight: 800;
-  letter-spacing: -0.5px;
+  letter-spacing: -0.02em;
 }
 
 .register-course-offer {
@@ -772,23 +831,24 @@
   gap: 7px;
   margin: 13px 0 18px;
   padding: 10px 12px;
-  border: 1px solid #F2D4D3;
-  border-radius: 7px;
-  background: #FFF7F6;
-  color: #BC0002;
+  border: 1px solid var(--color-brand-100);
+  border-radius: 8px;
+  background: var(--color-brand-50);
+  color: var(--color-brand-600);
   font-size: 12px;
   font-weight: 700;
 }
 
 .register-course-offer svg {
   flex: 0 0 auto;
-  color: #BC0002;
+  color: var(--color-brand-600);
 }
 
 .register-course-content h3 {
   margin: 0 0 11px;
   color: var(--heading);
-  font-size: 15px;
+  font-size: 16px;
+  font-weight: 700;
 }
 
 .register-course-content ul {
@@ -797,7 +857,7 @@
   margin: 0;
   padding: 0;
   color: var(--description);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.5;
   list-style: none;
 }
@@ -810,7 +870,7 @@
 
 .register-course-content li svg {
   flex: 0 0 auto;
-  color: #BC0002;
+  color: var(--color-brand-600);
 }
 
 @media (max-width: 860px) {
@@ -846,7 +906,7 @@
   }
 
   .email-otp-options > * + * {
-    border-top: 1px solid #EEE9E8;
+    border-top: 1px solid #E5E7EB;
     border-left: 0;
   }
 

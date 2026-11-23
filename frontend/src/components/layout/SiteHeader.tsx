@@ -226,7 +226,7 @@ export function SiteHeader({ activeTab: explicitActiveTab, brandName = 'Your Eng
                 void handleAccountClick()
               }}
               disabled={loggingOut}
-              className={`flex items-center justify-center gap-2 rounded-xl border py-2.5 text-sm font-semibold transition-colors ${
+              className={`flex items-center justify-center gap-2 rounded-xl border py-2.5 text-sm font-bold transition-colors ${
                 user || isLoginPage
                   ? 'border-brand-600 bg-brand-50 text-brand-600'
                   : 'border-gray-200 text-ink-700 hover:border-brand-600 hover:text-brand-600'
@@ -238,7 +238,7 @@ export function SiteHeader({ activeTab: explicitActiveTab, brandName = 'Your Eng
             <a
               href={isLoginPage ? '/courses' : '/register'}
               onClick={() => setMenuOpen(false)}
-              className="flex items-center justify-center rounded-xl bg-brand-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-700"
+              className="flex items-center justify-center rounded-xl bg-brand-600 py-2.5 text-sm font-bold text-white transition-colors hover:bg-brand-700"
             >
               Đăng ký tài khoản
             </a>

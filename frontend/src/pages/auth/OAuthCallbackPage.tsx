@@ -49,7 +49,7 @@ export function OAuthCallbackPage() {
               window.location.replace(`/checkout/success?orderId=${encodeURIComponent(paymentOrderId)}`)
               return
             }
-            window.location.replace(`/courses/${encodeURIComponent(order.courseDetails.slug)}`)
+            window.location.replace(`/student/courses/${encodeURIComponent(order.courseDetails.slug)}`)
             return
           }
           window.location.replace(
@@ -115,8 +115,8 @@ export function OAuthCallbackPage() {
   if (error) {
     return (
       <main className="auth-route-status" role="alert" style={{ textAlign: 'center', padding: '48px 16px' }}>
-        <p style={{ color: '#ef4444', marginBottom: '16px' }}>{error}</p>
-        <a href={isRegistration ? '/register' : '/login'} style={{ color: '#dc2626', textDecoration: 'underline' }}>
+        <p style={{ color: 'var(--color-brand-700)', marginBottom: '16px', fontWeight: 600 }}>{error}</p>
+        <a href={isRegistration ? '/register' : '/login'} style={{ color: 'var(--color-brand-600)', textDecoration: 'underline', fontWeight: 700 }}>
           {isRegistration ? 'Quay lại trang Đăng ký' : 'Quay lại trang Đăng nhập'}
         </a>
       </main>

@@ -101,7 +101,7 @@ export const StudentHeader: React.FC<StudentHeaderProps> = ({ student, onLogout,
                     <div
                       key={n.id}
                       className={`p-2.5 rounded-xl transition-colors ${
-                        n.unread ? 'bg-rose-50/60' : 'bg-gray-50'
+                        n.unread ? 'bg-brand-50/70' : 'bg-gray-50'
                       }`}
                     >
                       <div className="flex items-center justify-between text-xs font-bold text-ink-900">
@@ -110,7 +110,7 @@ export const StudentHeader: React.FC<StudentHeaderProps> = ({ student, onLogout,
                           {n.time}
                         </span>
                       </div>
-                      <p className="text-[11px] text-ink-600 mt-0.5 leading-snug">
+                      <p className="text-[11px] text-ink-500 mt-0.5 leading-snug">
                         {n.message}
                       </p>
                     </div>
@@ -164,7 +164,7 @@ export const StudentHeader: React.FC<StudentHeaderProps> = ({ student, onLogout,
                 </button>
                 <button
                   type="button"
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-brand-600 hover:bg-brand-50 rounded-lg transition-colors cursor-pointer"
                   onClick={async () => {
                     setShowProfileMenu(false)
                     if (onLogout) {

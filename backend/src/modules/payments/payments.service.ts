@@ -94,15 +94,7 @@ export class PaymentService {
       error_url: `${env.frontendUrl}/checkout?payment=error&orderId=${encodeURIComponent(order.id)}`,
       cancel_url: `${env.frontendUrl}/checkout?payment=cancel&orderId=${encodeURIComponent(order.id)}`,
     })
-    const hasBankTransferConfig = Boolean(
-      env.sepayBankCode &&
-      env.sepayBankName &&
-      env.sepayAccountNumber &&
-      env.sepayAccountName,
-    )
-    const paymentInformation = (env.sepayCheckoutMode === 'direct_qr' || hasBankTransferConfig)
-      ? createBankTransferInformation(order.amount, order.transfer_content, order.expired_at ?? '')
-      : null
+    const paymentInformation = this.getPaymentInformation(order)
     return {
       order,
       checkoutMode: env.sepayCheckoutMode,
@@ -121,6 +113,15 @@ export class PaymentService {
         quantity: 1,
       },
     }
+  }
+
+  getPaymentInformation(
+    order: Pick<PaymentOrder, 'status' | 'amount' | 'transfer_content' | 'expired_at'>,
+  ) {
+    if (order.status !== 'pending') return null
+    const hasBankTransferConfig = Boolean(env.sepayBankCode && env.sepayAccountNumber)
+    if (env.sepayCheckoutMode !== 'direct_qr' && !hasBankTransferConfig) return null
+    return createBankTransferInformation(order.amount, order.transfer_content, order.expired_at ?? '')
   }
 
   async createGuestOrder(input: { email: string; courseId: string }): ReturnType<PaymentService['createOrder']> {
@@ -381,7 +382,7 @@ export const paymentService = new PaymentService()
 
 function createBankTransferInformation(amount: number, transferContent: string, expiresAt: string) {
   return {
-    bankName: env.sepayBankName,
+    bankName: env.sepayBankName || env.sepayBankCode,
     accountNumber: env.sepayAccountNumber,
     accountName: env.sepayAccountName,
     qrCodeUrl: buildSePayVietQrImageUrl({

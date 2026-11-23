@@ -7,11 +7,11 @@
   --color-brand-50: #FEF1F2;
   --color-brand-100: #FDE0E3;
   --color-brand-200: #FBB5BC;
-  --color-brand-500: #FF2B37;
-  --color-brand-600: #F60005;
-  --color-brand-700: #D60004;
-  --color-brand-800: #B00003;
-  --color-brand-900: #8C0002;
+  --color-brand-500: #E02838;
+  --color-brand-600: #C8102E;
+  --color-brand-700: #A30D26;
+  --color-brand-800: #850D21;
+  --color-brand-900: #6B0A1B;
 
   --color-ink-900: #17181C;
   --color-ink-700: #3D4046;
@@ -52,7 +52,7 @@
   height: 46px;
   border-radius: 12px;
   background: linear-gradient(135deg, var(--color-brand-600), var(--color-brand-700));
-  box-shadow: 0 4px 14px rgba(246, 0, 5, 0.3);
+  box-shadow: 0 4px 14px rgba(200, 16, 46, 0.3);
   animation: route-logo-pulse 1.2s ease-in-out infinite;
 }
 
@@ -118,7 +118,9 @@ body {
 
 @layer base {
   button,
-  input {
+  input,
+  select,
+  textarea {
     font-family: inherit;
     font-size: 100%;
   }
