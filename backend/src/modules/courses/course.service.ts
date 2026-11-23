@@ -92,7 +92,7 @@ export class CourseService {
     return this.repository.findEnrolledCourses(studentId)
   }
 
-  async getPublishedCourse(identifier: string, studentId?: string): Promise<CourseCatalogEntry | null> {
+  async getPublishedCourse(identifier: string, _studentId?: string): Promise<CourseCatalogEntry | null> {
     const isId = UUID_PATTERN.test(identifier)
     if (!isId && !SLUG_PATTERN.test(identifier)) {
       throw new CourseRequestError('Course ID or slug is invalid.', 400)
@@ -102,7 +102,20 @@ export class CourseService {
     }
     const course = await this.repository.findPublishedCourse(identifier, isId)
     if (!course) return null
-    return course
+    return {
+      ...course,
+      topics: course.topics.map((topic) => ({
+        ...topic,
+        lessons: topic.lessons.map((lesson) => ({
+          id: lesson.id,
+          title: lesson.title,
+          description: lesson.description ?? null,
+          duration_seconds: lesson.duration_seconds ?? null,
+          thumbnail_url: lesson.thumbnail_url ?? null,
+          sort_order: lesson.sort_order,
+        })),
+      })),
+    }
   }
 
   async getCourseForPaidOrder(courseId: string): Promise<CourseCatalogEntry | null> {

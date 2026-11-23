@@ -5,11 +5,15 @@ import type { OtherCourse } from '../student-courses-data'
 interface OtherCourseCardProps {
   course: OtherCourse
   onEnroll?: (course: OtherCourse) => void
+  onViewDetail?: (course: OtherCourse) => void
+  enrolling?: boolean
 }
 
 export const OtherCourseCard: React.FC<OtherCourseCardProps> = ({
   course,
   onEnroll,
+  onViewDetail,
+  enrolling = false,
 }) => {
   const [imageError, setImageError] = useState(false)
   const formatPrice = (amount: number) => {
@@ -29,6 +33,14 @@ export const OtherCourseCard: React.FC<OtherCourseCardProps> = ({
     return <FileText size={12} className="text-amber-600 shrink-0" />
   }
 
+  const handleViewDetail = () => {
+    if (onViewDetail) {
+      onViewDetail(course)
+    } else {
+      window.location.assign(`/courses/${encodeURIComponent(course.slug || course.id)}`)
+    }
+  }
+
   const handleEnrollClick = () => {
     if (onEnroll) {
       onEnroll(course)
@@ -38,7 +50,7 @@ export const OtherCourseCard: React.FC<OtherCourseCardProps> = ({
   }
 
   return (
-    <article className="other-course-card">
+    <article className="other-course-card cursor-pointer" onClick={handleViewDetail}>
       {/* Thumbnail Box */}
       <div className="other-course-thumb-box">
         {course.thumbnailUrl && !imageError ? (
@@ -83,10 +95,7 @@ export const OtherCourseCard: React.FC<OtherCourseCardProps> = ({
           </div>
 
           {/* Title */}
-          <h3
-            className="other-course-title cursor-pointer hover:text-brand-600 transition-colors"
-            onClick={handleEnrollClick}
-          >
+          <h3 className="other-course-title cursor-pointer hover:text-brand-600 transition-colors">
             {course.title}
           </h3>
 
@@ -129,7 +138,11 @@ export const OtherCourseCard: React.FC<OtherCourseCardProps> = ({
           <button
             type="button"
             className="btn-enroll-now"
-            onClick={handleEnrollClick}
+            disabled={enrolling}
+            onClick={(event) => {
+              event.stopPropagation()
+              handleEnrollClick()
+            }}
           >
             <CalendarCheck size={14} />
             Đăng Ký Ngay

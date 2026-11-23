@@ -92,7 +92,15 @@ describe('course selection API', () => {
         title: 'Chào hỏi',
         description: 'Giao tiếp cơ bản',
         sort_order: 0,
-        lessons: [{ id: 'c0a80101-0000-4000-8000-000000000030', title: 'Giới thiệu bản thân', description: null, sort_order: 0 }],
+        lessons: [{
+          id: 'c0a80101-0000-4000-8000-000000000030',
+          title: 'Giới thiệu bản thân',
+          description: null,
+          duration_seconds: 180,
+          thumbnail_url: 'https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
+          video_url: 'https://youtube.com/watch?v=dQw4w9WgXcQ',
+          sort_order: 0,
+        }],
       }],
       created_at: '2026-11-03T00:00:00.000Z',
       updated_at: '2026-11-03T00:00:00.000Z',
@@ -211,6 +219,11 @@ describe('course selection API', () => {
     const publicCourse = (await bySlug.json() as { data: CourseCatalogEntry }).data
     assert.equal(publicCourse.id, firstCourseId)
     assert.equal(publicCourse.topics[0]?.lessons[0]?.title, 'Giới thiệu bản thân')
+    assert.equal(
+      publicCourse.topics[0]?.lessons[0]?.thumbnail_url,
+      'https://img.youtube.com/vi/dQw4w9WgXcQ/hqdefault.jpg'
+    )
+    assert.equal('video_url' in (publicCourse.topics[0]?.lessons[0] ?? {}), false)
 
     const byId = await fetch(`${baseUrl}/api/courses/${firstCourseId}`)
     assert.equal(byId.status, 200)

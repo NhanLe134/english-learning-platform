@@ -38,20 +38,24 @@ function AppRoutes() {
   const isStudentArea = pathname === '/my-courses' || pathname.startsWith('/student') || pathname.startsWith('/my-courses/')
   const isAuthCallback = pathname === '/auth/callback'
   const isAuthPage = ['/login', '/register', '/forgot-password'].includes(pathname)
+  const isRoleAwareCourseOrCheckoutRoute =
+    pathname === '/course' ||
+    pathname.startsWith('/courses/') ||
+    pathname.startsWith('/checkout') ||
+    pathname.startsWith('/thanh-toan')
+  const isLegacyCourseListRoute = pathname === '/khoa-hoc' || pathname === '/courses'
 
   useEffect(() => {
     if (isInitializing || isAuthCallback) return
 
     if (user?.role === 'ADMIN') {
       // 1 trình duyệt 1 tài khoản: Đã đăng nhập Admin thì chỉ hiển thị trang Admin.
-      // Dù mở tab mới hay nhập bất kỳ link nào (/, /courses, /login, /register...), đều tự chuyển về trang quản trị
+      // Dù mở tab mới hay nhập bất kỳ link nào (/, /course, /login, /register...), đều tự chuyển về trang quản trị
       if (!isAdminRoute) {
         window.location.replace('/admin/dashboard')
       }
     } else if (user?.role === 'TEACHER') {
-      if (isAdminRoute || isStudentArea || pathname === '/login' || pathname === '/register') {
-        window.location.replace('/teacher/dashboard')
-      } else if (pathname === '/teacher/login' || pathname === '/teacher/forgot-password') {
+      if (!isTeacherArea || pathname === '/teacher/login' || pathname === '/teacher/forgot-password') {
         window.location.replace('/teacher/dashboard')
       }
     } else if (user?.role === 'STUDENT') {
@@ -62,20 +66,26 @@ function AppRoutes() {
         // Redirect to role-appropriate default page – never blindly redirect to /checkout.
         // The checkout flow itself will navigate here when needed.
         window.location.replace('/my-courses')
+      } else if (isLegacyCourseListRoute) {
+        window.location.replace(`/course${window.location.search}${window.location.hash}`)
       }
     } else {
       // Chưa đăng nhập mà truy cập route admin
       if (isAdminRoute) {
         window.location.replace('/login')
+      } else if (isStudentArea) {
+        window.location.replace('/login')
+      } else if (isTeacherArea && !isTeacherPublicRoute) {
+        window.location.replace('/teacher/login')
+      } else if (isLegacyCourseListRoute) {
+        window.location.replace(`/course${window.location.search}${window.location.hash}`)
       }
-      if (isStudentArea) window.location.replace('/login')
-      if (isTeacherArea && !isTeacherPublicRoute) window.location.replace('/teacher/login')
     }
-  }, [isAdminRoute, isAuthCallback, isAuthPage, isInitializing, isStudentArea, isTeacherArea, isTeacherPublicRoute, pathname, user])
+  }, [isAdminRoute, isAuthCallback, isAuthPage, isInitializing, isLegacyCourseListRoute, isStudentArea, isTeacherArea, isTeacherPublicRoute, pathname, user])
 
   // Trạng thái đang xác minh quyền hoặc đang điều hướng
   if (!isAuthCallback) {
-    if (isInitializing && isAuthPage) {
+    if (isInitializing && (isAuthPage || isRoleAwareCourseOrCheckoutRoute)) {
       return (
         <main className="auth-route-status" role="status">
           Đang khôi phục phiên đăng nhập…
@@ -109,6 +119,14 @@ function AppRoutes() {
     }
 
     if (user && isAuthPage) {
+      return (
+        <main className="auth-route-status" role="status">
+          Đang chuyển đến trang khóa học…
+        </main>
+      )
+    }
+
+    if (isLegacyCourseListRoute) {
       return (
         <main className="auth-route-status" role="status">
           Đang chuyển đến trang khóa học…
@@ -165,9 +183,8 @@ function AppRoutes() {
     case '/ve-chung-toi':
       page = <AboutPage />
       break
-    case '/courses':
-    case '/khoa-hoc':
-      page = <CourseListPage />
+    case '/course':
+      page = user?.role === 'STUDENT' ? <StudentCoursesPage /> : <CourseListPage />
       break
     case '/student/courses':
     case '/my-courses':
@@ -229,7 +246,7 @@ function AppRoutes() {
           break
         }
 
-        const courseRoute = pathname.match(/^\/(?:courses|khoa-hoc)\/([^/]+)$/)
+        const courseRoute = pathname.match(/^\/courses?\/([^/]+)$/)
         if (courseRoute && courseRoute[1]) {
           const decodedSlug = decodeURIComponent(courseRoute[1])
           page = <CourseDetailPage identifier={decodedSlug} />

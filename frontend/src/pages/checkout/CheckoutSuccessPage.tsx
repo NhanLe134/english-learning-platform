@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle,
-  ArrowRight,
   BadgeCheck,
   BookOpen,
   Check,
@@ -16,9 +15,11 @@ import {
 } from 'lucide-react'
 import { SiteHeader } from '../../components/layout/SiteHeader'
 import { SiteFooter } from '../../components/layout/SiteFooter'
+import { StudentHeader } from '../courses/components/StudentHeader'
 import { useAuth } from '../auth/auth-context'
 import { sepayApi } from './sepayApi'
 import { paymentConfirmationTimeoutMs, paymentPollingIntervalMs, paymentSupportPhone, readPaymentInstructions } from './payment-config'
+import { buildCheckoutPageUrl, resolvePaymentBackHref, savePaymentReturnPath, validatePaymentReturnPath } from './payment-navigation'
 import type { CreateOrderResponse } from './sepayApi'
 import { SePayQrPaymentCard } from './SePayVietQR'
 import './checkout-page.css'
@@ -44,6 +45,18 @@ export function CheckoutSuccessPage({ initialOrder }: { initialOrder?: CreateOrd
 function CheckoutSuccessView({ initialOrder }: { initialOrder?: CreateOrderResponse }) {
   const { accessToken, user } = useAuth()
   const orderId = initialOrder?.orderId ?? new URLSearchParams(window.location.search).get('orderId') ?? ''
+  const search = typeof window === 'undefined' ? '' : window.location.search
+  const validatedQueryReturnTo = validatePaymentReturnPath(new URLSearchParams(search).get('returnTo'), user?.role)
+  useEffect(() => {
+    if (orderId && validatedQueryReturnTo) {
+      savePaymentReturnPath(orderId, validatedQueryReturnTo)
+    }
+  }, [orderId, validatedQueryReturnTo])
+  const backHref = resolvePaymentBackHref({
+    search,
+    storageKey: orderId || undefined,
+    userRole: user?.role,
+  })
   const [savedInstructions] = useState(() => initialOrder?.paymentInformation ?? readPaymentInstructions(orderId))
   const [order, setOrder] = useState<Awaited<ReturnType<typeof sepayApi.getOrderStatus>> | null>(() => initialOrder ? {
     orderId: initialOrder.orderId,
@@ -66,7 +79,6 @@ function CheckoutSuccessView({ initialOrder }: { initialOrder?: CreateOrderRespo
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
   const [timedOut, setTimedOut] = useState(false)
-  const [checking, setChecking] = useState(false)
   const startedAt = useRef(0)
   const inFlight = useRef(false)
   const currentStatus = useRef<string | null>(initialOrder?.status ?? null)
@@ -104,10 +116,9 @@ function CheckoutSuccessView({ initialOrder }: { initialOrder?: CreateOrderRespo
       }
     }
 
-    const refresh = async (manual = false) => {
+    const refresh = async () => {
       if (!active || inFlight.current) return
       inFlight.current = true
-      if (manual) setChecking(true)
       try {
         const current = await sepayApi.getOrderStatus(orderId, accessToken)
         if (!active) return
@@ -130,7 +141,6 @@ function CheckoutSuccessView({ initialOrder }: { initialOrder?: CreateOrderRespo
         setLoading(false)
       } finally {
         inFlight.current = false
-        if (manual) setChecking(false)
       }
     }
 
@@ -168,7 +178,6 @@ function CheckoutSuccessView({ initialOrder }: { initialOrder?: CreateOrderRespo
   async function checkPaymentStatus() {
     if (!orderId || inFlight.current) return
     inFlight.current = true
-    setChecking(true)
     try {
       const current = await sepayApi.getOrderStatus(orderId, accessToken)
       setOrder(current)
@@ -192,7 +201,6 @@ function CheckoutSuccessView({ initialOrder }: { initialOrder?: CreateOrderRespo
       setError(cause instanceof Error ? cause.message : 'Không thể kiểm tra trạng thái đơn hàng.')
     } finally {
       inFlight.current = false
-      setChecking(false)
     }
   }
 
@@ -225,8 +233,8 @@ function CheckoutSuccessView({ initialOrder }: { initialOrder?: CreateOrderRespo
       : `/login?paymentOrderId=${encodeURIComponent(orderId)}`
     : undefined
   const retryCheckoutHref = order?.courseId
-    ? `/checkout?courseId=${encodeURIComponent(order.courseId)}`
-    : '/courses'
+    ? buildCheckoutPageUrl(order.courseId, undefined, backHref)
+    : backHref
   const statusLabel = paid
     ? 'Đã thanh toán'
     : pending
@@ -252,7 +260,11 @@ function CheckoutSuccessView({ initialOrder }: { initialOrder?: CreateOrderRespo
 
   return (
     <div className="login-page checkout-page success-page">
-      <SiteHeader brandName="Your English Voice" />
+      {user?.role === 'STUDENT' ? (
+        <StudentHeader activePage="other-courses" />
+      ) : (
+        <SiteHeader brandName="Your English Voice" />
+      )}
       <main className="checkout-success-main checkout-success-missing">
         <section className={`payment-success-empty${paid ? ' is-paid' : ''}${terminalError || (error && !showQrPaymentCard) || missingOrderInfo ? ' has-error' : ''}`} aria-live="polite">
           <span className="payment-success-state-icon">
@@ -361,9 +373,8 @@ function CheckoutSuccessView({ initialOrder }: { initialOrder?: CreateOrderRespo
           {paid && order?.enrollmentExists === null && <p className="payment-result-enrollment-pending" role="status">Thanh toán đã được xác nhận. Vui lòng đăng nhập để truy cập khóa học. <a href={`/login?paymentOrderId=${encodeURIComponent(orderId)}`}>Đăng nhập</a></p>}
           {paid && order?.enrollmentExists === false && <p className="payment-result-enrollment-pending" role="status">Thanh toán đã được xác nhận nhưng quyền truy cập khóa học chưa hiển thị. Vui lòng bấm kiểm tra lại hoặc liên hệ hỗ trợ.</p>}
           {(timedOut || terminalError || error) && paymentSupportPhone && <div className="payment-result-support"><span>Mã đơn để được hỗ trợ: <strong>{orderId}</strong></span><a href={`tel:${paymentSupportPhone}`}>Gọi hỗ trợ {paymentSupportPhone}</a></div>}
-          {(timedOut || terminalError || error || (pending && !loading) || (paid && order?.enrollmentExists === false)) && <button type="button" className="checkout-secondary-button payment-result-retry" onClick={() => void checkPaymentStatus()} disabled={checking}>{checking ? 'Đang kiểm tra...' : 'Kiểm tra lại thanh toán'}</button>}
-          <a className="checkout-primary-button" href={paid ? courseAccessHref : retryCheckoutHref} aria-disabled={paid && !courseAccessHref} tabIndex={paid && !courseAccessHref ? -1 : undefined}>
-            {paid ? user ? 'Vào học ngay' : 'Đăng nhập để vào học' : terminalError ? 'Tạo đơn thanh toán mới' : 'Quay lại trang khóa học'} <ArrowRight size={16} />
+          <a className="checkout-primary-button" href={paid ? courseAccessHref : terminalError ? retryCheckoutHref : backHref} aria-disabled={paid && !courseAccessHref} tabIndex={paid && !courseAccessHref ? -1 : undefined}>
+            {paid ? user ? 'Vào học ngay' : 'Đăng nhập để vào học' : terminalError ? 'Tạo đơn thanh toán mới' : 'Quay lại trang khóa học'} 
           </a>
         </section>
       </main>

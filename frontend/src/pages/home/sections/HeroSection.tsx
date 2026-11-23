@@ -24,7 +24,7 @@ export function HeroSection() {
 
           <div className="mt-7 flex flex-wrap gap-3">
             <a
-              href="/courses"
+              href="/course"
               className="rounded-xl bg-brand-600 px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-brand-700"
             >
               Nhận chương trình học ngay

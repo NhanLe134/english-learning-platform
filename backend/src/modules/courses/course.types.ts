@@ -18,6 +18,7 @@ export interface CourseCatalogLesson {
   title: string
   description: string | null
   duration_seconds: number | null
+  thumbnail_url?: string | null
   video_url?: string | null
   sort_order: number
 }

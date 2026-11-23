@@ -1,5 +1,6 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState } from 'react'
 import {
+  ArrowLeft,
   ArrowRight,
   BadgeCheck,
   BookOpen,
@@ -8,17 +9,17 @@ import {
   Headset,
   Landmark,
   LockKeyhole,
-  Pencil,
   QrCode,
   ShieldCheck,
   UserRound,
-  X,
 } from 'lucide-react'
 import { useAuth } from '../auth/auth-context'
 import { SiteFooter, SiteHeader } from '../auth/AuthShared'
+import { StudentHeader } from '../courses/components/StudentHeader'
 import { readCheckoutCourse, type CourseReference } from '../courses/course-data'
 import { courseCatalogApi } from '../courses/services/courseCatalogApi'
 import { paymentSupportPhone, savePaymentInstructions } from './payment-config'
+import { buildPaymentPageUrl, readPaymentReturnPath, resolvePaymentBackHref, savePaymentReturnPath, validatePaymentReturnPath } from './payment-navigation'
 import { sepayApi } from './sepayApi'
 import './checkout-page.css'
 
@@ -54,96 +55,6 @@ function initialStudentDetails(): StudentDetails {
   return { fullName: '', email: '', phone: '' }
 }
 
-function EditStudentDialog({
-  details,
-  requireEmailOnly,
-  onClose,
-  onSave,
-}: {
-  details: StudentDetails
-  requireEmailOnly: boolean
-  onClose: () => void
-  onSave: (details: StudentDetails) => void
-}) {
-  const [formDetails, setFormDetails] = useState(details)
-  const [errorMessage, setErrorMessage] = useState('')
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const fullName = formDetails.fullName.trim()
-    const email = formDetails.email.trim()
-    const phone = formDetails.phone.trim()
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setErrorMessage('Địa chỉ email chưa đúng định dạng.')
-      return
-    }
-    if (!requireEmailOnly && !fullName) {
-      setErrorMessage('Vui lòng nhập đầy đủ họ tên và email học viên.')
-      return
-    }
-    onSave({ fullName, email, phone })
-  }
-
-  return (
-    <div
-      className="checkout-dialog-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose()
-      }}
-    >
-      <section
-        className="checkout-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="checkout-edit-title"
-      >
-        <button className="checkout-dialog-close" type="button" onClick={onClose} aria-label="Đóng">
-          <X size={19} />
-        </button>
-        <span className="checkout-dialog-icon"><UserRound size={20} /></span>
-        <h2 id="checkout-edit-title">Chỉnh sửa thông tin học viên</h2>
-        <p>Thông tin này được dùng để đối chiếu tài khoản đã xác minh và kích hoạt khóa học.</p>
-        <form onSubmit={handleSubmit}>
-          <label>
-            Họ và tên
-            <input
-              autoFocus
-              value={formDetails.fullName}
-              onChange={(event) => setFormDetails({ ...formDetails, fullName: event.target.value })}
-              maxLength={120}
-              required={!requireEmailOnly}
-            />
-          </label>
-          <label>
-            Địa chỉ Email
-            <input
-              type="email"
-              value={formDetails.email}
-              onChange={(event) => setFormDetails({ ...formDetails, email: event.target.value })}
-              maxLength={254}
-              required
-            />
-          </label>
-          <label>
-            Số điện thoại
-            <input
-              type="tel"
-              value={formDetails.phone}
-              onChange={(event) => setFormDetails({ ...formDetails, phone: event.target.value })}
-              maxLength={32}
-            />
-          </label>
-          {errorMessage && <p className="checkout-inline-error" role="alert">{errorMessage}</p>}
-          <div className="checkout-dialog-actions">
-            <button type="button" className="checkout-secondary-button" onClick={onClose}>Hủy</button>
-            <button type="submit" className="checkout-primary-button">Lưu thông tin</button>
-          </div>
-        </form>
-      </section>
-    </div>
-  )
-}
-
 export function CheckoutPage() {
   const { accessToken, user } = useAuth()
   const [initialUrl] = useState(() => {
@@ -168,22 +79,53 @@ export function CheckoutPage() {
     !initialUrl.orderIdParam && !initialUrl.targetIdentifier ? 'Không tìm thấy khóa học cần thanh toán.' : '',
   )
   const [returnOrderStatus, setReturnOrderStatus] = useState<string>('')
-  const [student, setStudent] = useState(initialStudentDetails)
+  const [student] = useState(initialStudentDetails)
   const [processing, setProcessing] = useState(false)
-  const [editOpen, setEditOpen] = useState(false)
   const [paymentError, setPaymentError] = useState('')
+
+  useEffect(() => {
+    const resetStaleLoadingState = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        setProcessing(false)
+      }
+    }
+    window.addEventListener('pageshow', resetStaleLoadingState)
+    return () => {
+      window.removeEventListener('pageshow', resetStaleLoadingState)
+    }
+  }, [])
 
   const paymentReturn = initialUrl.paymentReturnParam
   const returnOrderId = initialUrl.orderIdParam
   const showPaymentReturnNotice = paymentReturn === 'cancel' || paymentReturn === 'error'
+  const search = typeof window === 'undefined' ? '' : window.location.search
+  const courseStorageKey = course.id
+    ? `course:${course.id}`
+    : initialUrl.targetIdentifier
+      ? `course:${initialUrl.targetIdentifier}`
+      : undefined
+  const courseFallbackPath = course.slug ? `/courses/${encodeURIComponent(course.slug)}` : null
+  const backHref = resolvePaymentBackHref({
+    search,
+    storageKey: courseStorageKey,
+    fallbackPath: courseFallbackPath,
+    userRole: user?.role,
+  })
 
+  const isAuthenticatedStudent = user?.role === 'STUDENT' && Boolean(accessToken)
   const summaryCourse = course
   const discount = Math.max(0, summaryCourse.originalPrice - summaryCourse.price)
-  const currentStudent = {
-    fullName: student.fullName || user?.fullName || '',
-    email: student.email || user?.email || '',
-    phone: student.phone || user?.phoneNumber || '',
-  }
+  const currentStudent = isAuthenticatedStudent
+    ? {
+        fullName: user.fullName || '',
+        email: user.email || '',
+        phone: user.phoneNumber || '',
+      }
+    : {
+        fullName: student.fullName || user?.fullName || '',
+        email: student.email || user?.email || '',
+        phone: student.phone || user?.phoneNumber || '',
+      }
 
   useEffect(() => {
     const orderIdParam = initialUrl.orderIdParam
@@ -254,7 +196,6 @@ export function CheckoutPage() {
       const email = currentStudent.email.trim()
       if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         setPaymentError('Vui lòng nhập địa chỉ email đăng ký đã xác minh trước khi tạo đơn hàng.')
-        setEditOpen(true)
         return
       }
     }
@@ -266,7 +207,14 @@ export function CheckoutPage() {
         accessToken,
       )
       savePaymentInstructions(createdOrder.orderId, createdOrder.paymentInformation)
-      window.location.assign(`/checkout/payment?orderId=${encodeURIComponent(createdOrder.orderId)}`)
+      const originToCarry =
+        validatePaymentReturnPath(new URLSearchParams(search).get('returnTo'), user?.role) ??
+        (courseStorageKey
+          ? validatePaymentReturnPath(readPaymentReturnPath(courseStorageKey), user?.role)
+          : null) ??
+        validatePaymentReturnPath(courseFallbackPath, user?.role)
+      savePaymentReturnPath(createdOrder.orderId, originToCarry)
+      window.location.assign(buildPaymentPageUrl(createdOrder.orderId, originToCarry))
     } catch (cause: unknown) {
       setPaymentError(cause instanceof Error ? cause.message : 'Không thể tạo đơn thanh toán.')
       setProcessing(false)
@@ -275,17 +223,27 @@ export function CheckoutPage() {
 
   return (
     <div className="login-page checkout-page">
-      <SiteHeader />
+      {user?.role === 'STUDENT' ? (
+        <StudentHeader activePage="other-courses" />
+      ) : (
+        <SiteHeader />
+      )}
 
       <main className="checkout-main">
         <div className="checkout-breadcrumb-row">
           <nav className="checkout-breadcrumb" aria-label="Điều hướng đường dẫn">
-            <a href="/courses">Khóa học</a>
+            <a href="/course">{isAuthenticatedStudent ? 'Các khóa học khác' : 'Khóa học'}</a>
             <ChevronRight size={13} />
-            <a href={`/courses/${encodeURIComponent(summaryCourse.slug)}`}>{summaryCourse.title}</a>
+            <a href={summaryCourse.slug ? `/courses/${encodeURIComponent(summaryCourse.slug)}` : backHref}>{summaryCourse.title}</a>
             <ChevronRight size={13} />
             <span>Thanh toán an toàn</span>
           </nav>
+          {isAuthenticatedStudent && (
+            <a href={backHref} className="checkout-breadcrumb">
+              <ArrowLeft size={14} aria-hidden="true" />
+              <span>Quay lại</span>
+            </a>
+          )}
         </div>
 
         {showPaymentReturnNotice && (
@@ -315,11 +273,6 @@ export function CheckoutPage() {
             <section className="checkout-card checkout-student-card" aria-labelledby="student-info-title">
               <header className="checkout-section-heading">
                 <h1 id="student-info-title"><UserRound size={18} /> Thông tin học viên đăng ký</h1>
-                {!accessToken && (
-                  <button type="button" className="checkout-edit-button" onClick={() => setEditOpen(true)}>
-                    Chỉnh sửa thông tin <Pencil size={13} />
-                  </button>
-                )}
               </header>
               <div className="checkout-student-fields">
                 <div><span>Họ và tên</span><strong>{currentStudent.fullName || 'Chưa cập nhật'}</strong></div>
@@ -396,7 +349,7 @@ export function CheckoutPage() {
                 )}
               </div>
               <div className="checkout-total">
-                <strong>Tổng tiền cần thanh toán:</strong>
+                <strong>Tổng tiền:</strong>
                 <div><b>{formatCurrency(summaryCourse.price)}</b><small>Đơn hàng gồm 1 khóa học · VND</small></div>
               </div>
 
@@ -411,7 +364,9 @@ export function CheckoutPage() {
               >
                 {processing
                   ? <><span className="checkout-spinner" aria-hidden="true" /> ĐANG TẠO ĐƠN…</>
-                  : <>Tạo đơn &amp; tiếp tục thanh toán ({formatCurrency(summaryCourse.price)}) <ArrowRight size={17} /></>}
+                  : isAuthenticatedStudent
+                    ? <>Tạo đơn &amp; tiếp tục thanh toán ({formatCurrency(summaryCourse.price)}) <ArrowRight size={17} /></>
+                    : <>Tạo đơn &amp; thanh toán ({formatCurrency(summaryCourse.price)}) <ArrowRight size={17} /></>}
               </button>
 
               <ul className="checkout-guarantees">
@@ -432,18 +387,6 @@ export function CheckoutPage() {
       </main>
 
       <SiteFooter brandName="Your English Voice" />
-
-      {editOpen && (
-        <EditStudentDialog
-          details={currentStudent}
-          requireEmailOnly={!accessToken}
-          onClose={() => setEditOpen(false)}
-          onSave={(details) => {
-            setStudent(details)
-            setEditOpen(false)
-          }}
-        />
-      )}
     </div>
   )
 }

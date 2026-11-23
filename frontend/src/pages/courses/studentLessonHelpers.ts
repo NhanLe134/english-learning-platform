@@ -44,6 +44,29 @@ export interface SidebarLessonDisplayInfo {
   exercisePassed: boolean
 }
 
+export function calculateOverallCourseProgress(
+  lessons: Array<Pick<StudentLessonItem, 'progressPercent' | 'status'>>,
+  totalLessonsOverride?: number
+): number {
+  const totalLessons =
+    typeof totalLessonsOverride === 'number' && totalLessonsOverride > lessons.length
+      ? totalLessonsOverride
+      : lessons.length
+  if (totalLessons <= 0) return 0
+
+  const sum = lessons.reduce((acc, lesson) => {
+    const currentProgress =
+      lesson.status === 'completed'
+        ? 100
+        : Number.isFinite(lesson.progressPercent)
+        ? Math.min(100, Math.max(0, lesson.progressPercent))
+        : 0
+    return acc + currentProgress
+  }, 0)
+
+  return Math.min(100, Math.max(0, Math.round(sum / totalLessons)))
+}
+
 export function formatSidebarLessonInfo(
   lesson: Pick<StudentLessonItem, 'duration' | 'status' | 'progressPercent' | 'lastPositionSeconds'>,
   latestExerciseResult?: LatestExerciseResult | null

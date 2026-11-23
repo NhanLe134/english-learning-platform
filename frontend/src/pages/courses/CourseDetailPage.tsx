@@ -15,14 +15,16 @@ import {
 import { useAuth } from '../auth/auth-context'
 import { SiteHeader } from '../../components/layout/SiteHeader'
 import { SiteFooter } from '../../components/layout/SiteFooter'
+import { StudentHeader } from './components/StudentHeader'
 import { createRegistrationUrl, type CourseReference } from './course-data'
 import { courseCatalogApi } from './services/courseCatalogApi'
+import { buildCheckoutPageUrl, savePaymentReturnPath } from '../checkout/payment-navigation'
 import './course-detail-page.css'
 
 const formatCurrency = (amount: number) => `${amount.toLocaleString('vi-VN')}đ`
 
 export function CourseDetailPage({ identifier }: { identifier: string }) {
-  const { accessToken } = useAuth()
+  const { accessToken, user } = useAuth()
   const [expandedModules, setExpandedModules] = useState<number[]>([0])
   const [course, setCourse] = useState<CourseReference | null>(null)
   const [loading, setLoading] = useState(true)
@@ -52,16 +54,34 @@ export function CourseDetailPage({ identifier }: { identifier: string }) {
   }
 
   function register() {
-    if (course) window.location.assign(createRegistrationUrl(course))
+    if (!course) return
+    const returnTo = `${window.location.pathname}${window.location.search}`
+    savePaymentReturnPath(`course:${course.id}`, returnTo)
+    if (user?.role === 'STUDENT' && accessToken) {
+      window.location.assign(buildCheckoutPageUrl(course.id, course.slug, returnTo))
+      return
+    }
+    window.location.assign(createRegistrationUrl(course))
   }
+
+  const isAuthenticatedStudent = user?.role === 'STUDENT'
 
   return (
     <div className="course-detail-page">
-      <SiteHeader activeTab="courses" />
+      {isAuthenticatedStudent ? (
+        <StudentHeader activePage="other-courses" />
+      ) : (
+        <SiteHeader activeTab="courses" />
+      )}
 
       <main className="course-detail-main">
         <nav className="course-detail-breadcrumb" aria-label="Điều hướng đường dẫn">
-          <a href="/">Trang chủ</a><span>›</span><a href="/courses">Khóa học</a>
+          {isAuthenticatedStudent ? (
+            <a href="/my-courses">Khóa học của tôi</a>
+          ) : (
+            <a href="/">Trang chủ</a>
+          )}
+          <span>›</span><a href="/course">{isAuthenticatedStudent ? 'Các khóa học khác' : 'Khóa học'}</a>
           <span>›</span><span>{course?.title ?? 'Chi Tiết Khóa Học'}</span>
         </nav>
 
@@ -69,7 +89,7 @@ export function CourseDetailPage({ identifier }: { identifier: string }) {
         {loading && <div className="course-detail-loading" role="status">Đang tải thông tin khóa học…</div>}
         {!loading && !course && (
           <div className="course-detail-error" role="alert">
-            Không tìm thấy khóa học hoặc khóa học không còn mở đăng ký. <a href="/courses">Quay lại danh sách khóa học</a>
+            Không tìm thấy khóa học hoặc khóa học không còn mở đăng ký. <a href="/course">Quay lại danh sách khóa học</a>
           </div>
         )}
 
@@ -142,12 +162,12 @@ export function CourseDetailPage({ identifier }: { identifier: string }) {
                                 <div className="course-detail-lesson-card" key={lesson.id || lIdx}>
                                   <div className="course-detail-lesson-thumb">
                                     <img
-                                      src={lesson.thumbnailUrl || course.thumbnailUrl || '/hero-classroom.png'}
+                                      src={lesson.thumbnailUrl || '/hero-classroom.png'}
                                       alt={lesson.title}
                                       loading="lazy"
                                       onError={(e) => {
                                         const target = e.currentTarget
-                                        const fallback = course.thumbnailUrl || '/hero-classroom.png'
+                                        const fallback = '/hero-classroom.png'
                                         if (!target.src.endsWith(fallback)) {
                                           target.src = fallback
                                         }
@@ -190,7 +210,6 @@ export function CourseDetailPage({ identifier }: { identifier: string }) {
               {course.thumbnailUrl && <img src={course.thumbnailUrl} alt="" />}
               <div className="course-preview-board"><BookOpen size={42} /><span>{course.category}<br />COURSE</span></div>
               <span className="course-preview-play"><Play size={21} fill="currentColor" /></span>
-              <small>Xem video preview</small>
             </div>
             <div className="course-purchase-prices">
               <strong>{formatCurrency(course.price)}</strong>

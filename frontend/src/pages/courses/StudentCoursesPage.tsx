@@ -15,6 +15,7 @@ import {
   type BackendEnrolledCourse,
 } from './services/courseCatalogApi'
 import type { CourseReference } from './course-data'
+import { buildCheckoutPageUrl, savePaymentReturnPath } from '../checkout/payment-navigation'
 import './student-courses.css'
 
 function mapCatalogToOtherCourse(course: CourseReference): OtherCourse {
@@ -82,7 +83,7 @@ function mapBackendEnrolledCourse(item: BackendEnrolledCourse): MyCourse {
 export const StudentCoursesPage: React.FC = () => {
   const { user, accessToken } = useAuth()
   const studentId = user?.id
-  const isOtherCoursesPage = window.location.pathname === '/courses' || window.location.pathname === '/khoa-hoc'
+  const isOtherCoursesPage = window.location.pathname === '/course'
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'in_progress' | 'completed'>('all')
   const [sortBy, _setSortBy] = useState<'recent' | 'progress' | 'title'>('recent')
@@ -120,10 +121,19 @@ export const StudentCoursesPage: React.FC = () => {
       })
 
     // 2. Fetch enrolled courses for the logged-in student via API
-    if (studentId && accessToken) {
-      setMyCourses([])
-      setEnrolledCourseIds([])
-      setMyCoursesLoading(true)
+    const fetchMyCourses = (showLoading: boolean) => {
+      if (!studentId || !accessToken) {
+        setMyCourses([])
+        setEnrolledCourseIds([])
+        setMyCoursesLoading(false)
+        setMyCoursesError(null)
+        return
+      }
+      if (showLoading) {
+        setMyCourses([])
+        setEnrolledCourseIds([])
+        setMyCoursesLoading(true)
+      }
       setMyCoursesError(null)
       void courseCatalogApi
         .getMyCourses(accessToken)
@@ -142,20 +152,28 @@ export const StudentCoursesPage: React.FC = () => {
         .catch((err: unknown) => {
           if (!active) return
           console.error('[StudentCoursesPage] getMyCourses failed:', err)
-          setMyCoursesError('Không thể tải danh sách khóa học. Vui lòng thử lại.')
+          if (showLoading) {
+            setMyCoursesError('Không thể tải danh sách khóa học. Vui lòng thử lại.')
+          }
         })
         .finally(() => {
-          if (active) setMyCoursesLoading(false)
+          if (active && showLoading) setMyCoursesLoading(false)
         })
-    } else {
-      setMyCourses([])
-      setEnrolledCourseIds([])
-      setMyCoursesLoading(false)
-      setMyCoursesError(null)
     }
+
+    fetchMyCourses(true)
+
+    // Re-sync progress when returning to /my-courses via browser Back (bfcache)
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        fetchMyCourses(false)
+      }
+    }
+    window.addEventListener('pageshow', handlePageShow)
 
     return () => {
       active = false
+      window.removeEventListener('pageshow', handlePageShow)
     }
   }, [studentId, accessToken])
 
@@ -235,11 +253,26 @@ export const StudentCoursesPage: React.FC = () => {
   }, [catalogCourses, enrolledCourseIdSet, isOtherCoursesLoading, searchQuery])
 
   const handleContinueCourse = (course: MyCourse) => {
-    window.location.assign(`/student/courses/${encodeURIComponent(course.slug)}`)
+    window.location.assign(`/student/courses/${encodeURIComponent(course.slug || course.id)}`)
   }
 
   const handleReviewCourse = (course: MyCourse) => {
-    window.location.assign(`/student/courses/${encodeURIComponent(course.slug)}`)
+    window.location.assign(`/student/courses/${encodeURIComponent(course.slug || course.id)}`)
+  }
+
+  const handleViewOtherCourseDetail = (selectedCourse: OtherCourse) => {
+    window.location.assign(`/courses/${encodeURIComponent(selectedCourse.slug || selectedCourse.id)}`)
+  }
+
+  const handleEnrollOtherCourse = (selectedCourse: OtherCourse) => {
+    const returnTo = `${window.location.pathname}${window.location.search}`
+    const courseIdentifier = selectedCourse.id || selectedCourse.slug
+    if (courseIdentifier) {
+      savePaymentReturnPath(`course:${courseIdentifier}`, returnTo)
+    }
+    window.location.assign(
+      buildCheckoutPageUrl(courseIdentifier, selectedCourse.slug, returnTo)
+    )
   }
 
   return (
@@ -335,7 +368,7 @@ export const StudentCoursesPage: React.FC = () => {
                         Khám phá danh sách các khóa học để bắt đầu lộ trình học tập của bạn nhé!
                       </p>
                       <a
-                        href="/courses"
+                        href="/course"
                         className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold transition-all shadow-md shadow-brand-600/20"
                       >
                         Khám phá khóa học ngay
@@ -394,11 +427,8 @@ export const StudentCoursesPage: React.FC = () => {
                       <OtherCourseCard
                         key={course.id}
                         course={course}
-                        onEnroll={(selectedCourse) => {
-                          window.location.assign(
-                            `/checkout?courseId=${encodeURIComponent(selectedCourse.id || selectedCourse.slug)}&slug=${encodeURIComponent(selectedCourse.slug)}`
-                          )
-                        }}
+                        onViewDetail={handleViewOtherCourseDetail}
+                        onEnroll={handleEnrollOtherCourse}
                       />
                     ))
                   ) : (

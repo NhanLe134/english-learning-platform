@@ -27,6 +27,7 @@ export class CourseController {
         return
       }
       const courses = await courseService.getEnrolledCourses(user.id)
+      response.setHeader('Cache-Control', 'private, no-store, max-age=0')
       response.status(200).json({ success: true, data: courses })
     } catch (error) {
       this.handleError(error, response, next)

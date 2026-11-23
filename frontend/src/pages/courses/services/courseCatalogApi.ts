@@ -30,6 +30,7 @@ export interface CourseCatalogRecord {
       title: string
       description?: string | null
       duration_seconds?: number | null
+      thumbnail_url?: string | null
       video_url?: string | null
     }[]
   }[]
@@ -60,9 +61,11 @@ export function mapCourseCatalogRecord(course: CourseCatalogRecord): CourseRefer
       const durationSeconds = typeof lesson.duration_seconds === 'number' ? lesson.duration_seconds : null
       const formattedDuration = durationSeconds && durationSeconds > 0 ? formatPlaybackTime(durationSeconds) : '--:--'
       const ytId = extractYouTubeVideoId(lesson.video_url)
-      const thumbnailUrl = ytId
-        ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`
-        : (course.thumbnail_url || null)
+      const thumbnailUrl = lesson.thumbnail_url?.trim()
+        ? lesson.thumbnail_url.trim()
+        : ytId
+          ? `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`
+          : null
 
       return {
         id: lesson.id,

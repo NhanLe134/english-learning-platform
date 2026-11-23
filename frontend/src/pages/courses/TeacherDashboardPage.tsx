@@ -1,11 +1,12 @@
-﻿import { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { GraduationCap, LogOut } from 'lucide-react'
-import { useAuth } from '../auth/auth-context'
+import { getRoleHomePath, useAuth } from '../auth/auth-context'
 import { authApi } from '../auth/auth-api'
 
 export function TeacherDashboardPage() {
   const { user, logout, accessToken } = useAuth()
+  const homeHref = getRoleHomePath(user?.role)
   const [message, setMessage] = useState('Đang tải tài khoản…')
 
   const [currentPassword, setCurrentPassword] = useState('')
@@ -52,7 +53,7 @@ export function TeacherDashboardPage() {
   return <main className="min-h-screen bg-slate-50">
     <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur">
       <div className="mx-auto flex min-h-16 max-w-7xl items-center justify-between gap-4 px-5 sm:px-8">
-        <a href="/teacher/dashboard" className="flex min-w-0 items-center gap-3 text-slate-900 no-underline">
+        <a href={homeHref} className="flex min-w-0 items-center gap-3 text-slate-900 no-underline">
           <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-red-600 text-white">
             <GraduationCap size={22} aria-hidden="true" />
           </span>

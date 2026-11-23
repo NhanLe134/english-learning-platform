@@ -338,7 +338,7 @@ describe('LessonsService - Student access & lesson retrieval', () => {
     assert.equal(pausedEarlier.is_completed, false)
   })
 
-  it('resets progress_percent to 0 when reset_progress is true after a failed exercise, but preserves completed lessons', async () => {
+  it('resets progress_percent to 0 when reset_progress is true after a failed exercise or when relearning a completed lesson', async () => {
     const { service } = setup()
 
     // Student watched to 99% before taking exercise
@@ -370,15 +370,16 @@ describe('LessonsService - Student access & lesson retrieval', () => {
     assert.equal(passed.progress_percent, 100)
     assert.equal(passed.is_completed, true)
 
-    // Completed lesson must never be reset even if reset_progress is sent
-    const completedAfterReset = await service.updateLessonProgress(publishedLessonId, enrolledStudent, {
+    // Explicit relearn reset clears current attempt progress back to 0% and is_completed to false
+    const relearnReset = await service.updateLessonProgress(publishedLessonId, enrolledStudent, {
       last_position_seconds: 0,
       progress_percent: 0,
       is_completed: false,
       reset_progress: true,
     })
-    assert.equal(completedAfterReset.progress_percent, 100)
-    assert.equal(completedAfterReset.is_completed, true)
+    assert.equal(relearnReset.last_position_seconds, 0)
+    assert.equal(relearnReset.progress_percent, 0)
+    assert.equal(relearnReset.is_completed, false)
   })
 
   it('backfills missing lesson duration_seconds when reported by player', async () => {

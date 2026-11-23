@@ -135,7 +135,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setCurrentSession(event.newValue ? readStoredSession() : null)
     }
     const recheckSessionAfterBackNavigation = (event: PageTransitionEvent) => {
-      if (event.persisted) setCurrentSession(readStoredSession())
+      if (!event.persisted) return
+      const stored = readStoredSession()
+      if (stored) {
+        setCurrentSession(stored)
+        return
+      }
+      let hasStoredEntry = false
+      try {
+        hasStoredEntry = Boolean(localStorage.getItem(AUTH_SESSION_STORAGE_KEY))
+      } catch {
+        hasStoredEntry = false
+      }
+      if (!hasStoredEntry) {
+        setCurrentSession(null)
+        return
+      }
+      void refreshSessionOnce()
+        .then((refreshedSession) => {
+          setCurrentSession(refreshedSession)
+          storeSession(refreshedSession)
+        })
+        .catch(() => {
+          setCurrentSession(null)
+          storeSession(null)
+        })
     }
     window.addEventListener('storage', syncSessionAcrossTabs)
     window.addEventListener('pageshow', recheckSessionAfterBackNavigation)

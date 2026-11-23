@@ -33,6 +33,19 @@ export function LoginPage() {
   const { setSession } = useAuth()
 
   useEffect(() => {
+    const resetStaleLoadingState = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        setGoogleLoading(false)
+        setSubmitting(false)
+      }
+    }
+    window.addEventListener('pageshow', resetStaleLoadingState)
+    return () => {
+      window.removeEventListener('pageshow', resetStaleLoadingState)
+    }
+  }, [])
+
+  useEffect(() => {
     try {
       if (sessionStorage.getItem(LOGOUT_HISTORY_LOCK_KEY) !== '1') return
     } catch {
@@ -205,7 +218,7 @@ export function LoginPage() {
             </form>
 
             <p className="signup-prompt">
-              Chưa có tài khoản? <a href="/courses">Đăng ký ngay</a>
+              Chưa có tài khoản? <a href="/course">Đăng ký ngay</a>
             </p>
 
             <div className="login-security">

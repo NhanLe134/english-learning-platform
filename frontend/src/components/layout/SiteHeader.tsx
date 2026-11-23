@@ -1,6 +1,6 @@
 import { useContext, useEffect, useState } from 'react'
 import { Layers, Menu, User, X } from 'lucide-react'
-import { AuthContext } from '../../pages/auth/auth-context'
+import { AuthContext, getRoleHomePath } from '../../pages/auth/auth-context'
 
 export type NavTabId = 'home' | 'about' | 'courses' | 'ebook' | 'workshop' | 'contact'
 
@@ -12,7 +12,7 @@ export interface SiteHeaderProps {
 const NAV_LINKS: { id: NavTabId; label: string; href: string }[] = [
   { id: 'home', label: 'Trang chủ', href: '/' },
   { id: 'about', label: 'Về chúng tôi', href: '/about' },
-  { id: 'courses', label: 'Các khóa học', href: '/khoa-hoc' },
+  { id: 'courses', label: 'Các khóa học', href: '/course' },
   { id: 'ebook', label: 'Ebook', href: '/ebooks' },
   { id: 'workshop', label: 'Workshop', href: '/workshops' },
   { id: 'contact', label: 'Liên hệ', href: '/contact' },
@@ -31,9 +31,9 @@ function detectActiveTab(): NavTabId | null {
     return 'about'
   }
   if (
-    path === '/khoa-hoc' ||
+    path === '/course' ||
     path === '/courses' ||
-    path.startsWith('/khoa-hoc/') ||
+    path.startsWith('/course/') ||
     path.startsWith('/courses/')
   ) {
     return 'courses'
@@ -72,6 +72,7 @@ export function SiteHeader({ activeTab: explicitActiveTab, brandName = 'Your Eng
 
   const auth = useContext(AuthContext)
   const user = auth?.user ?? null
+  const homeHref = getRoleHomePath(user?.role)
   const isLoginPage = typeof window !== 'undefined' && window.location.pathname.toLowerCase() === '/login'
 
   useEffect(() => {
@@ -116,7 +117,7 @@ export function SiteHeader({ activeTab: explicitActiveTab, brandName = 'Your Eng
     <header className="sticky top-0 z-50 border-b border-gray-100 bg-white/95 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
         {/* Logo */}
-        <a href="/" className="flex shrink-0 items-center gap-2.5">
+        <a href={homeHref} className="flex shrink-0 items-center gap-2.5">
           <span className="flex size-9 items-center justify-center rounded-xl bg-brand-600 text-white">
             <Layers className="size-5" strokeWidth={2.5} />
           </span>
@@ -149,7 +150,7 @@ export function SiteHeader({ activeTab: explicitActiveTab, brandName = 'Your Eng
         {/* Actions */}
         <div className="flex items-center gap-3">
           <a
-            href={isLoginPage ? '/courses' : '/register'}
+            href={isLoginPage ? '/course' : '/register'}
             className="rounded-full bg-brand-600 px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-brand-700"
           >
             Đăng ký
@@ -236,7 +237,7 @@ export function SiteHeader({ activeTab: explicitActiveTab, brandName = 'Your Eng
               {user ? `Đăng xuất (${user.email})` : isLoginPage ? 'Đang ở trang đăng nhập' : 'Đăng nhập'}
             </button>
             <a
-              href={isLoginPage ? '/courses' : '/register'}
+              href={isLoginPage ? '/course' : '/register'}
               onClick={() => setMenuOpen(false)}
               className="flex items-center justify-center rounded-xl bg-brand-600 py-2.5 text-sm font-bold text-white transition-colors hover:bg-brand-700"
             >

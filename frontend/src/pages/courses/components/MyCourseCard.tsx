@@ -22,7 +22,7 @@ export const MyCourseCard: React.FC<MyCourseCardProps> = ({
     } else if (onContinue) {
       onContinue(course)
     } else {
-      window.location.assign(`/student/courses/${encodeURIComponent(course.slug)}`)
+      window.location.assign(`/student/courses/${encodeURIComponent(course.slug || course.id)}`)
     }
   }
 
@@ -134,7 +134,14 @@ export const MyCourseCard: React.FC<MyCourseCardProps> = ({
               <button
                 type="button"
                 className="btn-review-course"
-                onClick={() => onReview?.(course) ?? handleCardClick()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  if (onReview) {
+                    onReview(course)
+                  } else {
+                    handleCardClick()
+                  }
+                }}
               >
                 <RotateCcw size={13} />
                 Ôn Tập Khóa Học
@@ -143,7 +150,14 @@ export const MyCourseCard: React.FC<MyCourseCardProps> = ({
               <button
                 type="button"
                 className="btn-continue-course"
-                onClick={() => onContinue?.(course) ?? handleCardClick()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  if (onContinue) {
+                    onContinue(course)
+                  } else {
+                    handleCardClick()
+                  }
+                }}
               >
                 <Play size={12} fill="currentColor" />
                 Tiếp Tục Học

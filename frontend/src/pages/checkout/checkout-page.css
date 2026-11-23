@@ -190,24 +190,6 @@
   color: var(--color-brand-600);
 }
 
-.checkout-edit-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  border: 0;
-  background: transparent;
-  color: var(--color-brand-600);
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.checkout-edit-button:hover {
-  color: var(--color-brand-700);
-  text-decoration: underline;
-}
-
 .checkout-student-fields {
   display: grid;
   grid-template-columns: 0.9fr 1.4fr 0.9fr;
@@ -687,43 +669,6 @@
   font-size: 11px;
 }
 
-.checkout-dialog-backdrop {
-  position: fixed;
-  z-index: 1000;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  overflow-y: auto;
-  padding: 24px;
-  background: rgba(23, 24, 28, 0.5);
-}
-
-.checkout-dialog {
-  position: relative;
-  width: min(100%, 440px);
-  padding: 30px;
-  border: 1px solid #E5E7EB;
-  border-radius: 16px;
-  background: #FFFFFF;
-  box-shadow: 0 18px 60px rgba(23, 24, 28, 0.2);
-}
-
-.checkout-dialog-close {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border: 0;
-  border-radius: 50%;
-  background: #F3F4F6;
-  color: var(--color-ink-700);
-  cursor: pointer;
-}
-
-.checkout-dialog-icon,
 .checkout-success-icon {
   display: grid;
   width: 44px;
@@ -734,67 +679,12 @@
   color: var(--color-brand-600);
 }
 
-.checkout-dialog h2 {
-  margin: 14px 0 6px;
-  color: var(--color-ink-900);
-  font-size: 20px;
-  font-weight: 800;
-}
-
-.checkout-dialog > p {
-  margin: 0 0 18px;
-  color: var(--color-ink-500);
-  font-size: 13px;
-  line-height: 1.55;
-}
-
-.checkout-dialog form {
-  display: flex;
-  flex-direction: column;
-  gap: 13px;
-}
-
-.checkout-dialog form label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  color: var(--color-ink-700);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.checkout-dialog input {
-  width: 100%;
-  min-height: 42px;
-  padding: 9px 12px;
-  border: 1px solid #E5E7EB;
-  border-radius: 8px;
-  outline: none;
-  background: #F9FAFB;
-  color: var(--color-ink-900);
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.checkout-dialog input:focus {
-  border-color: var(--color-brand-600);
-  background: #FFFFFF;
-  box-shadow: 0 0 0 2px var(--color-brand-200);
-}
-
 .checkout-inline-error {
   margin: 10px 0 0;
   color: var(--color-brand-600);
   font-size: 12px;
   font-weight: 500;
   line-height: 1.5;
-}
-
-.checkout-dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 9px;
-  margin-top: 5px;
 }
 
 .checkout-secondary-button {
@@ -996,10 +886,6 @@
     font-size: 16px;
   }
 
-  .checkout-edit-button {
-    font-size: 11px;
-  }
-
   .checkout-course-mini-card {
     grid-template-columns: 68px minmax(0, 1fr);
     gap: 8px;
@@ -1025,14 +911,6 @@
 
   .checkout-total > strong {
     font-size: 11px;
-  }
-
-  .checkout-dialog-backdrop {
-    padding: 14px;
-  }
-
-  .checkout-dialog {
-    padding: 24px 19px;
   }
 
 }
@@ -1139,7 +1017,7 @@
   margin-top: 12px;
   padding: 7px 11px;
   border-radius: 999px;
-  background: #FFF5E9;
+  background: #DCEBFA;
   color: #725323;
   font-size: 12px;
 }

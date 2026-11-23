@@ -186,8 +186,8 @@ export class LessonsService {
     if ('is_completed' in body && body.is_completed !== undefined && typeof body.is_completed !== 'boolean') {
       throw new LessonRequestError('is_completed must be a boolean.', 400)
     }
-    const isCompleted = Boolean(existing?.is_completed) || body.is_completed === true
-    const isReset = !existing?.is_completed && body.reset_progress === true
+    const isReset = body.reset_progress === true
+    const isCompleted = isReset ? false : Boolean(existing?.is_completed) || body.is_completed === true
 
     let incomingPercent: number
     if ('progress_percent' in body && body.progress_percent !== undefined) {
@@ -196,16 +196,18 @@ export class LessonsService {
         throw new LessonRequestError('progress_percent must be a number between 0 and 100.', 400)
       }
       incomingPercent = pct
+    } else if (isReset) {
+      incomingPercent = 0
     } else if (effectiveDuration > 0) {
       incomingPercent = Math.min(99, Math.round((flooredPosition / effectiveDuration) * 100))
     } else {
-      incomingPercent = isReset ? 0 : Number(existing?.progress_percent ?? 0)
+      incomingPercent = Number(existing?.progress_percent ?? 0)
     }
 
     const progressPercent = isCompleted
       ? 100
       : isReset
-      ? incomingPercent
+      ? Math.min(99, Math.max(0, incomingPercent))
       : Math.min(99, Math.max(Number(existing?.progress_percent ?? 0), incomingPercent))
 
     return this.repo.upsertLessonProgress({

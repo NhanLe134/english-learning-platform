@@ -42,7 +42,7 @@ export function CoursesSection() {
             </h2>
           </div>
           <a
-            href="/courses"
+            href="/course"
             className="flex items-center gap-1.5 text-sm font-semibold text-brand-600 hover:text-brand-700"
           >
             Xem tất cả khóa học

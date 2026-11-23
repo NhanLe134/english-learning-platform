@@ -17,6 +17,7 @@ import {
   Download,
   X,
   AlertTriangle,
+  RotateCcw,
 } from 'lucide-react'
 import { StudentHeader } from './components/StudentHeader'
 import type { StudentProfile } from './student-courses-data'
@@ -30,6 +31,7 @@ import {
 } from '../them_bai_giang/services/lessonApi'
 import type { QuizQuestion } from './student-course-detail-data'
 import {
+  calculateOverallCourseProgress,
   DEFAULT_LESSON_THUMBNAIL,
   formatLessonDuration,
   formatPlaybackTime,
@@ -74,40 +76,74 @@ function loadYouTubeIframeApi(): Promise<void> {
   if (apiLoadedPromise) return apiLoadedPromise
 
   apiLoadedPromise = new Promise((resolve, reject) => {
-    const existing = document.getElementById('youtube-iframe-api')
-    if (!existing) {
-      const tag = document.createElement('script')
-      tag.id = 'youtube-iframe-api'
-      tag.src = 'https://www.youtube.com/iframe_api'
-      tag.onerror = () => {
-        apiLoadedPromise = null
-        reject(new Error('Không thể tải YouTube Player API.'))
+    let settled = false
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    let interval: ReturnType<typeof setInterval> | undefined
+
+    const cleanup = () => {
+      if (interval) {
+        clearInterval(interval)
+        interval = undefined
       }
-      const firstScriptTag = document.getElementsByTagName('script')[0]
-      firstScriptTag?.parentNode?.insertBefore(tag, firstScriptTag)
+      if (timeout) {
+        clearTimeout(timeout)
+        timeout = undefined
+      }
+    }
+
+    const finishResolve = () => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve()
+    }
+
+    const finishReject = (message: string) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      apiLoadedPromise = null
+      document.getElementById('youtube-iframe-api')?.remove()
+      reject(new Error(message))
     }
 
     const previousCallback = window.onYouTubeIframeAPIReady
     window.onYouTubeIframeAPIReady = () => {
       if (previousCallback) previousCallback()
-      resolve()
+      finishResolve()
     }
 
-    const timeout = setTimeout(() => {
-      clearInterval(interval)
-      if (window.YT && window.YT.Player) {
-        resolve()
-      } else {
-        apiLoadedPromise = null
-        reject(new Error('YouTube Player API quá thời gian phản hồi.'))
-      }
-    }, 10000)
+    const existing = document.getElementById('youtube-iframe-api')
+    if (existing) {
+      existing.remove()
+    }
 
-    const interval = setInterval(() => {
+    const tag = document.createElement('script')
+    tag.id = 'youtube-iframe-api'
+    tag.src = 'https://www.youtube.com/iframe_api'
+    tag.async = true
+    tag.onerror = () => {
+      finishReject('Không thể tải YouTube Player API. Vui lòng kiểm tra kết nối mạng hoặc tắt trình chặn quảng cáo.')
+    }
+    const target = document.head || document.body
+    if (target) {
+      target.appendChild(tag)
+    } else {
+      const firstScriptTag = document.getElementsByTagName('script')[0]
+      firstScriptTag?.parentNode?.insertBefore(tag, firstScriptTag)
+    }
+
+    timeout = setTimeout(() => {
       if (window.YT && window.YT.Player) {
-        clearInterval(interval)
-        clearTimeout(timeout)
-        resolve()
+        finishResolve()
+      } else {
+        finishReject('YouTube Player API quá thời gian phản hồi. Vui lòng kiểm tra mạng hoặc bấm thử lại.')
+      }
+    }, 20000)
+
+    interval = setInterval(() => {
+      if (window.YT && window.YT.Player) {
+        finishResolve()
       }
     }, 100)
   })
@@ -164,6 +200,7 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
   const [videoWatchedPercent, setVideoWatchedPercent] = useState(0)
   const [maxSeekableTime, setMaxSeekableTime] = useState(0)
   const [playerError, setPlayerError] = useState<string | null>(null)
+  const [playerRetryKey, setPlayerRetryKey] = useState(0)
 
   // Exercise & completion states (kept distinct from last_position_seconds)
   const [videoCompletedByLesson, setVideoCompletedByLesson] = useState<Record<string, boolean>>({})
@@ -506,7 +543,9 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
         setLessonsList((prev) =>
           prev.map((item) => {
             if (item.id !== lessonId) return item
-            const newCompleted = item.status === 'completed' || res.is_completed
+            const newCompleted = resetProgress
+              ? res.is_completed
+              : item.status === 'completed' || res.is_completed
             const newPercent = newCompleted
               ? 100
               : resetProgress
@@ -765,7 +804,7 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
       showToastRef.current(
         alreadyCompleted
           ? 'Video đã kết thúc! Bạn có thể làm lại bài kiểm tra ôn tập.'
-          : '🎉 Bạn đã xem hết video! Hãy hoàn thành bài kiểm tra để đạt 100%.'
+          : 'Bạn đã xem hết video! Hãy hoàn thành bài kiểm tra để đạt 100%.'
       )
     }
   }, [])
@@ -1385,7 +1424,7 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
         hostEl.innerHTML = ''
       }
     }
-  }, [activeLessonId, currentYouTubeId])
+  }, [activeLessonId, currentYouTubeId, playerRetryKey])
 
   const applyPendingHtml5Restore = useCallback(
     (target: HTMLVideoElement, lessonId: string) => {
@@ -1902,7 +1941,6 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
       setUnlockedExerciseMap((prev) => ({ ...prev, [lesson.id]: true }))
     }
 
-    showToast(`Đã chuyển tới ${lesson.title}`)
   }
 
   // Audio speech synthesis helper inside quiz questions
@@ -2132,6 +2170,87 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
 
 
 
+  const handleRelearnLesson = useCallback(() => {
+    if (!currentLessonItem) return
+    const targetLessonId = currentLessonItem.id
+    const dur =
+      trackerRef.current.getDuration() ||
+      currentLessonItem.durationSeconds ||
+      videoDuration ||
+      0
+
+    try {
+      localStorage.removeItem(`lesson_retry_required:${targetLessonId}`)
+    } catch {
+      // ignore
+    }
+    clearPendingPlaybackCache(targetLessonId)
+
+    savedLessonStateRef.current[targetLessonId] = {
+      lastPositionSeconds: 0,
+      furthestWatchedTime: 0,
+      progressPercent: 0,
+      isCompleted: false,
+    }
+    pendingRestoreSecondsRef.current = 0
+    isRestoringPositionRef.current = false
+    lastSavedKeyRef.current = ''
+    lastSaveTimeRef.current = 0
+
+    if (trackerRef.current.getLessonId() === targetLessonId) {
+      trackerRef.current.resetForRelearn(Date.now())
+    }
+
+    setVideoWatchedPercent(0)
+    setVideoCurrentTime(0)
+    setMaxSeekableTime(0)
+    setVideoCompletedByLesson((prev) => ({ ...prev, [targetLessonId]: false }))
+    setUnlockedExerciseMap((prev) => ({ ...prev, [targetLessonId]: false }))
+    setSelectedAnswersMap((prev) => ({ ...prev, [targetLessonId]: {} }))
+    setCorrectAnswersMap((prev) => ({ ...prev, [targetLessonId]: {} }))
+    setCurrentQuestionIndex(0)
+    setIsExerciseOpen(false)
+
+    // Immediately reset current attempt progress to 0% so overall course progress recalculates right away
+    setLessonsList((prev) =>
+      prev.map((item) =>
+        item.id === targetLessonId
+          ? {
+              ...item,
+              status: 'not_started',
+              progressPercent: 0,
+              lastPositionSeconds: 0,
+            }
+          : item
+      )
+    )
+
+    void handleUpdateProgress(
+      targetLessonId,
+      0,
+      0,
+      false,
+      dur > 0 ? dur : undefined,
+      false,
+      true
+    )
+
+    if (videoRef.current) {
+      videoRef.current.currentTime = 0
+      videoRef.current.playbackRate = 1
+      void videoRef.current.play().catch(() => {})
+    } else if (playerRef.current && ytReadyRef.current) {
+      try {
+        playerRef.current.seekTo?.(0, true)
+        playerRef.current.playVideo?.()
+      } catch {
+        // ignore
+      }
+    }
+
+    showToast('Đã bắt đầu học lại bài học. Tiến độ bài học đã đặt lại về 0%.')
+  }, [currentLessonItem, videoDuration, clearPendingPlaybackCache, handleUpdateProgress, showToast])
+
   const handleAddComment = (e: React.FormEvent) => {
     e.preventDefault()
     if (!commentText.trim()) return
@@ -2149,8 +2268,7 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
 
   const actualTotalLessons = lessonsList.length > 0 ? lessonsList.length : course?.totalLessons || 0
   const completedLessonsCount = lessonsList.filter((l) => l.status === 'completed').length
-  const overallProgressPercent =
-    actualTotalLessons > 0 ? Math.round((completedLessonsCount / actualTotalLessons) * 100) : 0
+  const overallProgressPercent = calculateOverallCourseProgress(lessonsList, actualTotalLessons)
 
   const instructorName = course?.instructor || 'Đang cập nhật'
   const instructorAvatar = course?.instructorAvatarUrl || course?.thumbnailUrl || null
@@ -2187,7 +2305,7 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
             <p className="text-xs text-rose-600 mb-6 leading-relaxed">{error}</p>
             <div className="flex justify-center gap-3">
               <a
-                href={isUnauthorized ? '/courses' : '/student/courses'}
+                href={isUnauthorized ? '/course' : '/student/courses'}
                 className="px-4 py-2.5 bg-brand-600 text-white rounded-xl text-xs font-bold hover:bg-brand-700 transition-colors"
               >
                 {isUnauthorized ? 'Xem danh sách khóa học' : 'Quay lại Khóa Học Của Tôi'}
@@ -2321,16 +2439,28 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                       <p className="text-xs text-slate-300 max-w-md leading-relaxed">
                         {playerError}
                       </p>
-                      {currentLessonItem?.videoUrl && (
-                        <a
-                          href={currentLessonItem.videoUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="mt-4 px-4 py-2 rounded-xl bg-brand-600 text-white text-xs font-semibold hover:bg-brand-700 transition-colors"
+                      <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPlayerError(null)
+                            setPlayerRetryKey((prev) => prev + 1)
+                          }}
+                          className="px-4 py-2 rounded-xl bg-white/15 text-white text-xs font-semibold hover:bg-white/25 transition-colors cursor-pointer"
                         >
-                          Mở video trên tab mới ↗
-                        </a>
-                      )}
+                          Thử tải lại video
+                        </button>
+                        {currentLessonItem?.videoUrl && (
+                          <a
+                            href={currentLessonItem.videoUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-4 py-2 rounded-xl bg-brand-600 text-white text-xs font-semibold hover:bg-brand-700 transition-colors"
+                          >
+                            Mở video trên tab mới ↗
+                          </a>
+                        )}
+                      </div>
                     </div>
                   ) : currentYouTubeId ? (
                     <div ref={ytHostRef} className="h-full w-full" />
@@ -2551,14 +2681,24 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
 
                     <div className="flex items-center gap-2">
                       {currentLessonItem.status === 'completed' ? (
-                        <button
-                          type="button"
-                          onClick={() => setIsExerciseOpen(true)}
-                          className="flex items-center gap-1 rounded-full bg-emerald-500/90 hover:bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white shadow-sm cursor-pointer transition-colors"
-                          title="Làm lại bài tập"
-                        >
-                          <Check size={13} /> Đã hoàn thành 100% • Làm lại bài tập
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={handleRelearnLesson}
+                            className="flex items-center gap-1 rounded-full bg-white/90 hover:bg-white px-2.5 py-1 text-xs font-semibold text-ink-900 shadow-sm cursor-pointer transition-colors"
+                            title="Học lại bài học (đặt lại tiến độ bài học về 0%)"
+                          >
+                            <RotateCcw size={13} /> Học lại bài học
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsExerciseOpen(true)}
+                            className="flex items-center gap-1 rounded-full bg-emerald-500/90 hover:bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white shadow-sm cursor-pointer transition-colors"
+                            title="Làm lại bài tập"
+                          >
+                            <Check size={13} /> Đã hoàn thành 100% • Làm lại bài tập
+                          </button>
+                        </>
                       ) : isCurrentLessonVideoCompleted || unlockedExerciseMap[currentLessonItem.id] ? (
                         <button
                           type="button"
@@ -2566,14 +2706,14 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                           className="flex items-center gap-1 rounded-full bg-amber-500/90 hover:bg-amber-600 px-2.5 py-1 text-xs font-semibold text-white shadow-sm cursor-pointer transition-colors"
                           title="Mở bài tập để làm tiếp"
                         >
-                          📝 Làm bài tập ({Object.keys(selectedAnswers).length}/{currentLessonExercise.totalQuestions} đã chọn)
+                          Làm bài tập ({Object.keys(selectedAnswers).length}/{currentLessonExercise.totalQuestions} đã chọn)
                         </button>
                       ) : (
                         <span
                           className="flex items-center gap-1.5 rounded-full bg-black/60 backdrop-blur-sm px-3 py-1 text-xs font-medium text-white/85"
                           title="Bài kiểm tra chỉ tự động mở khi bạn xem hết video"
                         >
-                          <span>🔒</span> Xem hết video để tự động mở bài tập ({videoWatchedPercent}%)
+                          Xem hết video để tự động mở bài tập ({videoWatchedPercent}%)
                         </span>
                       )}
                     </div>
@@ -2715,7 +2855,6 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                     {/* Header popup */}
                     <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3 bg-gray-50/90 shrink-0 backdrop-blur-sm">
                       <div className="flex items-center gap-2">
-                        <span className="text-lg">📝</span>
                         <div>
                           <h3 className="text-sm font-bold text-ink-900 leading-tight">
                             {currentLessonExercise.title}
@@ -2894,7 +3033,7 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                   role="tab"
                   aria-selected={activeTab === 'objectives'}
                 >
-                  <span>🎯 Mục Tiêu Bài Học & Ghi Chú</span>
+                  <span>Mục Tiêu Bài Học & Ghi Chú</span>
                 </button>
 
                 <button
@@ -2904,7 +3043,7 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                   role="tab"
                   aria-selected={activeTab === 'attachments'}
                 >
-                  <span>📁 Tài Liệu Đính Kèm (PDF, Audio MP3)</span>
+                  <span>Tài Liệu Đính Kèm (PDF, Audio MP3)</span>
                   <span className="tab-count-badge">
                     {currentLessonItem?.materials?.length || 0}
                   </span>
@@ -3028,7 +3167,6 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
 
             {/* Note banner */}
             <div className="curriculum-notice-banner">
-              <span className="text-sm">💡</span>
               <span>
                 Học viên có thể tự do mở bất kỳ bài học nào để học tập theo lộ trình cá nhân.
               </span>

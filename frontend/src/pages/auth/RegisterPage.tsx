@@ -127,6 +127,19 @@ export function RegisterPage() {
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
+    const resetStaleLoadingState = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        setGoogleLoading(false)
+        setSubmitting(false)
+      }
+    }
+    window.addEventListener('pageshow', resetStaleLoadingState)
+    return () => {
+      window.removeEventListener('pageshow', resetStaleLoadingState)
+    }
+  }, [])
+
+  useEffect(() => {
     if (!fullName && !dateOfBirth && !email && !phoneNumber && currentSelectedCourseIds.length === 0) {
       return
     }
@@ -407,7 +420,7 @@ export function RegisterPage() {
 
       <main className={`register-main${stage === 'verification' ? ' verification-main' : ''}`}>
         <nav className="register-breadcrumb" aria-label="Điều hướng đường dẫn">
-          <a href="/courses">Khóa học</a>
+          <a href="/course">Khóa học</a>
           <ChevronRight size={13} aria-hidden="true" />
           <span>{stage === 'details' ? 'Đăng ký' : 'Xác minh email'}</span>
         </nav>
@@ -628,9 +641,7 @@ export function RegisterPage() {
                 ? <img src={course.thumbnailUrl} alt="" />
                 : <div className="register-course-visual-art" aria-hidden="true"><BookOpen size={48} /></div>}
               <span className="register-course-play"><Play size={22} fill="currentColor" /></span>
-              <span className="register-course-visual-caption">
-                <Play size={13} fill="currentColor" /> Xem video preview
-              </span>
+              
             </div>
             <div className="register-course-content">
               <p className="register-course-kicker">{course.category} · {course.level}</p>

@@ -1,5 +1,6 @@
-import React from 'react'
+import React, { useContext } from 'react'
 import { Users, BookOpen, GraduationCap, BarChart3, Layers, CreditCard, CalendarDays } from 'lucide-react'
+import { AuthContext, getRoleHomePath } from '../../auth/auth-context'
 
 interface SidebarProps {
   activeTab?: string
@@ -10,6 +11,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   activeTab = 'quan_ly_nguoi_dung',
   onTabChange,
 }) => {
+  const auth = useContext(AuthContext)
+  const homeHref = getRoleHomePath(auth?.user?.role)
   const menuItems: {
     id: string
     label: string
@@ -64,12 +67,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <aside className="engmaster-sidebar">
       {/* Brand Logo */}
-      <div className="sidebar-brand">
+      <a href={homeHref} className="sidebar-brand" style={{ textDecoration: 'none' }}>
         <div className="brand-logo-icon">
           <Layers size={22} className="logo-svg-icon" />
         </div>
         <span className="brand-title">EngMaster</span>
-      </div>
+      </a>
 
       {/* Navigation section */}
       <div className="sidebar-nav-section">

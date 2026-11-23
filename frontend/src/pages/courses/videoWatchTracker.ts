@@ -480,6 +480,19 @@ export class VideoWatchTracker {
     this.beginAuthorizedSeek(0, nowMs)
   }
 
+  resetForRelearn(nowMs: number): void {
+    this.isLessonCompleted = false
+    this.intervals = []
+    this.videoCompleted = false
+    this.exerciseOpenedForAttempt = false
+    this.furthestWatchedTime = 0
+    this.persistedProgressPercent = 0
+    this.lastValidTime = 0
+    this.hasPlayedInSession = false
+    this.hasPositionChanged = false
+    this.beginAuthorizedSeek(0, nowMs)
+  }
+
   getLessonId(): string {
     return this.lessonId
   }

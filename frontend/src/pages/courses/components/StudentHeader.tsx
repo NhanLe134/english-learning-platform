@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { Layers, Bell, LogOut, Settings } from 'lucide-react'
 import type { StudentProfile } from '../student-courses-data'
-import { useAuth } from '../../auth/auth-context'
+import { getRoleHomePath, useAuth } from '../../auth/auth-context'
 
 export type StudentNavActivePage = 'my-courses' | 'other-courses' | 'ebook' | 'workshop'
 
@@ -15,6 +15,7 @@ export const StudentHeader: React.FC<StudentHeaderProps> = ({ student, onLogout,
   const [showNotifications, setShowNotifications] = useState(false)
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const { user, logout } = useAuth()
+  const homeHref = getRoleHomePath(user?.role)
 
   const displayName = user?.fullName || student?.name || 'Sarah'
   const displayEmail = user?.email || student?.email || 'sarah.student@yev.edu.vn'
@@ -49,7 +50,7 @@ export const StudentHeader: React.FC<StudentHeaderProps> = ({ student, onLogout,
     <header className="student-navbar">
       <div className="student-navbar-container">
         {/* Brand Logo */}
-        <a href="/" className="student-navbar-brand">
+        <a href={homeHref} className="student-navbar-brand">
           <span className="student-navbar-logo-icon">
             <Layers size={18} strokeWidth={2.5} />
           </span>
@@ -63,7 +64,7 @@ export const StudentHeader: React.FC<StudentHeaderProps> = ({ student, onLogout,
           </a>
           <a href="/workshops" className={`student-nav-link${activePage === 'workshop' ? ' active' : ''}`} aria-current={activePage === 'workshop' ? 'page' : undefined}>Workshop</a>
           <a href="/ebooks" className={`student-nav-link${activePage === 'ebook' ? ' active' : ''}`} aria-current={activePage === 'ebook' ? 'page' : undefined}>Ebook</a>
-          <a href="/courses" className={`student-nav-link${activePage === 'other-courses' ? ' active' : ''}`} aria-current={activePage === 'other-courses' ? 'page' : undefined}>
+          <a href="/course" className={`student-nav-link${activePage === 'other-courses' ? ' active' : ''}`} aria-current={activePage === 'other-courses' ? 'page' : undefined}>
             {'C\u00E1c kh\u00F3a h\u1ECDc kh\u00E1c'}
           </a>
         </nav>

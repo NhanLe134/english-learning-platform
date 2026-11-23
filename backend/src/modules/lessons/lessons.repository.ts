@@ -21,15 +21,19 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 export { UUID_PATTERN }
 
 export class LessonsRepository {
+  constructor(
+    private readonly clientFactory: typeof createSupabaseClient = createSupabaseClient
+  ) {}
+
   private getClient() {
-    return createSupabaseClient()
+    return this.clientFactory()
   }
 
   /**
    * Kiểm tra người dùng có quyền thao tác / xem khóa học:
    * - ADMIN: luôn được
    * - TEACHER: phải là giáo viên chính hoặc nằm trong danh sách phân công (course_teachers)
-   * - STUDENT: phải có ghi danh 'active' trong course_enrollments
+   * - STUDENT: phải có ghi danh 'active' hoặc 'completed' trong course_enrollments
    * Trả về exists: false nếu khóa không tồn tại, allowed: false nếu không có quyền.
    */
   async findCourseAccess(
@@ -72,7 +76,7 @@ export class LessonsRepository {
         .select('id')
         .eq('course_id', courseId)
         .eq('student_id', user.id)
-        .eq('status', 'active')
+        .in('status', ['active', 'completed'])
         .maybeSingle()
 
       return { exists: true, allowed: Boolean(enrollment), courseId, courseTitle }

@@ -37,8 +37,11 @@ interface CourseCatalogRow extends Omit<CourseCatalogEntry, 'price' | 'discounte
 const MANAGED_COURSE_COLUMNS =
   'id,title,slug,description,category,level,target_audience,price,discounted_price,total_lessons,thumbnail_url,status,teacher_id,created_at,updated_at'
 
+const PUBLIC_COURSE_BASE_COLUMNS =
+  'id,title,slug,description,category,level,target_audience,price,discounted_price,total_lessons,thumbnail_url,created_at,updated_at,teacher:profiles!courses_teacher_id_fkey(id,full_name,avatar_url)'
+
 const PUBLIC_COURSE_COLUMNS =
-  'id,title,slug,description,category,level,target_audience,price,discounted_price,total_lessons,thumbnail_url,created_at,updated_at,teacher:profiles!courses_teacher_id_fkey(id,full_name,avatar_url),topics(id,title,description,sort_order,lessons(id,title,description,duration_seconds,video_url,sort_order,status))'
+  `${PUBLIC_COURSE_BASE_COLUMNS},topics(id,title,description,sort_order,lessons(id,title,description,duration_seconds,sort_order,status))`
 
 function mapManagedCourse(row: ManagedCourseRow): ManagedCourse {
   return {
@@ -49,16 +52,48 @@ function mapManagedCourse(row: ManagedCourseRow): ManagedCourse {
   }
 }
 
+function buildYouTubeThumbnailUrl(videoUrl: string | null | undefined): string | null {
+  if (!videoUrl || typeof videoUrl !== 'string') return null
+  const trimmed = videoUrl.trim()
+  if (!trimmed) return null
+  try {
+    const parsed = new URL(trimmed)
+    const host = parsed.hostname.toLowerCase()
+    let videoId: string | null = null
+    if (host === 'youtu.be' || host === 'www.youtu.be') {
+      videoId = parsed.pathname.split('/').filter(Boolean)[0] ?? null
+    } else if (
+      host === 'youtube.com' ||
+      host === 'www.youtube.com' ||
+      host === 'm.youtube.com' ||
+      host === 'youtube-nocookie.com' ||
+      host === 'www.youtube-nocookie.com'
+    ) {
+      videoId = parsed.searchParams.get('v')
+      if (!videoId) {
+        const match = parsed.pathname.match(/^\/(?:embed|shorts|live|v)\/([^/?#]+)/)
+        videoId = match?.[1] ?? null
+      }
+    }
+    if (videoId && /^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+      return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
 function mapCatalogCourse(row: CourseCatalogRow): CourseCatalogEntry {
   const topics = (row.topics ?? [])
     .map((topic) => ({
       ...topic,
       lessons: (topic.lessons ?? [])
         .filter((lesson) => lesson.status === 'published')
-        .map(({ status: _status, ...lesson }) => ({
+        .sort((first, second) => first.sort_order - second.sort_order)
+        .map(({ status: _status, video_url: _videoUrl, ...lesson }) => ({
           ...lesson,
           duration_seconds: lesson.duration_seconds ?? null,
-          video_url: lesson.video_url ?? null,
         })),
     }))
     // Chủ đề không có bài giảng nào thì không hiển thị
@@ -111,18 +146,119 @@ export class CourseRepository {
 
   async findPublishedCourse(identifier: string, isId: boolean): Promise<CourseCatalogEntry | null> {
     try {
-      const { data, error } = await createSupabaseClient()
+      const client = this.clientFactory()
+      const { data: courseData, error: courseError } = await client
         .from('courses')
-        .select(PUBLIC_COURSE_COLUMNS)
+        .select(PUBLIC_COURSE_BASE_COLUMNS)
         .eq(isId ? 'id' : 'slug', identifier)
         .eq('status', 'published')
         .maybeSingle()
 
-      if (!error && data) {
-        return mapCatalogCourse(data as unknown as CourseCatalogRow)
+      if (courseError || !courseData) {
+        if (courseError) {
+          console.error('[CourseRepository] findPublishedCourse course query error:', courseError)
+        }
+        return null
       }
-      return null
-    } catch {
+
+      const courseRow = courseData as unknown as Omit<CourseCatalogRow, 'topics'>
+      const courseId = String(courseRow.id)
+
+      const [topicsResult, lessonsResult] = await Promise.all([
+        client
+          .from('topics')
+          .select('id, title, description, sort_order')
+          .eq('course_id', courseId)
+          .order('sort_order', { ascending: true }),
+        client
+          .from('lessons')
+          .select('id, topic_id, title, description, duration_seconds, video_url, sort_order')
+          .eq('course_id', courseId)
+          .eq('status', 'published')
+          .order('sort_order', { ascending: true }),
+      ])
+
+      if (topicsResult.error) {
+        console.error('[CourseRepository] findPublishedCourse topics query error:', topicsResult.error)
+      }
+      if (lessonsResult.error) {
+        console.error('[CourseRepository] findPublishedCourse lessons query error:', lessonsResult.error)
+      }
+
+      const rawTopics = (topicsResult.data ?? []) as Array<{
+        id: string
+        title: string
+        description: string | null
+        sort_order: number
+      }>
+      const rawLessons = (lessonsResult.data ?? []) as Array<{
+        id: string
+        topic_id: string | null
+        title: string
+        description: string | null
+        duration_seconds: number | null
+        video_url?: string | null
+        sort_order: number
+      }>
+
+      const topicIdSet = new Set(rawTopics.map((topic) => topic.id))
+      const lessonsByTopic = new Map<string, CourseCatalogTopic['lessons']>()
+      const topiclessLessons: CourseCatalogTopic['lessons'] = []
+
+      for (const lesson of rawLessons) {
+        const publicLesson = {
+          id: lesson.id,
+          title: lesson.title,
+          description: lesson.description ?? null,
+          duration_seconds: lesson.duration_seconds ?? null,
+          thumbnail_url: buildYouTubeThumbnailUrl(lesson.video_url),
+          sort_order: Number(lesson.sort_order ?? 0),
+        }
+        if (lesson.topic_id && topicIdSet.has(lesson.topic_id)) {
+          const list = lessonsByTopic.get(lesson.topic_id) ?? []
+          list.push(publicLesson)
+          lessonsByTopic.set(lesson.topic_id, list)
+        } else {
+          topiclessLessons.push(publicLesson)
+        }
+      }
+
+      const groupedTopics: CourseCatalogTopic[] = rawTopics
+        .map((topic) => ({
+          id: topic.id,
+          title: topic.title,
+          description: topic.description ?? null,
+          sort_order: Number(topic.sort_order ?? 0),
+          lessons: (lessonsByTopic.get(topic.id) ?? []).sort(
+            (first, second) => first.sort_order - second.sort_order
+          ),
+        }))
+        .filter((topic) => topic.lessons.length > 0)
+        .sort((first, second) => first.sort_order - second.sort_order)
+
+      if (topiclessLessons.length > 0) {
+        groupedTopics.push({
+          id: `course-${courseId}-lessons`,
+          title: 'Bài giảng',
+          description: null,
+          sort_order: 9999,
+          lessons: topiclessLessons.sort((first, second) => first.sort_order - second.sort_order),
+        })
+      }
+
+      const totalLessons = groupedTopics.reduce((acc, topic) => acc + topic.lessons.length, 0)
+
+      return {
+        ...courseRow,
+        price: Number(courseRow.price),
+        discounted_price:
+          courseRow.discounted_price === null ? null : Number(courseRow.discounted_price),
+        total_lessons: totalLessons,
+        teacher: Array.isArray(courseRow.teacher) ? courseRow.teacher[0] ?? null : courseRow.teacher,
+        topics: groupedTopics,
+      }
+    } catch (err) {
+      console.error('[CourseRepository] findPublishedCourse unexpected error:', err)
       return null
     }
   }
@@ -242,22 +378,29 @@ export class CourseRepository {
     }
   }
 
-  // Đếm số bài giảng thật của từng khóa (qua bảng topics trung gian)
+  // Đếm số bài giảng thật của từng khóa trực tiếp theo lessons.course_id (bao gồm cả bài không chia chủ đề)
   private async demBaiGiangTheoKhoa(courseIds: string[], onlyPublished = false): Promise<Map<string, number>> {
     const map = new Map<string, number>()
     if (courseIds.length === 0) return map
     let query = this.clientFactory()
       .from('lessons')
-      .select('id, topics!inner(course_id)')
-      .in('topics.course_id', courseIds)
+      .select('id, course_id')
+      .in('course_id', courseIds)
     if (onlyPublished) {
       query = query.eq('status', 'published')
     }
     const { data, error } = await query
-    if (error) return map
+    if (error) {
+      console.error('[CourseRepository] demBaiGiangTheoKhoa query failed', {
+        code: error.code,
+        message: error.message,
+      })
+      return map
+    }
     for (const row of data ?? []) {
-      const cid = (row as { topics?: { course_id?: string } }).topics?.course_id
-      if (cid) map.set(cid, (map.get(cid) ?? 0) + 1)
+      const lessonRow = row as { course_id?: string | null; topics?: { course_id?: string } | null }
+      const cid = lessonRow.course_id ?? lessonRow.topics?.course_id
+      if (cid) map.set(String(cid), (map.get(String(cid)) ?? 0) + 1)
     }
     return map
   }
@@ -484,42 +627,115 @@ export class CourseRepository {
         resolvedCourses = []
       }
 
-      const completedCountByCourse = new Map<string, number>()
-      try {
-        const { data: progressRows } = await client
-          .from('lesson_progress')
-          .select('lesson_id, lessons!inner(topic_id, topics!inner(course_id))')
-          .eq('student_id', studentId)
-          .eq('is_completed', true)
+      // 3. Fetch all published lessons for the student's courses directly via lessons.course_id
+      //    (matches LessonsRepository.findTopicsWithLessons, including topicless lessons).
+      const realLessonCountMap = new Map<string, number>()
+      const publishedLessonCourseById = new Map<string, string>()
+      const { data: publishedLessons, error: lessonsError } = await client
+        .from('lessons')
+        .select('id, course_id')
+        .in('course_id', courseIds)
+        .eq('status', 'published')
 
-        if (Array.isArray(progressRows)) {
+      if (lessonsError) {
+        console.error('[CourseRepository] findEnrolledCourses: published lessons query failed', {
+          studentId: studentId.slice(0, 8) + '…',
+          code: lessonsError.code,
+          message: lessonsError.message,
+        })
+      } else if (Array.isArray(publishedLessons)) {
+        for (const row of publishedLessons) {
+          const lessonRow = row as {
+            id?: string | null
+            course_id?: string | null
+            topics?: { course_id?: string } | Array<{ course_id?: string }> | null
+          }
+          const lessonId = lessonRow.id ? String(lessonRow.id) : null
+          const topicCourseId = Array.isArray(lessonRow.topics)
+            ? lessonRow.topics[0]?.course_id
+            : lessonRow.topics?.course_id
+          const cid = lessonRow.course_id ?? topicCourseId
+          if (!lessonId || !cid) continue
+          const courseKey = String(cid)
+          if (!publishedLessonCourseById.has(lessonId)) {
+            publishedLessonCourseById.set(lessonId, courseKey)
+            realLessonCountMap.set(courseKey, (realLessonCountMap.get(courseKey) ?? 0) + 1)
+          }
+        }
+      }
+
+      // 4. Fetch current lesson_progress directly by (student_id, lesson_id) without nested joins
+      //    so progress always matches StudentCourseDetailPage and reflects resets/relearning.
+      const completedCountByCourse = new Map<string, number>()
+      const progressSumByCourse = new Map<string, number>()
+      const hasProgressByCourse = new Set<string>()
+      const publishedLessonIds = Array.from(publishedLessonCourseById.keys())
+      if (publishedLessonIds.length > 0) {
+        const { data: progressRows, error: progressError } = await client
+          .from('lesson_progress')
+          .select('lesson_id, progress_percent, is_completed')
+          .eq('student_id', studentId)
+          .in('lesson_id', publishedLessonIds)
+
+        if (progressError) {
+          console.error('[CourseRepository] findEnrolledCourses: lesson_progress query failed', {
+            studentId: studentId.slice(0, 8) + '…',
+            code: progressError.code,
+            message: progressError.message,
+          })
+        } else if (Array.isArray(progressRows)) {
+          const seenLessonIds = new Set<string>()
           for (const row of progressRows) {
-            // @ts-expect-error joined relation types
-            const courseId = row?.lessons?.topics?.course_id
-            if (courseId) {
-              completedCountByCourse.set(String(courseId), (completedCountByCourse.get(String(courseId)) ?? 0) + 1)
+            const lessonId = (row as { lesson_id?: string | null }).lesson_id
+            if (!lessonId) continue
+            const lessonKey = String(lessonId)
+            if (seenLessonIds.has(lessonKey)) continue
+            const courseKey = publishedLessonCourseById.get(lessonKey)
+            if (!courseKey) continue
+            seenLessonIds.add(lessonKey)
+
+            hasProgressByCourse.add(courseKey)
+
+            const lessonCompleted = Boolean((row as { is_completed?: boolean }).is_completed)
+            const rawPercent = Number((row as { progress_percent?: number | string }).progress_percent ?? 0)
+            const currentLessonPercent = lessonCompleted
+              ? 100
+              : Number.isFinite(rawPercent)
+              ? Math.min(100, Math.max(0, rawPercent))
+              : 0
+
+            progressSumByCourse.set(courseKey, (progressSumByCourse.get(courseKey) ?? 0) + currentLessonPercent)
+            if (lessonCompleted) {
+              completedCountByCourse.set(courseKey, (completedCountByCourse.get(courseKey) ?? 0) + 1)
             }
           }
         }
-      } catch {
-        // ignore fallback
       }
 
-      const realLessonCountMap = await this.demBaiGiangTheoKhoa(courseIds, true)
-
       return resolvedCourses.map((c) => {
-        const meta = courseIdMap.get(String(c.id))
+        const courseKey = String(c.id)
+        const meta = courseIdMap.get(courseKey)
         const teacher = Array.isArray(c.teacher) ? c.teacher[0] ?? null : c.teacher
-        const realCount = realLessonCountMap.get(String(c.id)) ?? 0
+        const realCount = realLessonCountMap.get(courseKey) ?? 0
         const totalLessons = realCount
-        const isCompleted = meta?.status === 'completed'
-        const realCompleted = completedCountByCourse.get(String(c.id))
-        const completedLessons = isCompleted
-          ? totalLessons
-          : realCompleted !== undefined
-          ? Math.min(totalLessons, realCompleted)
-          : 0
-        const progressPercent = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0
+        const hasProgressRows = hasProgressByCourse.has(courseKey)
+        const realCompleted = completedCountByCourse.get(courseKey) ?? 0
+        const completedLessons =
+          !hasProgressRows && meta?.status === 'completed'
+            ? totalLessons
+            : Math.min(totalLessons, realCompleted)
+        const progressSum =
+          !hasProgressRows && meta?.status === 'completed'
+            ? totalLessons * 100
+            : (progressSumByCourse.get(courseKey) ?? 0)
+        const progressPercent =
+          totalLessons > 0
+            ? Math.min(100, Math.max(0, Math.round(progressSum / totalLessons)))
+            : 0
+        const isCompleted =
+          totalLessons > 0
+            ? completedLessons >= totalLessons && progressPercent === 100
+            : meta?.status === 'completed'
 
         return {
           id: String(c.id),
