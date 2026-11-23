@@ -804,14 +804,15 @@ export const openApiDocument = {
       post: {
         tags: ['Payments'],
         summary: 'SePay Direct Bank Transfer VietQR webhook',
-        description: 'Authenticated via X-SePay-Timestamp and X-SePay-Signature HMAC-SHA256 over raw body. Atomically confirms payment, activates the student profile (status = active), and upserts course enrollment.',
+        description: 'Authenticated via X-SePay-Timestamp and X-SePay-Signature HMAC-SHA256 over raw body. Correlates orders strictly via persisted provider_order_id (e.g. PAY...) or transfer_content (DH{orderId}), atomically confirms payment, activates the student profile (status = active), and upserts course enrollment.',
         operationId: 'sepayBankWebhook',
         responses: {
           ...errorResponses,
           '200': jsonResponse('Bank transfer notification processed'),
           '401': jsonResponse('Invalid SePay HMAC signature or stale timestamp', { $ref: '#/components/schemas/ErrorResponse' }),
           '404': jsonResponse('Order not found', { $ref: '#/components/schemas/ErrorResponse' }),
-          '422': jsonResponse('Invalid account, amount, or transfer direction', { $ref: '#/components/schemas/ErrorResponse' }),
+          '409': jsonResponse('Ambiguous order match or bank transaction conflict', { $ref: '#/components/schemas/ErrorResponse' }),
+          '422': jsonResponse('Invalid account, amount, reference, or transfer direction', { $ref: '#/components/schemas/ErrorResponse' }),
         },
       },
     },

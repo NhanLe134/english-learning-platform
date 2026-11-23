@@ -153,6 +153,7 @@ export class PaymentController {
         subAccount: typeof body.subAccount === 'string' ? body.subAccount : undefined,
         code: typeof body.code === 'string' ? body.code : null,
         content: body.content,
+        description: typeof body.description === 'string' ? body.description : undefined,
         transferType: body.transferType,
         transferAmount: body.transferAmount ?? 0,
         referenceCode: typeof body.referenceCode === 'string' ? body.referenceCode : undefined,

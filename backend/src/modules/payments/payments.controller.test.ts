@@ -69,6 +69,95 @@ describe('SePay IPN authentication', () => {
     assert.deepEqual(responseBody, { success: false, message: 'Invalid SePay webhook authentication.' })
   })
 
+  it('verifies a valid HMAC signature and forwards code, content, description, and referenceCode to the service', async () => {
+    const { createHmac } = await import('node:crypto')
+    const previousSecret = env.sepayBankWebhookSecret
+    const previousMode = env.sepayCheckoutMode
+    const originalHandle = paymentService.handleSePayBankWebhook
+    let receivedEvent: unknown = null
+
+    Object.assign(env, { sepayBankWebhookSecret: 'test-bank-webhook-secret', sepayCheckoutMode: 'direct_qr' })
+    paymentService.handleSePayBankWebhook = async (event) => {
+      receivedEvent = event
+      return {
+        orderId: 'a9848efa-6fe7-4452-9825-82eed7d608eb',
+        status: 'paid',
+        amount: 3000,
+        transferContent: 'DHa9848efa-6fe7-4452-9825-82eed7d608eb',
+        providerTransactionId: 'FT26327102492509',
+        isNewlyPaid: false,
+      }
+    }
+
+    const payload = {
+      id: 101844333,
+      gateway: 'MBBank',
+      transactionDate: '2026-11-23 10:50:00',
+      accountNumber: '0349841217',
+      subAccount: null,
+      code: 'PAY52286B03B7EAB4A5F',
+      content: 'PAY52286B03B7EAB4A5F',
+      description: 'BankAPINotify PAY52286B03B7EAB4A5F',
+      transferType: 'in',
+      transferAmount: 3000,
+      referenceCode: 'FT26327102492509',
+    }
+    const rawBody = Buffer.from(JSON.stringify(payload), 'utf8')
+    const timestamp = String(Math.floor(Date.now() / 1000))
+    const signature = `sha256=${createHmac('sha256', 'test-bank-webhook-secret').update(`${timestamp}.`).update(rawBody).digest('hex')}`
+
+    let statusCode = 0
+    let responseBody: unknown
+    const response = {
+      status(code: number) { statusCode = code; return this },
+      json(body: unknown) { responseBody = body; return this },
+    }
+    const request = {
+      rawBody,
+      body: payload,
+      header: (name: string) => {
+        if (name === 'X-SePay-Timestamp') return timestamp
+        if (name === 'X-SePay-Signature') return signature
+        return undefined
+      },
+      is: () => 'application/json',
+    }
+
+    try {
+      await new PaymentController().sepayBankWebhook(
+        request as unknown as Request,
+        response as unknown as Response,
+      )
+    } finally {
+      paymentService.handleSePayBankWebhook = originalHandle
+      Object.assign(env, { sepayBankWebhookSecret: previousSecret, sepayCheckoutMode: previousMode })
+    }
+
+    assert.equal(statusCode, 200)
+    assert.deepEqual(responseBody, {
+      success: true,
+      message: 'Bank transfer notification processed.',
+      data: {
+        orderId: 'a9848efa-6fe7-4452-9825-82eed7d608eb',
+        status: 'paid',
+        isNewlyPaid: false,
+      },
+    })
+    assert.deepEqual(receivedEvent, {
+      id: 101844333,
+      gateway: 'MBBank',
+      transactionDate: '2026-11-23 10:50:00',
+      accountNumber: '0349841217',
+      subAccount: undefined,
+      code: 'PAY52286B03B7EAB4A5F',
+      content: 'PAY52286B03B7EAB4A5F',
+      description: 'BankAPINotify PAY52286B03B7EAB4A5F',
+      transferType: 'in',
+      transferAmount: 3000,
+      referenceCode: 'FT26327102492509',
+    })
+  })
+
   it('returns 401 when the X-Secret-Key header is missing or has a different byte length', async () => {
     const previousSecret = env.sepayIpnSecretKey
     Object.assign(env, { sepayIpnSecretKey: 'test-ipn-secret' })

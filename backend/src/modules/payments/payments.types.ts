@@ -89,6 +89,7 @@ export interface SePayBankTransactionWebhook {
   subAccount?: string
   code?: string | null
   content: string
+  description?: string
   transferType: string
   transferAmount: number | string
   referenceCode?: string

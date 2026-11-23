@@ -105,4 +105,44 @@ describe('atomic verified payment repository', () => {
       /did not return a paid order/,
     )
   })
+
+  it('queries orders by provider_order_id, transfer_content, and provider_transaction_id with limit(2)', async () => {
+    const queries: Array<{ column: string; value: string; limit: number }> = []
+    const makeClient = () => ({
+      from: (table: string) => {
+        assert.equal(table, 'course_orders')
+        let column = ''
+        let value = ''
+        const builder = {
+          select: () => builder,
+          eq: (col: string, val: string) => {
+            column = col
+            value = val
+            return builder
+          },
+          order: () => builder,
+          limit: async (n: number) => {
+            queries.push({ column, value, limit: n })
+            return { data: [orderRow], error: null }
+          },
+        }
+        return builder
+      },
+    })
+
+    const repository = new PaymentOrderRepository(() => makeClient() as never)
+    const byProviderOrder = await repository.findOrdersByProviderOrderId('gateway-order-1')
+    const byTransferContent = await repository.findOrdersByTransferContent('DH-e2c195be')
+    const byProviderTx = await repository.findOrdersByProviderTransactionId('gateway-transaction-1')
+
+    assert.equal(byProviderOrder[0]?.id, orderRow.id)
+    assert.equal(byProviderOrder[0]?.amount, 50000)
+    assert.equal(byTransferContent[0]?.id, orderRow.id)
+    assert.equal(byProviderTx[0]?.id, orderRow.id)
+    assert.deepEqual(queries, [
+      { column: 'provider_order_id', value: 'gateway-order-1', limit: 2 },
+      { column: 'transfer_content', value: 'DH-e2c195be', limit: 2 },
+      { column: 'provider_transaction_id', value: 'gateway-transaction-1', limit: 2 },
+    ])
+  })
 })

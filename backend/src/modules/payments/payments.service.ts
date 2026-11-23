@@ -230,30 +230,151 @@ export class PaymentService {
   }
 
   async handleSePayBankWebhook(event: SePayBankTransactionWebhook): Promise<VerifyPaymentResult> {
-    if (event.transferType !== 'in') throw new PaymentWebhookError('Only incoming bank transfers can pay an order.', 422)
+    if (event.transferType !== 'in') {
+      logBankWebhookMatchingFailed(event, 'none', 'non_incoming_transfer')
+      throw new PaymentWebhookError('Only incoming bank transfers can pay an order.', 422)
+    }
     if (!event.accountNumber || event.accountNumber !== env.sepayAccountNumber) {
+      logBankWebhookMatchingFailed(event, 'none', 'receiving_account_mismatch')
       throw new PaymentWebhookError('Bank account does not match the configured merchant account.', 422)
     }
     if (!Number.isSafeInteger(event.id) || event.id <= 0) {
+      logBankWebhookMatchingFailed(event, 'none', 'invalid_sepay_transaction_id')
       throw new PaymentWebhookError('Invalid SePay bank transaction ID.', 400)
     }
     const amount = Number(event.transferAmount)
     if (!Number.isSafeInteger(amount) || amount <= 0) {
+      logBankWebhookMatchingFailed(event, 'none', 'invalid_transfer_amount')
       throw new PaymentWebhookError('Invalid bank transfer amount.', 422)
     }
-    const transferContent = event.content.trim()
-    if (!transferContent || transferContent.length > 200) {
+    const trimmedContent = event.content.trim()
+    if (!trimmedContent || trimmedContent.length > 200) {
+      logBankWebhookMatchingFailed(event, 'none', 'invalid_transfer_description')
       throw new PaymentWebhookError('Invalid bank transfer description.', 422)
     }
 
-    // The direct QR memo is generated server-side. Exact matching avoids
-    // accepting another order based on a partial or fuzzy description.
-    const order = await this.repository.findOrderByTransferContent(transferContent)
-    if (!order) throw new PaymentWebhookError('No course order matches the bank transfer description.', 404)
+    const providerOrderIdCandidates = extractProviderOrderIdCandidates(event)
+    const transferContentCandidates = extractTransferContentCandidates(event)
+
+    const matchedOrders = new Map<string, PaymentOrder>()
+    let matchingStrategy: BankWebhookMatchingStrategy = 'none'
+
+    for (const candidate of providerOrderIdCandidates) {
+      const orders = await this.findOrdersByProviderOrderId(candidate)
+      if (orders.length > 0 && matchingStrategy === 'none') {
+        matchingStrategy = 'provider_order_id'
+      }
+      for (const candidateOrder of orders) {
+        matchedOrders.set(candidateOrder.id, candidateOrder)
+      }
+    }
+
+    for (const candidate of transferContentCandidates.exact) {
+      const orders = await this.findOrdersByTransferContent(candidate)
+      if (orders.length > 0 && matchingStrategy === 'none') {
+        matchingStrategy = 'transfer_content_exact'
+      }
+      for (const candidateOrder of orders) {
+        matchedOrders.set(candidateOrder.id, candidateOrder)
+      }
+    }
+
+    for (const candidate of transferContentCandidates.extracted) {
+      const orders = await this.findOrdersByTransferContent(candidate)
+      if (orders.length > 0 && matchingStrategy === 'none') {
+        matchingStrategy = 'transfer_content_extracted'
+      }
+      for (const candidateOrder of orders) {
+        matchedOrders.set(candidateOrder.id, candidateOrder)
+      }
+    }
+
+    if (matchedOrders.size > 1) {
+      logBankWebhookMatchingFailed(event, 'ambiguous', 'multiple_orders_matched', {
+        matchCount: matchedOrders.size,
+      })
+      throw new PaymentWebhookError('Multiple course orders match the bank transfer notification.', 409)
+    }
+
+    const order = matchedOrders.values().next().value
+    if (!order) {
+      logBankWebhookMatchingFailed(event, 'none', 'order_not_found')
+      throw new PaymentWebhookError('No course order matches the bank transfer description.', 404)
+    }
+
+    console.info('[SePayBankWebhook] order lookup matched', {
+      sepayTransactionId: event.id,
+      code: maskOptionalDiagnosticValue(event.code),
+      content: maskOptionalDiagnosticValue(event.content),
+      referenceCode: maskOptionalDiagnosticValue(event.referenceCode),
+      matchingStrategy,
+      orderFound: true,
+      orderId: maskDiagnosticValue(order.id),
+      orderStatus: order.status,
+    })
+
     if (order.currency !== 'VND' || amount !== order.amount) {
+      logBankWebhookMatchingFailed(event, matchingStrategy, 'amount_or_currency_mismatch', {
+        orderId: maskDiagnosticValue(order.id),
+      })
       throw new PaymentWebhookError('Bank transfer amount or currency does not match the order.', 422)
     }
-    const result = await this.repository.confirmVerifiedPayment(order.id, null, String(event.id), amount)
+
+    const referenceCode = typeof event.referenceCode === 'string' && event.referenceCode.trim()
+      ? event.referenceCode.trim()
+      : null
+    const bankEventId = String(event.id)
+
+    const providerOrderIdToConfirm = order.provider_order_id && providerOrderIdCandidates.includes(order.provider_order_id)
+      ? order.provider_order_id
+      : null
+
+    if (order.provider_order_id && order.provider_order_id !== providerOrderIdToConfirm) {
+      logBankWebhookMatchingFailed(event, matchingStrategy, 'provider_order_reference_mismatch', {
+        orderId: maskDiagnosticValue(order.id),
+      })
+      throw new PaymentWebhookError('SePay payment reference does not match the stored reference.', 422)
+    }
+
+    let providerTransactionIdToConfirm: string
+    if (order.provider_transaction_id && referenceCode && order.provider_transaction_id === referenceCode) {
+      providerTransactionIdToConfirm = referenceCode
+    } else if (order.provider_transaction_id && order.provider_transaction_id === bankEventId) {
+      providerTransactionIdToConfirm = bankEventId
+    } else if (matchingStrategy === 'provider_order_id' && referenceCode) {
+      providerTransactionIdToConfirm = referenceCode
+    } else {
+      providerTransactionIdToConfirm = bankEventId
+    }
+
+    if (order.provider_transaction_id && order.provider_transaction_id !== providerTransactionIdToConfirm) {
+      logBankWebhookMatchingFailed(event, matchingStrategy, 'different_transaction_already_paid_order', {
+        orderId: maskDiagnosticValue(order.id),
+      })
+      throw new PaymentWebhookError('A different transaction already paid this course order.', 409)
+    }
+
+    const transactionIdsToCheck = new Set(
+      [providerTransactionIdToConfirm, bankEventId, referenceCode].filter(
+        (value): value is string => Boolean(value),
+      ),
+    )
+    for (const txId of transactionIdsToCheck) {
+      const existingOrders = await this.findOrdersByProviderTransactionId(txId)
+      if (existingOrders.some((existing) => existing.id !== order.id)) {
+        logBankWebhookMatchingFailed(event, matchingStrategy, 'transaction_already_used_by_another_order', {
+          orderId: maskDiagnosticValue(order.id),
+        })
+        throw new PaymentWebhookError('This bank transaction has already been applied to another order.', 409)
+      }
+    }
+
+    const result = await this.repository.confirmVerifiedPayment(
+      order.id,
+      providerOrderIdToConfirm,
+      providerTransactionIdToConfirm,
+      amount,
+    )
     if (result.order.status !== 'paid') {
       throw new Error('Verified bank transfer was not committed as paid; course access was not granted.')
     }
@@ -267,6 +388,34 @@ export class PaymentService {
       providerTransactionId: result.order.provider_transaction_id,
       isNewlyPaid: result.isNewlyPaid,
     }
+  }
+
+  private async findOrdersByProviderOrderId(providerOrderId: string): Promise<PaymentOrder[]> {
+    const repo = this.repository as Partial<PaymentOrderRepository>
+    if (typeof repo.findOrdersByProviderOrderId === 'function') {
+      return repo.findOrdersByProviderOrderId(providerOrderId)
+    }
+    return []
+  }
+
+  private async findOrdersByTransferContent(transferContent: string): Promise<PaymentOrder[]> {
+    const repo = this.repository as Partial<PaymentOrderRepository>
+    if (typeof repo.findOrdersByTransferContent === 'function') {
+      return repo.findOrdersByTransferContent(transferContent)
+    }
+    if (typeof repo.findOrderByTransferContent === 'function') {
+      const found = await repo.findOrderByTransferContent(transferContent)
+      return found ? [found] : []
+    }
+    return []
+  }
+
+  private async findOrdersByProviderTransactionId(providerTransactionId: string): Promise<PaymentOrder[]> {
+    const repo = this.repository as Partial<PaymentOrderRepository>
+    if (typeof repo.findOrdersByProviderTransactionId === 'function') {
+      return repo.findOrdersByProviderTransactionId(providerTransactionId)
+    }
+    return []
   }
 
   /* ============================================================
@@ -373,9 +522,102 @@ export class PaymentService {
 
 }
 
+type BankWebhookMatchingStrategy =
+  | 'none'
+  | 'provider_order_id'
+  | 'transfer_content_exact'
+  | 'transfer_content_extracted'
+  | 'ambiguous'
+
+const DH_UUID_EXACT_PATTERN =
+  /^DH([0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12})$/i
+const DH_UUID_TOKEN_PATTERN =
+  /(?<![A-Za-z0-9])DH([0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12})(?![A-Za-z0-9])/gi
+const SEPAY_PAY_CODE_TOKEN_PATTERN = /(?<![A-Za-z0-9])(PAY[A-Za-z0-9]{8,64})(?![A-Za-z0-9])/g
+
+function normalizeCanonicalDhUuid(hexOrDashed: string): string {
+  const hex = hexOrDashed.replace(/-/g, '').toLowerCase()
+  return `DH${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`
+}
+
+function extractProviderOrderIdCandidates(event: SePayBankTransactionWebhook): string[] {
+  const candidates = new Set<string>()
+  const addSingleToken = (raw: string | null | undefined) => {
+    const trimmed = raw?.trim()
+    if (!trimmed || trimmed.length > 100 || /\s/.test(trimmed)) return
+    if (DH_UUID_EXACT_PATTERN.test(trimmed)) return
+    candidates.add(trimmed)
+  }
+
+  addSingleToken(event.code)
+  addSingleToken(event.content)
+
+  for (const field of [event.code, event.content, event.description]) {
+    if (typeof field !== 'string' || !field) continue
+    for (const match of field.matchAll(SEPAY_PAY_CODE_TOKEN_PATTERN)) {
+      if (match[1]) candidates.add(match[1])
+    }
+  }
+
+  return [...candidates]
+}
+
+function extractTransferContentCandidates(event: SePayBankTransactionWebhook): {
+  exact: string[]
+  extracted: string[]
+} {
+  const exact = new Set<string>()
+  for (const raw of [event.code, event.content]) {
+    const trimmed = raw?.trim()
+    if (trimmed && trimmed.length <= 200) {
+      exact.add(trimmed)
+    }
+  }
+
+  const extracted = new Set<string>()
+  for (const field of [event.code, event.content, event.description]) {
+    if (typeof field !== 'string' || !field) continue
+    for (const match of field.matchAll(DH_UUID_TOKEN_PATTERN)) {
+      if (!match[1]) continue
+      const canonical = normalizeCanonicalDhUuid(match[1])
+      if (!exact.has(canonical)) {
+        extracted.add(canonical)
+      }
+    }
+  }
+
+  return {
+    exact: [...exact],
+    extracted: [...extracted],
+  }
+}
+
 function maskDiagnosticValue(value: string): string {
   if (value.length <= 8) return `${value.slice(0, 2)}***`
   return `${value.slice(0, 4)}***${value.slice(-4)}`
+}
+
+function maskOptionalDiagnosticValue(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed ? maskDiagnosticValue(trimmed) : null
+}
+
+function logBankWebhookMatchingFailed(
+  event: SePayBankTransactionWebhook,
+  matchingStrategy: BankWebhookMatchingStrategy,
+  reason: string,
+  extra: Record<string, unknown> = {},
+): void {
+  console.warn('[SePayBankWebhook] matching failed', {
+    sepayTransactionId: event.id,
+    code: maskOptionalDiagnosticValue(event.code),
+    content: maskOptionalDiagnosticValue(event.content),
+    matchingStrategy,
+    orderFound: false,
+    reason,
+    ...extra,
+  })
 }
 
 export const paymentService = new PaymentService()
