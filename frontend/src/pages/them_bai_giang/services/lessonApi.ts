@@ -376,6 +376,7 @@ export const lessonApi = {
       progress_percent?: number
       is_completed?: boolean
       duration_seconds?: number
+      reset_progress?: boolean
     },
     accessToken: string | null,
     refreshAccessToken: () => Promise<string>,

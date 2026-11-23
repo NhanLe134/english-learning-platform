@@ -9,6 +9,7 @@ export interface TrackerInitOptions {
   savedPositionSeconds: number
   savedProgressPercent: number
   isCompleted: boolean
+  savedFurthestSeconds?: number
 }
 
 export interface TrackerSnapshot {
@@ -81,9 +82,11 @@ export class VideoWatchTracker {
   private duration = 0
   private intervals: WatchedInterval[] = []
   private lastValidTime = 0
+  private furthestWatchedTime = 0
   private lastTickWallMs: number | null = null
   private isPlaying = false
   private hasPlayedInSession = false
+  private hasPositionChanged = false
   private authorizedSeekTarget: number | null = null
   private authorizedSeekExpiresAtMs = 0
   private persistedProgressPercent = 0
@@ -111,12 +114,31 @@ export class VideoWatchTracker {
         : rawSaved
 
     this.lastValidTime = safeRestore
+
+    const persistedWatchedFromPct = this.duration > 0
+      ? (this.persistedProgressPercent / 100) * this.duration
+      : 0
+    const hasExactFurthest =
+      typeof opts.savedFurthestSeconds === 'number' &&
+      Number.isFinite(opts.savedFurthestSeconds) &&
+      opts.savedFurthestSeconds >= 0
+    const initialFurthest = hasExactFurthest
+      ? Math.max(rawSaved, safeRestore, opts.savedFurthestSeconds!)
+      : Math.max(rawSaved, safeRestore, persistedWatchedFromPct)
+
+    this.furthestWatchedTime = (this.isLessonCompleted || this.videoCompleted) && this.duration > 0
+      ? this.duration
+      : this.duration > 0
+      ? Math.min(this.duration, initialFurthest)
+      : initialFurthest
+
     this.intervals =
-      safeRestore > 0
-        ? [{ start: 0, end: this.duration > 0 ? Math.min(this.duration, safeRestore) : safeRestore }]
+      this.furthestWatchedTime > 0
+        ? [{ start: 0, end: this.duration > 0 ? Math.min(this.duration, this.furthestWatchedTime) : this.furthestWatchedTime }]
         : []
     this.isPlaying = false
     this.hasPlayedInSession = false
+    this.hasPositionChanged = false
     this.lastTickWallMs = null
     this.authorizedSeekTarget = null
     this.authorizedSeekExpiresAtMs = 0
@@ -131,12 +153,22 @@ export class VideoWatchTracker {
     }
     this.duration = durationSeconds
 
+    if (this.isLessonCompleted || this.videoCompleted) {
+      this.furthestWatchedTime = durationSeconds
+    } else {
+      const persistedWatchedFromPct = (this.persistedProgressPercent / 100) * durationSeconds
+      this.furthestWatchedTime = Math.min(
+        durationSeconds,
+        Math.max(this.furthestWatchedTime, persistedWatchedFromPct)
+      )
+    }
+
     if (!this.hasPlayedInSession) {
       if (this.lastValidTime >= durationSeconds - EOF_RESET_THRESHOLD_SEC) {
         this.lastValidTime = 0
-        this.intervals = []
-      } else if (this.lastValidTime > 0) {
-        this.intervals = [{ start: 0, end: Math.min(durationSeconds, this.lastValidTime) }]
+      }
+      if (this.furthestWatchedTime > 0) {
+        this.intervals = [{ start: 0, end: Math.min(durationSeconds, this.furthestWatchedTime) }]
       }
     } else if (this.intervals.length > 0) {
       this.intervals = this.intervals
@@ -150,15 +182,32 @@ export class VideoWatchTracker {
     return { restorePosition: this.lastValidTime }
   }
 
-  beginAuthorizedSeek(targetSeconds: number, nowMs: number): void {
-    const safeTarget =
-      this.duration > 0
-        ? Math.min(this.duration, Math.max(0, targetSeconds))
-        : Math.max(0, targetSeconds)
+  getMaxSeekableTime(): number {
+    if (this.isLessonCompleted || this.videoCompleted) {
+      return this.duration > 0 ? this.duration : this.furthestWatchedTime
+    }
+    return this.furthestWatchedTime
+  }
+
+  getFurthestWatchedTime(): number {
+    return this.furthestWatchedTime
+  }
+
+  beginAuthorizedSeek(targetSeconds: number, nowMs: number, markPositionChanged = false): boolean {
+    const maxAllowed = this.getMaxSeekableTime()
+    const clampedTarget = Math.max(0, targetSeconds)
+    if (clampedTarget > maxAllowed + 0.5) {
+      return false
+    }
+    const safeTarget = Math.min(maxAllowed, clampedTarget)
     this.authorizedSeekTarget = safeTarget
     this.authorizedSeekExpiresAtMs = nowMs + AUTHORIZED_SEEK_WINDOW_MS
     this.lastValidTime = safeTarget
     this.lastTickWallMs = null
+    if (markPositionChanged) {
+      this.hasPositionChanged = true
+    }
+    return true
   }
 
   onPlay(nowMs: number): void {
@@ -173,6 +222,8 @@ export class VideoWatchTracker {
   }
 
   onSeeking(requestedTime: number, nowMs: number): TrackerSeekCheckResult {
+    const maxAllowed = this.getMaxSeekableTime()
+
     if (
       this.authorizedSeekTarget !== null &&
       nowMs <= this.authorizedSeekExpiresAtMs &&
@@ -181,19 +232,26 @@ export class VideoWatchTracker {
       return { allowed: true, revertToSeconds: requestedTime }
     }
 
-    if (Math.abs(requestedTime - this.lastValidTime) <= 0.6) {
-      return { allowed: true, revertToSeconds: this.lastValidTime }
+    // Allow seeking backward to any position within [0, furthestWatchedTime]
+    if (requestedTime >= 0 && requestedTime <= maxAllowed + 0.5) {
+      return { allowed: true, revertToSeconds: Math.min(requestedTime, maxAllowed) }
     }
 
+    // Seeking forward beyond watched progress is blocked
     return { allowed: false, revertToSeconds: this.lastValidTime }
   }
 
   onTimeSample(currentTime: number, nowMs: number, playbackRate = 1): TrackerTickResult {
     const safeTime = Number.isFinite(currentTime) && currentTime >= 0 ? currentTime : this.lastValidTime
+    const maxAllowed = this.getMaxSeekableTime()
 
     if (this.authorizedSeekTarget !== null) {
       if (Math.abs(safeTime - this.authorizedSeekTarget) <= AUTHORIZED_SEEK_SETTLE_TOLERANCE_SEC) {
-        this.lastValidTime = safeTime
+        const settledTime =
+          !this.isLessonCompleted && !this.videoCompleted && !this.isPlaying
+            ? Math.min(safeTime, maxAllowed)
+            : safeTime
+        this.lastValidTime = settledTime
         this.authorizedSeekTarget = null
         this.authorizedSeekExpiresAtMs = 0
         if (this.isPlaying) {
@@ -202,8 +260,8 @@ export class VideoWatchTracker {
         const snap = this.getSnapshot()
         return {
           seekBlocked: false,
-          revertToSeconds: safeTime,
-          currentTime: safeTime,
+          revertToSeconds: settledTime,
+          currentTime: settledTime,
           videoWatchedPercent: snap.videoWatchedPercent,
           lessonProgressPercent: snap.lessonProgressPercent,
         }
@@ -235,11 +293,33 @@ export class VideoWatchTracker {
       }
     }
 
+    // If not playing (paused state):
     if (!this.isPlaying) {
-      const movedWhilePaused = Math.abs(safeTime - this.lastValidTime) > PLAYBACK_BACKWARD_JITTER_SEC
+      if (Math.abs(safeTime - this.lastValidTime) > PLAYBACK_BACKWARD_JITTER_SEC) {
+        if (safeTime <= maxAllowed + 0.5) {
+          const clampedPausedTime = Math.min(safeTime, maxAllowed)
+          this.lastValidTime = clampedPausedTime
+          const snap = this.getSnapshot()
+          return {
+            seekBlocked: false,
+            revertToSeconds: clampedPausedTime,
+            currentTime: clampedPausedTime,
+            videoWatchedPercent: snap.videoWatchedPercent,
+            lessonProgressPercent: snap.lessonProgressPercent,
+          }
+        }
+        const snap = this.getSnapshot()
+        return {
+          seekBlocked: true,
+          revertToSeconds: this.lastValidTime,
+          currentTime: this.lastValidTime,
+          videoWatchedPercent: snap.videoWatchedPercent,
+          lessonProgressPercent: snap.lessonProgressPercent,
+        }
+      }
       const snap = this.getSnapshot()
       return {
-        seekBlocked: movedWhilePaused,
+        seekBlocked: false,
         revertToSeconds: this.lastValidTime,
         currentTime: this.lastValidTime,
         videoWatchedPercent: snap.videoWatchedPercent,
@@ -252,7 +332,24 @@ export class VideoWatchTracker {
     const maxForwardDelta = Math.min(6.0, elapsedWallSec * 1.25 + 1.5)
     const delta = safeTime - this.lastValidTime
 
-    if (delta > maxForwardDelta || delta < -PLAYBACK_BACKWARD_JITTER_SEC) {
+    // Forward seek beyond maxForwardDelta:
+    if (delta > maxForwardDelta) {
+      // If jump is within previously watched progress, allow it
+      if (safeTime <= maxAllowed + 0.5) {
+        const clampedForwardTime = Math.min(safeTime, maxAllowed)
+        this.lastValidTime = clampedForwardTime
+        this.lastTickWallMs = nowMs
+        const snap = this.getSnapshot()
+        return {
+          seekBlocked: false,
+          revertToSeconds: clampedForwardTime,
+          currentTime: clampedForwardTime,
+          videoWatchedPercent: snap.videoWatchedPercent,
+          lessonProgressPercent: snap.lessonProgressPercent,
+        }
+      }
+
+      // Jump beyond watched progress: block it
       const snap = this.getSnapshot()
       return {
         seekBlocked: true,
@@ -263,12 +360,27 @@ export class VideoWatchTracker {
       }
     }
 
+    // Backward seek during playback (delta < 0):
+    if (delta < 0) {
+      this.lastValidTime = Math.max(0, safeTime)
+      this.lastTickWallMs = nowMs
+      const snap = this.getSnapshot()
+      return {
+        seekBlocked: false,
+        revertToSeconds: this.lastValidTime,
+        currentTime: this.lastValidTime,
+        videoWatchedPercent: snap.videoWatchedPercent,
+        lessonProgressPercent: snap.lessonProgressPercent,
+      }
+    }
+
+    // Normal forward playback:
     if (delta > 0) {
       this.intervals = mergeInterval(this.intervals, this.lastValidTime, safeTime)
       this.lastValidTime = safeTime
-    } else {
-      // Tiny backward codec/seek jitter within [-1.25s, 0]; do not count extra interval
-      this.lastValidTime = Math.max(0, safeTime)
+      if (safeTime > this.furthestWatchedTime) {
+        this.furthestWatchedTime = safeTime
+      }
     }
     this.lastTickWallMs = nowMs
 
@@ -295,7 +407,11 @@ export class VideoWatchTracker {
       }
     }
 
-    if (this.isPlaying && this.lastValidTime >= dur - ENDED_TAIL_TOLERANCE_SEC && this.lastValidTime < dur) {
+    if (
+      (this.isPlaying || this.hasPlayedInSession) &&
+      this.lastValidTime >= dur - ENDED_TAIL_TOLERANCE_SEC &&
+      this.lastValidTime < dur
+    ) {
       this.intervals = mergeInterval(this.intervals, this.lastValidTime, dur)
       this.lastValidTime = dur
     }
@@ -305,6 +421,7 @@ export class VideoWatchTracker {
 
     const watchedSeconds = sumIntervals(this.intervals)
     const isGenuine =
+      this.hasPlayedInSession &&
       (watchedSeconds / dur >= GENUINE_WATCH_RATIO || dur - watchedSeconds <= EOF_RESET_THRESHOLD_SEC) &&
       this.lastValidTime >= dur - ENDED_TAIL_TOLERANCE_SEC
 
@@ -318,6 +435,7 @@ export class VideoWatchTracker {
     }
 
     this.videoCompleted = true
+    this.furthestWatchedTime = Math.max(this.furthestWatchedTime, dur)
     const shouldOpenExercise = !this.exerciseOpenedForAttempt
     this.exerciseOpenedForAttempt = true
 
@@ -333,12 +451,32 @@ export class VideoWatchTracker {
     this.isLessonCompleted = true
     this.videoCompleted = true
     this.persistedProgressPercent = 100
+    if (this.duration > 0) {
+      this.furthestWatchedTime = this.duration
+    }
   }
 
   resetForReplay(nowMs: number): void {
     this.intervals = []
     this.videoCompleted = false
     this.exerciseOpenedForAttempt = false
+    if (!this.isLessonCompleted) {
+      this.furthestWatchedTime = 0
+      this.persistedProgressPercent = 0
+    }
+    this.beginAuthorizedSeek(0, nowMs)
+  }
+
+  resetForRequiredReplay(nowMs: number): void {
+    if (this.isLessonCompleted) return
+    this.intervals = []
+    this.videoCompleted = false
+    this.exerciseOpenedForAttempt = false
+    this.furthestWatchedTime = 0
+    this.persistedProgressPercent = 0
+    this.lastValidTime = 0
+    this.hasPlayedInSession = false
+    this.hasPositionChanged = false
     this.beginAuthorizedSeek(0, nowMs)
   }
 
@@ -358,13 +496,17 @@ export class VideoWatchTracker {
     return this.hasPlayedInSession
   }
 
+  hasUnsavedChanges(): boolean {
+    return this.hasPlayedInSession || this.hasPositionChanged
+  }
+
   isVideoCompleted(): boolean {
     return this.videoCompleted
   }
 
   getSnapshot(): TrackerSnapshot {
-    const watchedSeconds = sumIntervals(this.intervals)
-    const videoWatchedPercent = this.videoCompleted
+    const watchedSeconds = Math.max(sumIntervals(this.intervals), this.furthestWatchedTime)
+    const videoWatchedPercent = (this.videoCompleted || this.isLessonCompleted)
       ? 100
       : this.duration > 0
       ? Math.min(99, Math.max(0, Math.round((watchedSeconds / this.duration) * 100)))

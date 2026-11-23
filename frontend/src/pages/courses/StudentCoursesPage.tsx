@@ -92,6 +92,7 @@ export const StudentCoursesPage: React.FC = () => {
   const [catalogError, setCatalogError] = useState<string | null>(null)
 
   const [myCourses, setMyCourses] = useState<MyCourse[]>([])
+  const [enrolledCourseIds, setEnrolledCourseIds] = useState<string[]>([])
   const [catalogCourses, setCatalogCourses] = useState<OtherCourse[]>([])
 
   // Fetch real catalog courses and enrolled courses
@@ -121,6 +122,7 @@ export const StudentCoursesPage: React.FC = () => {
     // 2. Fetch enrolled courses for the logged-in student via API
     if (studentId && accessToken) {
       setMyCourses([])
+      setEnrolledCourseIds([])
       setMyCoursesLoading(true)
       setMyCoursesError(null)
       void courseCatalogApi
@@ -130,6 +132,11 @@ export const StudentCoursesPage: React.FC = () => {
           if (Array.isArray(backendEnrolled)) {
             const mappedEnrolled = backendEnrolled.map(mapBackendEnrolledCourse)
             setMyCourses(mappedEnrolled)
+            setEnrolledCourseIds(
+              backendEnrolled
+                .map((item) => item.course_id || item.id)
+                .filter((id): id is string => Boolean(id))
+            )
           }
         })
         .catch((err: unknown) => {
@@ -142,6 +149,7 @@ export const StudentCoursesPage: React.FC = () => {
         })
     } else {
       setMyCourses([])
+      setEnrolledCourseIds([])
       setMyCoursesLoading(false)
       setMyCoursesError(null)
     }
@@ -199,18 +207,32 @@ export const StudentCoursesPage: React.FC = () => {
   const inProgressCount = myCourses.filter((c) => c.status === 'in_progress').length
   const completedCount = myCourses.filter((c) => c.status === 'completed').length
 
-  // Filter out any courses in "Các Khóa Học Khác" that the student is already enrolled in
-  const displayedOtherCourses = useMemo(() => {
-    const enrolledSlugs = new Set(myCourses.map((c) => c.slug.toLowerCase()))
-    const enrolledIds = new Set(myCourses.map((c) => c.id))
+  const isEnrolledLoading = Boolean(studentId && accessToken && myCoursesLoading)
+  const isOtherCoursesLoading = catalogLoading || isEnrolledLoading
+  const otherCoursesError = catalogError || (studentId && accessToken ? myCoursesError : null)
 
-    return catalogCourses.filter(
-      (course) =>
-        !enrolledSlugs.has(course.slug.toLowerCase()) &&
-        !enrolledIds.has(course.id) &&
-        (!searchQuery.trim() || `${course.title} ${course.tagBadge} ${course.instructor}`.toLocaleLowerCase('vi').includes(searchQuery.trim().toLocaleLowerCase('vi')))
-    )
-  }, [catalogCourses, myCourses, searchQuery])
+  const enrolledCourseIdSet = useMemo(() => new Set(enrolledCourseIds), [enrolledCourseIds])
+
+  // Filter "Các Khóa Học Khác" to show ONLY unenrolled courses (matched by course ID).
+  // Wait until student enrollment finishes loading to prevent enrolled courses from flashing.
+  const displayedOtherCourses = useMemo(() => {
+    if (isOtherCoursesLoading) return []
+
+    const query = searchQuery.trim().toLocaleLowerCase('vi')
+
+    return catalogCourses.filter((course) => {
+      // Hide all courses the student has already enrolled in
+      if (enrolledCourseIdSet.has(course.id)) {
+        return false
+      }
+
+      if (!query) return true
+
+      return `${course.title} ${course.tagBadge} ${course.instructor}`
+        .toLocaleLowerCase('vi')
+        .includes(query)
+    })
+  }, [catalogCourses, enrolledCourseIdSet, isOtherCoursesLoading, searchQuery])
 
   const handleContinueCourse = (course: MyCourse) => {
     window.location.assign(`/student/courses/${encodeURIComponent(course.slug)}`)
@@ -358,14 +380,14 @@ export const StudentCoursesPage: React.FC = () => {
                   </div>
                 </div>
                 <div className="course-cards-stack">
-                  {catalogLoading ? (
+                  {isOtherCoursesLoading ? (
                     <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center text-ink-500 text-sm">
                       <LoaderCircle className="mx-auto mb-3 size-6 animate-spin text-brand-600" />
                       <p>Đang tải danh sách khóa học…</p>
                     </div>
-                  ) : catalogError ? (
+                  ) : otherCoursesError ? (
                     <div className="bg-white rounded-2xl border border-red-100 p-8 text-center text-red-600 text-sm">
-                      <p>{catalogError}</p>
+                      <p>{otherCoursesError}</p>
                     </div>
                   ) : displayedOtherCourses.length > 0 ? (
                     displayedOtherCourses.map((course) => (

@@ -25,6 +25,7 @@ export interface UpdateLessonProgressInput {
   progress_percent?: number
   is_completed?: boolean
   duration_seconds?: number
+  reset_progress?: boolean
 }
 
 export interface LessonItem {

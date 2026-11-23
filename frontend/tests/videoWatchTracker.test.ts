@@ -67,7 +67,7 @@ describe('VideoWatchTracker - Real-time playback, anti-seek, resume, and exercis
     assert.equal(snap.isLessonCompleted, true)
   })
 
-  it('blocks forward/backward seeking and rejects manipulated ended events', () => {
+  it('allows backward seeking to previously watched position and blocks forward seeking beyond watched progress', () => {
     const tracker = new VideoWatchTracker()
     tracker.initializeForLesson({
       lessonId: 'lesson-seek',
@@ -84,7 +84,7 @@ describe('VideoWatchTracker - Real-time playback, anti-seek, resume, and exercis
     now += 1_000
     tracker.onTimeSample(2, now, 1)
 
-    // Attempt HTML5 onSeeking jump to 90s
+    // Attempt HTML5 onSeeking jump to 90s before watching it
     const seekCheck = tracker.onSeeking(90, now + 50)
     assert.equal(seekCheck.allowed, false)
     assert.equal(seekCheck.revertToSeconds, 2)
@@ -93,24 +93,129 @@ describe('VideoWatchTracker - Real-time playback, anti-seek, resume, and exercis
     const forwardJump = tracker.onTimeSample(118, now + 200, 1)
     assert.equal(forwardJump.seekBlocked, true)
     assert.equal(forwardJump.revertToSeconds, 2)
-    assert.equal(forwardJump.videoWatchedPercent, 2)
+    assert.equal(tracker.getFurthestWatchedTime(), 2)
 
-    // Attempt to trigger ended without watching >= 95%
-    const fakeEnd = tracker.onEnded(now + 300)
-    assert.equal(fakeEnd.genuine, false)
-    assert.equal(fakeEnd.shouldOpenExercise, false)
-    assert.equal(fakeEnd.revertToSeconds, 2)
-
-    // Resume playing up to 30s and attempt backward seek to 5s
+    // Watch continuously up to 30s
     now += 400
     tracker.onPlay(now)
     for (let sec = 3; sec <= 30; sec++) {
       now += 1_000
-      tracker.onTimeSample(sec, now, 1)
+      const tick = tracker.onTimeSample(sec, now, 1)
+      assert.equal(tick.seekBlocked, false)
     }
+    assert.equal(tracker.getFurthestWatchedTime(), 30)
+
+    // Backward seek to 5s is ALLOWED because 5s <= 30s (watched progress)
+    const backwardSeekCheck = tracker.onSeeking(5, now + 100)
+    assert.equal(backwardSeekCheck.allowed, true)
+    assert.equal(backwardSeekCheck.revertToSeconds, 5)
+
     const backwardJump = tracker.onTimeSample(5, now + 200, 1)
-    assert.equal(backwardJump.seekBlocked, true)
-    assert.equal(backwardJump.revertToSeconds, 30)
+    assert.equal(backwardJump.seekBlocked, false)
+    assert.equal(backwardJump.currentTime, 5)
+    // Furthest watched position remains 30s
+    assert.equal(tracker.getFurthestWatchedTime(), 30)
+
+    // From 5s, forward seek to 20s is ALLOWED because 20s <= 30s
+    const forwardWithinWatched = tracker.onTimeSample(20, now + 300, 1)
+    assert.equal(forwardWithinWatched.seekBlocked, false)
+    assert.equal(forwardWithinWatched.currentTime, 20)
+
+    // From 20s, forward seek to 45s is BLOCKED because 45s > 30s (furthest watched)
+    const forwardBeyondWatched = tracker.onTimeSample(45, now + 400, 1)
+    assert.equal(forwardBeyondWatched.seekBlocked, true)
+    assert.equal(forwardBeyondWatched.revertToSeconds, 20)
+
+    // Normal playback resumes from 20s and advances past 30s to 32s
+    for (let sec = 21; sec <= 32; sec++) {
+      now += 1_000
+      const tick = tracker.onTimeSample(sec, now, 1)
+      assert.equal(tick.seekBlocked, false)
+    }
+    assert.equal(tracker.getFurthestWatchedTime(), 32)
+    assert.equal(tracker.getLastValidTime(), 32)
+  })
+
+  it('allows replaying completed videos without resetting progress and allows seeking within duration', () => {
+    const tracker = new VideoWatchTracker()
+    const init = tracker.initializeForLesson({
+      lessonId: 'lesson-completed-replay',
+      duration: 100,
+      savedPositionSeconds: 100,
+      savedProgressPercent: 100,
+      isCompleted: true,
+    })
+
+    // Resets EOF position to 0 so video can replay from start
+    assert.equal(init.restorePosition, 0)
+    assert.equal(tracker.isVideoCompleted(), true)
+    assert.equal(tracker.getSnapshot().lessonProgressPercent, 100)
+    assert.equal(tracker.getMaxSeekableTime(), 100)
+
+    // Student replays video: start playing at 0s
+    let now = 10_000
+    tracker.onPlay(now)
+    const tick0 = tracker.onTimeSample(0, now, 1)
+    assert.equal(tick0.seekBlocked, false)
+    // Progress remains 100% completed
+    assert.equal(tracker.getSnapshot().lessonProgressPercent, 100)
+    assert.equal(tracker.getSnapshot().videoWatchedPercent, 100)
+
+    // Seeking anywhere within completed video (e.g. 50s, 80s, back to 10s) is allowed
+    const seek50 = tracker.onSeeking(50, now + 100)
+    assert.equal(seek50.allowed, true)
+    const tick50 = tracker.onTimeSample(50, now + 200, 1)
+    assert.equal(tick50.seekBlocked, false)
+
+    const seekBack10 = tracker.onSeeking(10, now + 300)
+    assert.equal(seekBack10.allowed, true)
+    const tick10 = tracker.onTimeSample(10, now + 400, 1)
+    assert.equal(tick10.seekBlocked, false)
+
+    // Seeking beyond video duration (120s > 100s) is blocked
+    const seekBeyond = tracker.onSeeking(120, now + 500)
+    assert.equal(seekBeyond.allowed, false)
+
+    // resetForReplay preserves completed lesson status and 100% progress
+    tracker.resetForReplay(now + 600)
+    assert.equal(tracker.getSnapshot().isLessonCompleted, true)
+    assert.equal(tracker.getSnapshot().lessonProgressPercent, 100)
+    assert.equal(tracker.getSnapshot().videoWatchedPercent, 100)
+  })
+
+  it('preserves persisted watched progress on page refresh and restricts forward seeking accordingly', () => {
+    // Student previously watched 5 minutes (300s) out of 10 minutes (600s)
+    const tracker = new VideoWatchTracker()
+    const init = tracker.initializeForLesson({
+      lessonId: 'lesson-refresh',
+      duration: 600,
+      savedPositionSeconds: 300,
+      savedProgressPercent: 50,
+      isCompleted: false,
+    })
+
+    assert.equal(init.restorePosition, 300)
+    assert.equal(tracker.getFurthestWatchedTime(), 300)
+    assert.equal(tracker.getMaxSeekableTime(), 300)
+
+    let now = 50_000
+    // Backward seek to 120s (2 min) is allowed
+    assert.equal(tracker.onSeeking(120, now).allowed, true)
+    const backTick = tracker.onTimeSample(120, now + 100, 1)
+    assert.equal(backTick.seekBlocked, false)
+    assert.equal(backTick.currentTime, 120)
+
+    // Forward seek beyond 300s (e.g. 360s = 6 min) is blocked
+    assert.equal(tracker.onSeeking(360, now + 200).allowed, false)
+    const fwdBlock = tracker.onTimeSample(360, now + 300, 1)
+    assert.equal(fwdBlock.seekBlocked, true)
+    assert.equal(fwdBlock.revertToSeconds, 120)
+
+    // Normal playback from 120s continues properly
+    tracker.onPlay(now + 400)
+    const play121 = tracker.onTimeSample(121, now + 1_400, 1)
+    assert.equal(play121.seekBlocked, false)
+    assert.equal(play121.currentTime, 121)
   })
 
   it('does not count paused, buffering, or non-1x speed time', () => {
@@ -206,6 +311,152 @@ describe('VideoWatchTracker - Real-time playback, anti-seek, resume, and exercis
   })
 })
 
+describe('Video Switching - Restore Saved Playback Position', () => {
+  function watchTo(tracker: VideoWatchTracker, from: number, to: number, startMs: number) {
+    tracker.onPlay(startMs)
+    for (let sec = from + 1; sec <= to; sec++) {
+      tracker.onTimeSample(sec, startMs + (sec - from) * 1000, 1)
+    }
+  }
+
+  it('Video A at 02:00 -> switch to B -> return to A resumes at 02:00; B restores its own position', () => {
+    const tracker = new VideoWatchTracker()
+    tracker.initializeForLesson({
+      lessonId: 'A', duration: 600, savedPositionSeconds: 0, savedProgressPercent: 0, isCompleted: false,
+    })
+    watchTo(tracker, 0, 120, 1000)
+    assert.equal(tracker.getLastValidTime(), 120)
+    const savedA = { position: Math.floor(tracker.getLastValidTime()), percent: tracker.getSnapshot().lessonProgressPercent }
+    assert.equal(savedA.position, 120)
+
+    // Switch to B (fresh, then watched to 03:00)
+    tracker.initializeForLesson({
+      lessonId: 'B', duration: 500, savedPositionSeconds: 0, savedProgressPercent: 0, isCompleted: false,
+    })
+    watchTo(tracker, 0, 180, 500000)
+    const savedB = { position: Math.floor(tracker.getLastValidTime()), percent: tracker.getSnapshot().lessonProgressPercent }
+    assert.equal(savedB.position, 180)
+
+    // Return to A: resumes at 02:00 with furthest = 02:00
+    const initA = tracker.initializeForLesson({
+      lessonId: 'A', duration: 600, savedPositionSeconds: savedA.position, savedProgressPercent: savedA.percent, isCompleted: false,
+    })
+    assert.equal(initA.restorePosition, 120)
+    assert.equal(tracker.getLastValidTime(), 120)
+    assert.equal(tracker.getSnapshot().currentTime, 120)
+    assert.equal(tracker.getMaxSeekableTime() >= 120, true)
+    assert.equal(tracker.beginAuthorizedSeek(60, 900000), true) // backward ok
+    assert.equal(tracker.beginAuthorizedSeek(400, 901000), false) // forward blocked
+
+    // Return to B: resumes at its own 03:00
+    const initB = tracker.initializeForLesson({
+      lessonId: 'B', duration: 500, savedPositionSeconds: savedB.position, savedProgressPercent: savedB.percent, isCompleted: false,
+    })
+    assert.equal(initB.restorePosition, 180)
+    assert.equal(tracker.getMaxSeekableTime() >= 180, true)
+    assert.equal(tracker.beginAuthorizedSeek(400, 902000), false)
+  })
+
+  it('restores persisted position after a page refresh (fresh tracker from saved progress)', () => {
+    const fresh = new VideoWatchTracker()
+    const init = fresh.initializeForLesson({
+      lessonId: 'A', duration: 600, savedPositionSeconds: 120, savedProgressPercent: 20, isCompleted: false,
+    })
+    assert.equal(init.restorePosition, 120)
+    assert.equal(fresh.getSnapshot().currentTime, 120)
+    assert.equal(fresh.beginAuthorizedSeek(300, 1000), false)
+  })
+
+  it('failed-exercise retry lessons restart at 0:00 and keep forward seeking locked', () => {
+    // Retry state forces saved position/progress to 0 (as StudentCourseDetailPage does)
+    const tracker = new VideoWatchTracker()
+    const init = tracker.initializeForLesson({
+      lessonId: 'R', duration: 600, savedPositionSeconds: 0, savedProgressPercent: 0, isCompleted: false,
+    })
+    assert.equal(init.restorePosition, 0)
+    assert.equal(tracker.getMaxSeekableTime(), 0)
+    assert.equal(tracker.beginAuthorizedSeek(60, 1000), false)
+  })
+
+  it('completed lessons keep completed status and resume at saved position with full seeking', () => {
+    const tracker = new VideoWatchTracker()
+    const init = tracker.initializeForLesson({
+      lessonId: 'C', duration: 600, savedPositionSeconds: 200, savedProgressPercent: 100, isCompleted: true,
+    })
+    assert.equal(init.restorePosition, 200)
+    assert.equal(tracker.getSnapshot().isLessonCompleted, true)
+    assert.equal(tracker.getSnapshot().lessonProgressPercent, 100)
+    assert.equal(tracker.getMaxSeekableTime(), 600)
+  })
+
+  it('preserves exact furthestWatchedTime across backward seek and video switch via savedFurthestSeconds', () => {
+    const tracker = new VideoWatchTracker()
+    tracker.initializeForLesson({
+      lessonId: 'A', duration: 600, savedPositionSeconds: 0, savedProgressPercent: 0, isCompleted: false,
+    })
+    watchTo(tracker, 0, 245, 1000)
+    assert.equal(tracker.getFurthestWatchedTime(), 245)
+
+    // User seeks backward to 60s while paused -> marks unsaved position change
+    tracker.onPauseOrBuffer()
+    assert.equal(tracker.beginAuthorizedSeek(60, 300000, true), true)
+    assert.equal(tracker.hasUnsavedChanges(), true)
+    assert.equal(tracker.getLastValidTime(), 60)
+    assert.equal(tracker.getFurthestWatchedTime(), 245)
+
+    const savedPos = Math.floor(tracker.getLastValidTime())
+    const savedFurthest = tracker.getFurthestWatchedTime()
+    const savedPct = tracker.getSnapshot().lessonProgressPercent
+
+    // Switch to B and back to A
+    tracker.initializeForLesson({
+      lessonId: 'B', duration: 300, savedPositionSeconds: 0, savedProgressPercent: 0, isCompleted: false,
+    })
+    const initA = tracker.initializeForLesson({
+      lessonId: 'A',
+      duration: 600,
+      savedPositionSeconds: savedPos,
+      savedProgressPercent: savedPct,
+      isCompleted: false,
+      savedFurthestSeconds: savedFurthest,
+    })
+    assert.equal(initA.restorePosition, 60)
+    assert.equal(tracker.getFurthestWatchedTime(), 245)
+    assert.equal(tracker.getMaxSeekableTime(), 245)
+    assert.equal(tracker.beginAuthorizedSeek(245, 310000, true), true)
+    assert.equal(tracker.beginAuthorizedSeek(260, 311000, true), false)
+  })
+
+  it('rejects ended events without actual playback and accepts genuine end even after trailing buffer/pause', () => {
+    // Spurious ended without playing must not complete video
+    const unplayed = new VideoWatchTracker()
+    unplayed.initializeForLesson({
+      lessonId: 'E1', duration: 100, savedPositionSeconds: 98, savedProgressPercent: 98, isCompleted: false,
+    })
+    const fakeEnd = unplayed.onEnded(5000)
+    assert.equal(fakeEnd.genuine, false)
+    assert.equal(fakeEnd.shouldOpenExercise, false)
+    assert.equal(unplayed.isVideoCompleted(), false)
+
+    // Genuine playback reaching near-end followed by trailing buffering before ended succeeds
+    const played = new VideoWatchTracker()
+    played.initializeForLesson({
+      lessonId: 'E2', duration: 100, savedPositionSeconds: 95, savedProgressPercent: 95, isCompleted: false,
+    })
+    played.onPlay(1000)
+    played.onTimeSample(96, 2000, 1)
+    played.onTimeSample(97, 3000, 1)
+    played.onTimeSample(98, 4000, 1)
+    played.onTimeSample(99, 5000, 1)
+    played.onPauseOrBuffer() // simulates YouTube BUFFERING/PAUSED right before ENDED
+    const realEnd = played.onEnded(5200)
+    assert.equal(realEnd.genuine, true)
+    assert.equal(realEnd.shouldOpenExercise, true)
+    assert.equal(played.isVideoCompleted(), true)
+    assert.equal(played.getMaxSeekableTime(), 100)
+  })
+})
+
 describe('YouTube & Thumbnail Helpers', () => {
   it('extracts video IDs from standard, short, embed, live, and nocookie YouTube URLs', () => {
     assert.equal(extractYouTubeVideoId('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s'), 'dQw4w9WgXcQ')
@@ -224,7 +475,7 @@ describe('YouTube & Thumbnail Helpers', () => {
     )
     assert.equal(
       buildEmbedUrl('https://youtu.be/abc123DEF45?t=15s'),
-      'https://www.youtube.com/embed/abc123DEF45?enablejsapi=1&rel=0&start=15'
+      'https://www.youtube.com/embed/abc123DEF45?enablejsapi=1&controls=0&modestbranding=1&rel=0&iv_load_policy=3&fs=0&disablekb=1&playsinline=1&cc_load_policy=0&start=15'
     )
     assert.equal(buildEmbedUrl('https://cdn.example.com/lesson.mp4'), null)
   })

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Play,
   Pause,
@@ -33,8 +33,11 @@ import {
   DEFAULT_LESSON_THUMBNAIL,
   formatLessonDuration,
   formatPlaybackTime,
+  formatSidebarLessonInfo,
   getLessonExercise,
   getLessonThumbnail,
+  validateExerciseSubmission,
+  type LatestExerciseResult,
   type StudentLessonItem,
 } from './studentLessonHelpers'
 import { VideoWatchTracker, type TrackerSnapshot } from './videoWatchTracker'
@@ -159,6 +162,7 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
   const [videoCurrentTime, setVideoCurrentTime] = useState(0)
   const [videoDuration, setVideoDuration] = useState(0)
   const [videoWatchedPercent, setVideoWatchedPercent] = useState(0)
+  const [maxSeekableTime, setMaxSeekableTime] = useState(0)
   const [playerError, setPlayerError] = useState<string | null>(null)
 
   // Exercise & completion states (kept distinct from last_position_seconds)
@@ -166,7 +170,16 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
   const [isExerciseOpen, setIsExerciseOpen] = useState(false)
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [selectedAnswersMap, setSelectedAnswersMap] = useState<Record<string, Record<number, string>>>({})
-  const [quizSubmitted, setQuizSubmitted] = useState(false)
+  const [correctAnswersMap, setCorrectAnswersMap] = useState<Record<string, Record<number, boolean>>>({})
+  const [unlockedExerciseMap, setUnlockedExerciseMap] = useState<Record<string, boolean>>({})
+  const [latestExerciseResultMap, setLatestExerciseResultMap] = useState<
+    Record<string, LatestExerciseResult>
+  >({})
+
+  const correctAnswersMapRef = useRef(correctAnswersMap)
+  useEffect(() => {
+    correctAnswersMapRef.current = correctAnswersMap
+  }, [correctAnswersMap])
 
   // Tab & discussion state
   const [activeTab, setActiveTab] = useState<'objectives' | 'attachments' | 'discussion'>('objectives')
@@ -235,11 +248,30 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
   const playerLessonIdRef = useRef<string>('')
   const ytReadyRef = useRef<boolean>(false)
   const pendingPlayRef = useRef<boolean>(false)
+  const isRestoringPositionRef = useRef<boolean>(false)
   const pendingRestoreSecondsRef = useRef<number>(0)
   const initialStartParamRef = useRef<number>(0)
   const lastSaveTimeRef = useRef<number>(0)
   const lastSavedKeyRef = useRef<string>('')
   const ytTickIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const progressRequestSeqRef = useRef<Record<string, number>>({})
+  const savedLessonStateRef = useRef<
+    Record<
+      string,
+      {
+        lastPositionSeconds: number
+        furthestWatchedTime: number
+        progressPercent: number
+        isCompleted: boolean
+      }
+    >
+  >({})
+  const isDraggingScrubberRef = useRef<boolean>(false)
+  const scrubberBlockedToastShownRef = useRef<boolean>(false)
+  const userIdRef = useRef<string>(user?.id || 'anon')
+  useEffect(() => {
+    userIdRef.current = user?.id || 'anon'
+  }, [user?.id])
 
   const lessonsListRef = useRef<StudentLessonItem[]>(lessonsList)
   useEffect(() => {
@@ -271,6 +303,16 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
     playerErrorRef.current = playerError
   }, [playerError])
 
+  const videoCurrentTimeRef = useRef<number>(videoCurrentTime)
+  useEffect(() => {
+    videoCurrentTimeRef.current = videoCurrentTime
+  }, [videoCurrentTime])
+
+  const videoDurationRef = useRef<number>(videoDuration)
+  useEffect(() => {
+    videoDurationRef.current = videoDuration
+  }, [videoDuration])
+
   // Sync fullscreen change state
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -280,6 +322,141 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
   }, [])
 
+  const getPendingCacheKey = useCallback((lessonId: string) => {
+    return `lesson_playback_pending:${userIdRef.current}:${lessonId}`
+  }, [])
+
+  const getLatestExerciseKey = useCallback((lessonId: string) => {
+    return `lesson_latest_exercise:${userIdRef.current}:${lessonId}`
+  }, [])
+
+  const writeLatestExerciseResult = useCallback(
+    (lessonId: string, result: LatestExerciseResult) => {
+      try {
+        localStorage.setItem(getLatestExerciseKey(lessonId), JSON.stringify(result))
+      } catch {
+        // ignore storage quota errors
+      }
+    },
+    [getLatestExerciseKey]
+  )
+
+  const readLatestExerciseResult = useCallback(
+    (lessonId: string): LatestExerciseResult | null => {
+      try {
+        const raw = localStorage.getItem(getLatestExerciseKey(lessonId))
+        if (!raw) return null
+        const parsed = JSON.parse(raw) as { scorePercent?: unknown; passed?: unknown }
+        const scorePercent = Number(parsed.scorePercent)
+        if (!Number.isFinite(scorePercent)) return null
+        return {
+          scorePercent: Math.min(100, Math.max(0, Math.round(scorePercent))),
+          passed: Boolean(parsed.passed),
+        }
+      } catch {
+        return null
+      }
+    },
+    [getLatestExerciseKey]
+  )
+
+  const writePendingPlaybackCache = useCallback(
+    (
+      lessonId: string,
+      data: { lastPositionSeconds: number; furthestWatchedTime: number; progressPercent: number }
+    ) => {
+      try {
+        localStorage.setItem(
+          getPendingCacheKey(lessonId),
+          JSON.stringify({ ...data, savedAt: Date.now() })
+        )
+      } catch {
+        // ignore storage quota errors
+      }
+    },
+    [getPendingCacheKey]
+  )
+
+  const clearPendingPlaybackCache = useCallback(
+    (lessonId: string) => {
+      try {
+        localStorage.removeItem(getPendingCacheKey(lessonId))
+      } catch {
+        // ignore
+      }
+    },
+    [getPendingCacheKey]
+  )
+
+  const readPendingPlaybackCache = useCallback(
+    (
+      lessonId: string
+    ): { lastPositionSeconds: number; furthestWatchedTime: number; progressPercent: number } | null => {
+      try {
+        const raw = localStorage.getItem(getPendingCacheKey(lessonId))
+        if (!raw) return null
+        const parsed = JSON.parse(raw) as {
+          lastPositionSeconds?: unknown
+          furthestWatchedTime?: unknown
+          progressPercent?: unknown
+          savedAt?: unknown
+        }
+        const savedAt = Number(parsed.savedAt ?? 0)
+        // Ignore stale pending cache older than 24 hours
+        if (!Number.isFinite(savedAt) || Date.now() - savedAt > 24 * 60 * 60 * 1000) {
+          localStorage.removeItem(getPendingCacheKey(lessonId))
+          return null
+        }
+        const lastPositionSeconds = Number(parsed.lastPositionSeconds ?? 0)
+        const furthestWatchedTime = Number(parsed.furthestWatchedTime ?? 0)
+        const progressPercent = Number(parsed.progressPercent ?? 0)
+        if (
+          !Number.isFinite(lastPositionSeconds) ||
+          !Number.isFinite(furthestWatchedTime) ||
+          !Number.isFinite(progressPercent)
+        ) {
+          return null
+        }
+        return {
+          lastPositionSeconds: Math.max(0, Math.floor(lastPositionSeconds)),
+          furthestWatchedTime: Math.max(0, furthestWatchedTime),
+          progressPercent: Math.min(99, Math.max(0, Math.round(progressPercent))),
+        }
+      } catch {
+        return null
+      }
+    },
+    [getPendingCacheKey]
+  )
+
+  const sampleActivePlayerTime = useCallback((lessonId: string) => {
+    if (!lessonId || playerLessonIdRef.current !== lessonId) return
+    if (isRestoringPositionRef.current || pendingRestoreSecondsRef.current > 0) return
+    const tracker = trackerRef.current
+    if (tracker.getLessonId() !== lessonId) return
+
+    if (currentYouTubeIdRef.current && playerRef.current && ytReadyRef.current) {
+      try {
+        const state = playerRef.current.getPlayerState?.()
+        if (state === 1) {
+          const cur = Number(playerRef.current.getCurrentTime?.() || 0)
+          const rate = Number(playerRef.current.getPlaybackRate?.() || 1)
+          if (Number.isFinite(cur) && cur >= 0) {
+            tracker.onTimeSample(cur, Date.now(), rate)
+          }
+        }
+      } catch {
+        // ignore
+      }
+    } else if (videoRef.current && !videoRef.current.paused && !videoRef.current.ended) {
+      const cur = videoRef.current.currentTime
+      const rate = videoRef.current.playbackRate || 1
+      if (Number.isFinite(cur) && cur >= 0) {
+        tracker.onTimeSample(cur, Date.now(), rate)
+      }
+    }
+  }, [])
+
   const handleUpdateProgress = useCallback(
     async (
       lessonId: string,
@@ -287,10 +464,13 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
       percent?: number,
       completed?: boolean,
       durationSeconds?: number,
-      keepalive = false
+      keepalive = false,
+      resetProgress = false
     ) => {
       const token = accessTokenRef.current
       if (!lessonId || !token) return
+      const seq = (progressRequestSeqRef.current[lessonId] || 0) + 1
+      progressRequestSeqRef.current[lessonId] = seq
       try {
         const roundedSeconds = Math.max(0, Math.floor(seconds))
         const res = await lessonApi.updateProgress(
@@ -301,11 +481,27 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
             is_completed: completed,
             duration_seconds:
               durationSeconds && durationSeconds > 0 ? Math.round(durationSeconds) : undefined,
+            reset_progress: resetProgress,
           },
           token,
           async () => (await refreshSession()).accessToken,
           keepalive
         )
+
+        // Ignore stale async responses that resolved out of order
+        if (progressRequestSeqRef.current[lessonId] !== seq) return
+
+        clearPendingPlaybackCache(lessonId)
+        if (resetProgress && !res.is_completed && res.progress_percent === 0) {
+          try {
+            localStorage.removeItem(`lesson_retry_required:${lessonId}`)
+          } catch {
+            // ignore
+          }
+        }
+
+        const isActiveLesson =
+          playerLessonIdRef.current === lessonId && trackerRef.current.getLessonId() === lessonId
 
         setLessonsList((prev) =>
           prev.map((item) => {
@@ -313,12 +509,18 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
             const newCompleted = item.status === 'completed' || res.is_completed
             const newPercent = newCompleted
               ? 100
+              : resetProgress
+              ? res.progress_percent
               : Math.min(99, Math.max(item.progressPercent, res.progress_percent))
+            const resolvedPosition =
+              !resetProgress && isActiveLesson && trackerRef.current.hasUnsavedChanges()
+                ? Math.floor(trackerRef.current.getLastValidTime())
+                : res.last_position_seconds
             return {
               ...item,
-              lastPositionSeconds: res.last_position_seconds,
+              lastPositionSeconds: resolvedPosition,
               progressPercent: newPercent,
-              status: newCompleted ? 'completed' : newPercent > 0 ? 'in_progress' : item.status,
+              status: newCompleted ? 'completed' : newPercent > 0 ? 'in_progress' : 'not_started',
             }
           })
         )
@@ -326,7 +528,7 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
         console.error('Không thể cập nhật tiến độ học tập:', err)
       }
     },
-    [refreshSession]
+    [refreshSession, clearPendingPlaybackCache]
   )
 
   const handleUpdateProgressRef = useRef(handleUpdateProgress)
@@ -345,7 +547,8 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
 
       const tracker = trackerRef.current
       if (tracker.getLessonId() !== lessonId) return
-      if (!force && !tracker.hasPlaybackActivity()) return
+      sampleActivePlayerTime(lessonId)
+      if (!force && !tracker.hasUnsavedChanges()) return
 
       const curTime = Math.max(0, tracker.getLastValidTime())
       const dur = tracker.getDuration()
@@ -356,19 +559,51 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
       if (!force && dedupeKey === lastSavedKeyRef.current) return
       lastSavedKeyRef.current = dedupeKey
 
+      if (roundedSeconds > 0 || snapshot.lessonProgressPercent > 0) {
+        try {
+          localStorage.removeItem(`lesson_retry_required:${lessonId}`)
+        } catch {
+          // ignore
+        }
+      }
+
+      const existingLesson = lessonsListRef.current.find((item) => item.id === lessonId)
+      const isCompleted = Boolean(existingLesson?.status === 'completed') || snapshot.isLessonCompleted
+      const nextPercent = isCompleted
+        ? 100
+        : Math.min(99, Math.max(existingLesson?.progressPercent || 0, snapshot.lessonProgressPercent))
+
+      savedLessonStateRef.current[lessonId] = {
+        lastPositionSeconds: roundedSeconds,
+        furthestWatchedTime: Math.max(
+          savedLessonStateRef.current[lessonId]?.furthestWatchedTime || 0,
+          tracker.getFurthestWatchedTime()
+        ),
+        progressPercent: nextPercent,
+        isCompleted,
+      }
+
+      if (!isCompleted) {
+        writePendingPlaybackCache(lessonId, {
+          lastPositionSeconds: roundedSeconds,
+          furthestWatchedTime: savedLessonStateRef.current[lessonId]!.furthestWatchedTime,
+          progressPercent: nextPercent,
+        })
+      }
+
       // Keep local list synchronized so returning within the same session restores accurately
       setLessonsList((prev) =>
         prev.map((item) => {
           if (item.id !== lessonId) return item
-          const isCompleted = item.status === 'completed' || snapshot.isLessonCompleted
-          const nextPercent = isCompleted
+          const itemCompleted = item.status === 'completed' || snapshot.isLessonCompleted
+          const itemNextPercent = itemCompleted
             ? 100
             : Math.min(99, Math.max(item.progressPercent, snapshot.lessonProgressPercent))
           return {
             ...item,
             lastPositionSeconds: roundedSeconds,
-            progressPercent: nextPercent,
-            status: isCompleted ? 'completed' : nextPercent > 0 ? 'in_progress' : item.status,
+            progressPercent: itemNextPercent,
+            status: itemCompleted ? 'completed' : itemNextPercent > 0 ? 'in_progress' : 'not_started',
           }
         })
       )
@@ -376,13 +611,13 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
       void handleUpdateProgressRef.current(
         lessonId,
         roundedSeconds,
-        snapshot.lessonProgressPercent,
-        snapshot.isLessonCompleted,
+        nextPercent,
+        isCompleted,
         dur > 0 ? dur : undefined,
         keepalive
       )
     },
-    []
+    [sampleActivePlayerTime, writePendingPlaybackCache]
   )
 
   const saveCurrentPositionRef = useRef(saveCurrentPosition)
@@ -393,8 +628,23 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
   const applyLiveTrackerSnapshot = useCallback((lessonId: string, snap: TrackerSnapshot) => {
     setVideoCurrentTime(snap.currentTime)
     setVideoWatchedPercent(snap.videoWatchedPercent)
+    setMaxSeekableTime(trackerRef.current.getMaxSeekableTime())
     if (snap.duration > 0) {
       setVideoDuration(snap.duration)
+    }
+
+    const existingSaved = savedLessonStateRef.current[lessonId]
+    const mergedCompleted = Boolean(existingSaved?.isCompleted) || snap.isLessonCompleted
+    savedLessonStateRef.current[lessonId] = {
+      lastPositionSeconds: Math.floor(snap.currentTime),
+      furthestWatchedTime: Math.max(
+        existingSaved?.furthestWatchedTime || 0,
+        trackerRef.current.getFurthestWatchedTime()
+      ),
+      progressPercent: mergedCompleted
+        ? 100
+        : Math.min(99, Math.max(existingSaved?.progressPercent || 0, snap.lessonProgressPercent)),
+      isCompleted: mergedCompleted,
     }
 
     setLessonsList((prev) => {
@@ -497,8 +747,20 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
     )
 
     if (res.shouldOpenExercise) {
-      setQuizSubmitted(false)
-      setCurrentQuestionIndex(0)
+      try {
+        localStorage.removeItem(`lesson_retry_required:${lessonId}`)
+      } catch {
+        // ignore
+      }
+      setCurrentQuestionIndex((prev) => {
+        const correctMap = correctAnswersMapRef.current[lessonId] || {}
+        if (!correctMap[prev]) return prev
+        const exercise = targetLesson ? getLessonExercise(targetLesson) : null
+        const questions = exercise?.questions || []
+        const nextIncomplete = questions.findIndex((_, idx) => !correctMap[idx])
+        return nextIncomplete !== -1 ? nextIncomplete : prev
+      })
+      setUnlockedExerciseMap((prev) => ({ ...prev, [lessonId]: true }))
       setIsExerciseOpen(true)
       showToastRef.current(
         alreadyCompleted
@@ -518,23 +780,37 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
     lessonsList.find((l) => l.id === activeLessonId) || lessonsList[0] || null
 
   const currentYouTubeId = extractYouTubeVideoId(currentLessonItem?.videoUrl)
+  const currentYouTubeIdRef = useRef<string | null>(currentYouTubeId)
+  useEffect(() => {
+    currentYouTubeIdRef.current = currentYouTubeId
+  }, [currentYouTubeId])
   const driveEmbedUrl = !currentYouTubeId
     ? extractGoogleDriveEmbedUrl(currentLessonItem?.videoUrl)
     : null
   const isHtml5Video = Boolean(currentLessonItem?.videoUrl && !currentYouTubeId && !driveEmbedUrl)
 
-  const currentLessonExercise = currentLessonItem
-    ? getLessonExercise(currentLessonItem)
-    : {
-        title: 'Bài tập thực hành',
-        subtitle: 'Kiểm tra kiến thức bài học',
-        totalQuestions: 2,
-        durationMinutes: 5,
-        questions: [] as QuizQuestion[],
-      }
+  const currentLessonExercise = useMemo(() => {
+    return currentLessonItem
+      ? getLessonExercise(currentLessonItem)
+      : {
+          title: 'Bài tập thực hành',
+          subtitle: 'Kiểm tra kiến thức bài học',
+          totalQuestions: 2,
+          durationMinutes: 5,
+          questions: [] as QuizQuestion[],
+        }
+  }, [currentLessonItem])
+
+  const isRetryRequired = Boolean(
+    currentLessonItem &&
+      currentLessonItem.status !== 'completed' &&
+      typeof window !== 'undefined' &&
+      localStorage.getItem(`lesson_retry_required:${currentLessonItem.id}`) === 'true'
+  )
 
   const isCurrentLessonVideoCompleted = Boolean(
     currentLessonItem &&
+      !isRetryRequired &&
       (videoCompletedByLesson[currentLessonItem.id] ??
         (currentLessonItem.status === 'completed' || currentLessonItem.progressPercent >= 99))
   )
@@ -610,6 +886,7 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
 
         const flattened: StudentLessonItem[] = []
         const initialVideoCompleted: Record<string, boolean> = {}
+        const initialUnlockedExercise: Record<string, boolean> = {}
         let numberCounter = 1
 
         const sortedTopics = [...rawTopics].sort((a, b) => a.sort_order - b.sort_order)
@@ -619,12 +896,73 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
           )
           for (const l of sortedLessons) {
             const isCompleted = Boolean(l.progress?.is_completed)
-            const rawPct = Number(l.progress?.progress_percent ?? 0)
-            const pct = isCompleted ? 100 : Math.min(99, Math.max(0, rawPct))
-            const lastPos = Number(l.progress?.last_position_seconds ?? 0)
+            const isLessonRetryRequired =
+              !isCompleted &&
+              typeof window !== 'undefined' &&
+              localStorage.getItem(`lesson_retry_required:${l.id}`) === 'true'
 
-            if (isCompleted || pct >= 99) {
+            const apiPct = Number(l.progress?.progress_percent ?? 0)
+            const apiPos = Number(l.progress?.last_position_seconds ?? 0)
+
+            if (isCompleted) {
+              try {
+                localStorage.removeItem(`lesson_retry_required:${l.id}`)
+              } catch {
+                // ignore
+              }
+              clearPendingPlaybackCache(l.id)
+            } else if (isLessonRetryRequired) {
+              clearPendingPlaybackCache(l.id)
+              if (apiPct > 0 || apiPos > 0) {
+                void handleUpdateProgressRef.current(
+                  l.id,
+                  0,
+                  0,
+                  false,
+                  l.duration_seconds || undefined,
+                  false,
+                  true
+                )
+              } else {
+                try {
+                  localStorage.removeItem(`lesson_retry_required:${l.id}`)
+                } catch {
+                  // ignore
+                }
+              }
+            }
+
+            const pendingCache = !isCompleted && !isLessonRetryRequired
+              ? readPendingPlaybackCache(l.id)
+              : null
+
+            const rawPct = isLessonRetryRequired
+              ? 0
+              : Math.max(apiPct, pendingCache?.progressPercent ?? 0)
+            const pct = isCompleted ? 100 : Math.min(99, Math.max(0, rawPct))
+            const lastPos = isLessonRetryRequired
+              ? 0
+              : pendingCache
+              ? pendingCache.lastPositionSeconds
+              : apiPos
+            const furthestFromPct =
+              l.duration_seconds && l.duration_seconds > 0 ? (pct / 100) * l.duration_seconds : 0
+            const savedFurthest = isCompleted
+              ? l.duration_seconds || lastPos
+              : isLessonRetryRequired
+              ? 0
+              : Math.max(lastPos, furthestFromPct, pendingCache?.furthestWatchedTime ?? 0)
+
+            savedLessonStateRef.current[l.id] = {
+              lastPositionSeconds: lastPos,
+              furthestWatchedTime: savedFurthest,
+              progressPercent: pct,
+              isCompleted,
+            }
+
+            if (isCompleted || (!isLessonRetryRequired && pct >= 99)) {
               initialVideoCompleted[l.id] = true
+              initialUnlockedExercise[l.id] = true
             }
 
             flattened.push({
@@ -647,7 +985,26 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
           }
         }
 
+        const initialCorrectAnswers: Record<string, Record<number, boolean>> = {}
+        const initialLatestExerciseResults: Record<string, LatestExerciseResult> = {}
+        for (const l of flattened) {
+          if (l.status === 'completed') {
+            const exercise = getLessonExercise(l)
+            const allCorrect: Record<number, boolean> = {}
+            exercise.questions.forEach((_, idx) => {
+              allCorrect[idx] = true
+            })
+            initialCorrectAnswers[l.id] = allCorrect
+          }
+          const savedExercise = readLatestExerciseResult(l.id)
+          if (savedExercise) {
+            initialLatestExerciseResults[l.id] = savedExercise
+          }
+        }
+        setCorrectAnswersMap((prev) => ({ ...initialCorrectAnswers, ...prev }))
+        setLatestExerciseResultMap((prev) => ({ ...initialLatestExerciseResults, ...prev }))
         setVideoCompletedByLesson((prev) => ({ ...initialVideoCompleted, ...prev }))
+        setUnlockedExerciseMap((prev) => ({ ...initialUnlockedExercise, ...prev }))
         setLessonsList(flattened)
         if (flattened.length > 0) {
           setActiveLessonId((prev) => {
@@ -670,7 +1027,14 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
     return () => {
       cancelled = true
     }
-  }, [resolvedCourseSlug, accessToken, refreshSession])
+  }, [
+    resolvedCourseSlug,
+    accessToken,
+    refreshSession,
+    clearPendingPlaybackCache,
+    readPendingPlaybackCache,
+    readLatestExerciseResult,
+  ])
 
   // Initialize YouTube Player API imperatively into ytHostRef (dependencies strictly limited to activeLessonId & currentYouTubeId)
   useEffect(() => {
@@ -682,12 +1046,31 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
     const lessonId = activeLessonId
     const targetLesson = lessonsListRef.current.find((l) => l.id === lessonId)
 
+    const isRetry =
+      targetLesson?.status !== 'completed' &&
+      typeof window !== 'undefined' &&
+      localStorage.getItem(`lesson_retry_required:${lessonId}`) === 'true'
+    const cachedState = savedLessonStateRef.current[lessonId]
+    const isLessonDone = Boolean(targetLesson?.status === 'completed' || cachedState?.isCompleted)
+    const savedPos = isRetry
+      ? 0
+      : cachedState
+      ? cachedState.lastPositionSeconds
+      : targetLesson?.lastPositionSeconds || 0
+    const savedPct = isRetry
+      ? 0
+      : isLessonDone
+      ? 100
+      : Math.max(targetLesson?.progressPercent || 0, cachedState?.progressPercent || 0)
+    const savedFurthest = isRetry ? 0 : cachedState?.furthestWatchedTime
+
     const { restorePosition } = trackerRef.current.initializeForLesson({
       lessonId,
       duration: targetLesson?.durationSeconds || 0,
-      savedPositionSeconds: targetLesson?.lastPositionSeconds || 0,
-      savedProgressPercent: targetLesson?.progressPercent || 0,
-      isCompleted: targetLesson?.status === 'completed',
+      savedPositionSeconds: savedPos,
+      savedProgressPercent: savedPct,
+      isCompleted: isLessonDone,
+      savedFurthestSeconds: savedFurthest,
     })
 
     const initialSnap = trackerRef.current.getSnapshot()
@@ -695,10 +1078,14 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
     playerLessonIdRef.current = lessonId
     ytReadyRef.current = false
     pendingPlayRef.current = false
+    isRestoringPositionRef.current = restorePosition > 0
     pendingRestoreSecondsRef.current = restorePosition
     initialStartParamRef.current = startSeconds
     lastSavedKeyRef.current = ''
     lastSaveTimeRef.current = 0
+    if (restorePosition > 0) {
+      trackerRef.current.beginAuthorizedSeek(restorePosition, Date.now())
+    }
 
     // eslint-disable-next-line react-hooks/set-state-in-effect -- sync player UI immediately on lesson change
     setPlayerError(null)
@@ -706,6 +1093,7 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
     setVideoCurrentTime(initialSnap.currentTime)
     setVideoDuration(initialSnap.duration)
     setVideoWatchedPercent(initialSnap.videoWatchedPercent)
+    setMaxSeekableTime(trackerRef.current.getMaxSeekableTime())
 
     const hostEl = ytHostRef.current
     if (!hostEl) return
@@ -763,24 +1151,38 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                 }
 
                 const dur = Number(event.target.getDuration?.() || 0)
+                let targetRestore = pendingRestoreSecondsRef.current
                 if (dur > 0) {
                   const { restorePosition: validatedRestore } = trackerRef.current.setDuration(dur)
                   pendingRestoreSecondsRef.current = validatedRestore
+                  targetRestore = validatedRestore
+                }
+
+                // Use cueVideoById instead of seekTo in onReady so YouTube never starts playing from 0:00
+                // while positioning its native red progress bar and start timestamp.
+                const targetStartSeconds = Math.floor(targetRestore)
+                if (Math.abs(targetStartSeconds - initialStartParamRef.current) >= 1) {
+                  isRestoringPositionRef.current = true
+                  initialStartParamRef.current = targetStartSeconds
+                  trackerRef.current.beginAuthorizedSeek(targetRestore, Date.now())
+                  event.target.cueVideoById?.({
+                    videoId: currentYouTubeId,
+                    startSeconds: targetStartSeconds,
+                  })
                   applyLiveTrackerSnapshotRef.current(
                     lessonId,
                     trackerRef.current.getSnapshot()
                   )
-
-                  if (validatedRestore === 0 && initialStartParamRef.current > 0) {
-                    trackerRef.current.beginAuthorizedSeek(0, Date.now())
-                    event.target.seekTo?.(0, true)
-                    pendingRestoreSecondsRef.current = 0
+                } else {
+                  isRestoringPositionRef.current = false
+                  applyLiveTrackerSnapshotRef.current(
+                    lessonId,
+                    trackerRef.current.getSnapshot()
+                  )
+                  if (pendingPlayRef.current) {
+                    pendingPlayRef.current = false
+                    event.target.playVideo?.()
                   }
-                }
-
-                if (pendingPlayRef.current) {
-                  pendingPlayRef.current = false
-                  event.target.playVideo?.()
                 }
               } catch {
                 // ignore
@@ -812,7 +1214,9 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                   const dur = Number(event.target.getDuration?.() || 0)
                   if (dur > 0 && trackerRef.current.getDuration() <= 0) {
                     const { restorePosition: validatedRestore } = trackerRef.current.setDuration(dur)
-                    pendingRestoreSecondsRef.current = validatedRestore
+                    if (pendingRestoreSecondsRef.current > 0) {
+                      pendingRestoreSecondsRef.current = validatedRestore
+                    }
                   }
 
                   const cur = Number(event.target.getCurrentTime?.() || 0)
@@ -825,7 +1229,10 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                       Date.now()
                     )
                     event.target.seekTo?.(pendingRestoreSecondsRef.current, true)
-                  } else if (
+                    return
+                  }
+
+                  if (
                     pendingRestoreSecondsRef.current === 0 &&
                     initialStartParamRef.current > 0 &&
                     !trackerRef.current.hasPlaybackActivity() &&
@@ -833,8 +1240,13 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                   ) {
                     trackerRef.current.beginAuthorizedSeek(0, Date.now())
                     event.target.seekTo?.(0, true)
+                    return
                   }
-                  pendingRestoreSecondsRef.current = 0
+
+                  if (pendingRestoreSecondsRef.current > 0) {
+                    pendingRestoreSecondsRef.current = 0
+                  }
+                  isRestoringPositionRef.current = false
 
                   const rate = Number(event.target.getPlaybackRate?.() || 1)
                   if (Math.abs(rate - 1) > 0.05) {
@@ -879,12 +1291,47 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                   }
                 }, 250)
               } else if (state === 2) {
+                try {
+                  const cur = Number(event.target.getCurrentTime?.() || 0)
+                  const rate = Number(event.target.getPlaybackRate?.() || 1)
+                  if (
+                    !isRestoringPositionRef.current &&
+                    pendingRestoreSecondsRef.current === 0 &&
+                    Number.isFinite(cur) &&
+                    cur >= 0
+                  ) {
+                    trackerRef.current.onTimeSample(cur, Date.now(), rate)
+                  }
+                } catch {
+                  // ignore
+                }
                 trackerRef.current.onPauseOrBuffer()
                 setIsPlaying(false)
-                saveCurrentPositionRef.current(lessonId, false)
+                applyLiveTrackerSnapshotRef.current(
+                  lessonId,
+                  trackerRef.current.getSnapshot()
+                )
+                saveCurrentPositionRef.current(lessonId, false, true)
               } else if (state === 3) {
                 // Buffering: pause watch interval tracking so buffering never counts as watched
                 trackerRef.current.onPauseOrBuffer()
+              } else if (state === 5) {
+                // Cued: YouTube confirmed cueVideoById at target startSeconds without playing from 0:00
+                if (isRestoringPositionRef.current) {
+                  isRestoringPositionRef.current = false
+                  applyLiveTrackerSnapshotRef.current(
+                    lessonId,
+                    trackerRef.current.getSnapshot()
+                  )
+                  if (pendingPlayRef.current) {
+                    pendingPlayRef.current = false
+                    try {
+                      event.target.playVideo?.()
+                    } catch {
+                      // ignore
+                    }
+                  }
+                }
               } else if (state === 0) {
                 let dur = trackerRef.current.getDuration()
                 try {
@@ -940,6 +1387,48 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
     }
   }, [activeLessonId, currentYouTubeId])
 
+  const applyPendingHtml5Restore = useCallback(
+    (target: HTMLVideoElement, lessonId: string) => {
+      if (playerLessonIdRef.current !== lessonId) return
+      const dur = Number.isFinite(target.duration) && target.duration > 0 ? target.duration : 0
+      if (dur > 0) {
+        const { restorePosition: validatedRestore } = trackerRef.current.setDuration(dur)
+        if (pendingRestoreSecondsRef.current > 0) {
+          pendingRestoreSecondsRef.current = validatedRestore
+        }
+      }
+
+      const targetRestore = pendingRestoreSecondsRef.current
+      if (targetRestore > 0 && (dur <= 0 || dur > targetRestore)) {
+        if (Math.abs(target.currentTime - targetRestore) > 0.5) {
+          if (!target.paused) {
+            target.pause()
+          }
+          isRestoringPositionRef.current = true
+          trackerRef.current.beginAuthorizedSeek(targetRestore, Date.now())
+          try {
+            target.currentTime = targetRestore
+          } catch {
+            // Browser may not allow seeking until more media data is loaded; onCanPlay/onLoadedData will retry
+          }
+        } else {
+          pendingRestoreSecondsRef.current = 0
+          isRestoringPositionRef.current = false
+          if (pendingPlayRef.current) {
+            pendingPlayRef.current = false
+            target.playbackRate = 1
+            void target.play().catch(() => {})
+          }
+        }
+      } else {
+        pendingRestoreSecondsRef.current = 0
+        isRestoringPositionRef.current = false
+      }
+      applyLiveTrackerSnapshotRef.current(lessonId, trackerRef.current.getSnapshot())
+    },
+    []
+  )
+
   // Initialize tracker cleanly when switching to an HTML5 video lesson
   useEffect(() => {
     if (!activeLessonId || !isHtml5Video) {
@@ -948,18 +1437,42 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
 
     const lessonId = activeLessonId
     const targetLesson = lessonsListRef.current.find((l) => l.id === lessonId)
-    trackerRef.current.initializeForLesson({
+    const isRetry =
+      targetLesson?.status !== 'completed' &&
+      typeof window !== 'undefined' &&
+      localStorage.getItem(`lesson_retry_required:${lessonId}`) === 'true'
+    const cachedState = savedLessonStateRef.current[lessonId]
+    const isLessonDone = Boolean(targetLesson?.status === 'completed' || cachedState?.isCompleted)
+    const savedPos = isRetry
+      ? 0
+      : cachedState
+      ? cachedState.lastPositionSeconds
+      : targetLesson?.lastPositionSeconds || 0
+    const savedPct = isRetry
+      ? 0
+      : isLessonDone
+      ? 100
+      : Math.max(targetLesson?.progressPercent || 0, cachedState?.progressPercent || 0)
+    const savedFurthest = isRetry ? 0 : cachedState?.furthestWatchedTime
+
+    const { restorePosition } = trackerRef.current.initializeForLesson({
       lessonId,
       duration: targetLesson?.durationSeconds || 0,
-      savedPositionSeconds: targetLesson?.lastPositionSeconds || 0,
-      savedProgressPercent: targetLesson?.progressPercent || 0,
-      isCompleted: targetLesson?.status === 'completed',
+      savedPositionSeconds: savedPos,
+      savedProgressPercent: savedPct,
+      isCompleted: isLessonDone,
+      savedFurthestSeconds: savedFurthest,
     })
     const initialSnap = trackerRef.current.getSnapshot()
     playerLessonIdRef.current = lessonId
-    pendingRestoreSecondsRef.current = initialSnap.currentTime
+    pendingPlayRef.current = false
+    isRestoringPositionRef.current = restorePosition > 0
+    pendingRestoreSecondsRef.current = restorePosition
     lastSavedKeyRef.current = ''
     lastSaveTimeRef.current = 0
+    if (restorePosition > 0) {
+      trackerRef.current.beginAuthorizedSeek(restorePosition, Date.now())
+    }
 
     // eslint-disable-next-line react-hooks/set-state-in-effect -- sync player UI immediately on lesson change
     setPlayerError(null)
@@ -967,7 +1480,12 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
     setVideoCurrentTime(initialSnap.currentTime)
     setVideoDuration(initialSnap.duration)
     setVideoWatchedPercent(initialSnap.videoWatchedPercent)
-  }, [activeLessonId, isHtml5Video])
+    setMaxSeekableTime(trackerRef.current.getMaxSeekableTime())
+
+    if (videoRef.current && videoRef.current.readyState >= 1) {
+      applyPendingHtml5Restore(videoRef.current, lessonId)
+    }
+  }, [activeLessonId, isHtml5Video, applyPendingHtml5Restore])
 
   // Automatically save current playback position when leaving, hiding tab, or unmounting
   useEffect(() => {
@@ -1000,9 +1518,9 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
 
     if (currentYouTubeId) {
       const player = playerRef.current
-      if (!player || !ytReadyRef.current) {
+      if (!player || !ytReadyRef.current || isRestoringPositionRef.current) {
         pendingPlayRef.current = !pendingPlayRef.current
-        showToastRef.current('Đang tải video, sẽ tự động phát ngay khi sẵn sàng...')
+        showToastRef.current('Đang khôi phục vị trí video, sẽ tự động phát ngay khi sẵn sàng...')
         return
       }
       try {
@@ -1011,14 +1529,23 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
           player.pauseVideo?.()
         } else {
           if (state === 0) {
-            trackerRef.current.resetForReplay(Date.now())
-            setVideoCurrentTime(0)
-            setVideoWatchedPercent(0)
-            if (activeLessonIdRef.current) {
-              setVideoCompletedByLesson((prev) => ({
-                ...prev,
-                [activeLessonIdRef.current]: false,
-              }))
+            const wasCompleted =
+              trackerRef.current.isVideoCompleted() ||
+              Boolean(currentLessonItem?.status === 'completed')
+
+            if (!wasCompleted) {
+              trackerRef.current.resetForReplay(Date.now())
+              setVideoCurrentTime(0)
+              setVideoWatchedPercent(0)
+              if (activeLessonIdRef.current) {
+                setVideoCompletedByLesson((prev) => ({
+                  ...prev,
+                  [activeLessonIdRef.current]: false,
+                }))
+              }
+            } else {
+              trackerRef.current.beginAuthorizedSeek(0, Date.now())
+              setVideoCurrentTime(0)
             }
             player.seekTo?.(0, true)
           }
@@ -1033,15 +1560,31 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
     const vid = videoRef.current
     if (vid) {
       if (vid.paused || vid.ended) {
+        if (isRestoringPositionRef.current || pendingRestoreSecondsRef.current > 0) {
+          pendingPlayRef.current = true
+          if (vid.readyState >= 1 && activeLessonIdRef.current) {
+            applyPendingHtml5Restore(vid, activeLessonIdRef.current)
+          }
+          return
+        }
         if (vid.ended) {
-          trackerRef.current.resetForReplay(Date.now())
-          setVideoCurrentTime(0)
-          setVideoWatchedPercent(0)
-          if (activeLessonIdRef.current) {
-            setVideoCompletedByLesson((prev) => ({
-              ...prev,
-              [activeLessonIdRef.current]: false,
-            }))
+          const wasCompleted =
+            trackerRef.current.isVideoCompleted() ||
+            Boolean(currentLessonItem?.status === 'completed')
+
+          if (!wasCompleted) {
+            trackerRef.current.resetForReplay(Date.now())
+            setVideoCurrentTime(0)
+            setVideoWatchedPercent(0)
+            if (activeLessonIdRef.current) {
+              setVideoCompletedByLesson((prev) => ({
+                ...prev,
+                [activeLessonIdRef.current]: false,
+              }))
+            }
+          } else {
+            trackerRef.current.beginAuthorizedSeek(0, Date.now())
+            setVideoCurrentTime(0)
           }
           vid.currentTime = 0
         }
@@ -1053,7 +1596,115 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
         vid.pause()
       }
     }
-  }, [currentYouTubeId])
+  }, [currentLessonItem, currentYouTubeId, applyPendingHtml5Restore])
+
+  const seekToScrubberClientX = useCallback(
+    (scrubberEl: HTMLDivElement, clientX: number, allowBlockedToast: boolean) => {
+      if (isExerciseOpenRef.current || playerErrorRef.current) return
+      if (currentYouTubeId && !ytReadyRef.current) return
+      const dur = trackerRef.current.getDuration() || videoDuration
+      if (dur <= 0) return
+
+      const rect = scrubberEl.getBoundingClientRect()
+      if (rect.width <= 0) return
+
+      const clickRatio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
+      const targetSeconds = Math.round(clickRatio * dur)
+      const maxSeekable = trackerRef.current.getMaxSeekableTime()
+
+      if (targetSeconds > maxSeekable + 0.5) {
+        if (allowBlockedToast) {
+          showToast('Không thể tua vượt quá thời lượng video đã xem.')
+        }
+        return
+      }
+
+      const seekSuccess = trackerRef.current.beginAuthorizedSeek(targetSeconds, Date.now(), true)
+      if (!seekSuccess) {
+        if (allowBlockedToast) {
+          showToast('Không thể tua vượt quá thời lượng video đã xem.')
+        }
+        return
+      }
+
+      pendingRestoreSecondsRef.current = 0
+      isRestoringPositionRef.current = false
+      const safeTarget = trackerRef.current.getLastValidTime()
+      setVideoCurrentTime(safeTarget)
+
+      if (currentYouTubeId) {
+        playerRef.current?.seekTo?.(safeTarget, true)
+      } else if (videoRef.current) {
+        videoRef.current.currentTime = safeTarget
+      }
+
+      if (activeLessonIdRef.current) {
+        applyLiveTrackerSnapshotRef.current(
+          activeLessonIdRef.current,
+          trackerRef.current.getSnapshot()
+        )
+        if (!isPlaying) {
+          saveCurrentPositionRef.current(activeLessonIdRef.current, false, true)
+        }
+      }
+    },
+    [currentYouTubeId, videoDuration, isPlaying, showToast]
+  )
+
+  const handleSeekScrubber = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      seekToScrubberClientX(e.currentTarget, e.clientX, true)
+    },
+    [seekToScrubberClientX]
+  )
+
+  const handleScrubberPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (isExerciseOpenRef.current || playerErrorRef.current) return
+      isDraggingScrubberRef.current = true
+      scrubberBlockedToastShownRef.current = false
+      e.currentTarget.setPointerCapture?.(e.pointerId)
+      seekToScrubberClientX(e.currentTarget, e.clientX, true)
+    },
+    [seekToScrubberClientX]
+  )
+
+  const handleScrubberPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!isDraggingScrubberRef.current) return
+      const dur = trackerRef.current.getDuration() || videoDuration
+      const rect = e.currentTarget.getBoundingClientRect()
+      if (dur > 0 && rect.width > 0) {
+        const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
+        const target = Math.round(ratio * dur)
+        const maxSeekable = trackerRef.current.getMaxSeekableTime()
+        if (target > maxSeekable + 0.5) {
+          if (!scrubberBlockedToastShownRef.current) {
+            scrubberBlockedToastShownRef.current = true
+            showToast('Không thể tua vượt quá thời lượng video đã xem.')
+          }
+          return
+        }
+      }
+      seekToScrubberClientX(e.currentTarget, e.clientX, false)
+    },
+    [seekToScrubberClientX, videoDuration, showToast]
+  )
+
+  const handleScrubberPointerUp = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!isDraggingScrubberRef.current) return
+      isDraggingScrubberRef.current = false
+      scrubberBlockedToastShownRef.current = false
+      if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+        e.currentTarget.releasePointerCapture?.(e.pointerId)
+      }
+      if (activeLessonIdRef.current) {
+        saveCurrentPositionRef.current(activeLessonIdRef.current, false, true)
+      }
+    },
+    []
+  )
 
   const handleTogglePlayPauseRef = useRef(handleTogglePlayPause)
   useEffect(() => {
@@ -1107,39 +1758,94 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
       }
 
       const key = e.key
-      const blockedSeekOrSpeedKeys = new Set([
-        'ArrowLeft',
-        'ArrowRight',
-        'Home',
-        'End',
-        'j',
-        'J',
-        'l',
-        'L',
+
+      if (
+        key === 'ArrowLeft' ||
+        key === 'j' ||
+        key === 'J' ||
+        key === 'MediaRewind' ||
+        key === 'Home' ||
+        key === '0'
+      ) {
+        e.preventDefault()
+        e.stopPropagation()
+        const target =
+          key === 'Home' || key === '0'
+            ? 0
+            : Math.max(0, videoCurrentTimeRef.current - (key === 'j' || key === 'J' ? 10 : 5))
+        if (!trackerRef.current.beginAuthorizedSeek(target, Date.now(), true)) {
+          return
+        }
+        pendingRestoreSecondsRef.current = 0
+        isRestoringPositionRef.current = false
+        const safeTarget = trackerRef.current.getLastValidTime()
+        setVideoCurrentTime(safeTarget)
+        if (currentYouTubeIdRef.current) {
+          playerRef.current?.seekTo?.(safeTarget, true)
+        } else if (videoRef.current) {
+          videoRef.current.currentTime = safeTarget
+        }
+        if (activeLessonIdRef.current) {
+          applyLiveTrackerSnapshotRef.current(
+            activeLessonIdRef.current,
+            trackerRef.current.getSnapshot()
+          )
+        }
+        return
+      }
+
+      if (
+        key === 'ArrowRight' ||
+        key === 'l' ||
+        key === 'L' ||
+        key === 'MediaFastForward' ||
+        key === 'End'
+      ) {
+        e.preventDefault()
+        e.stopPropagation()
+        const dur = trackerRef.current.getDuration() || videoDurationRef.current
+        const maxSeekable = trackerRef.current.getMaxSeekableTime()
+        const target =
+          key === 'End'
+            ? dur
+            : videoCurrentTimeRef.current + (key === 'l' || key === 'L' ? 10 : 5)
+
+        if (target > maxSeekable + 0.5 || !trackerRef.current.beginAuthorizedSeek(target, Date.now(), true)) {
+          showToastRef.current('Không thể tua vượt quá thời lượng video đã xem.')
+          return
+        }
+
+        pendingRestoreSecondsRef.current = 0
+        isRestoringPositionRef.current = false
+        const safeTarget = trackerRef.current.getLastValidTime()
+        setVideoCurrentTime(safeTarget)
+        if (currentYouTubeIdRef.current) {
+          playerRef.current?.seekTo?.(safeTarget, true)
+        } else if (videoRef.current) {
+          videoRef.current.currentTime = safeTarget
+        }
+        if (activeLessonIdRef.current) {
+          applyLiveTrackerSnapshotRef.current(
+            activeLessonIdRef.current,
+            trackerRef.current.getSnapshot()
+          )
+        }
+        return
+      }
+
+      const blockedSpeedKeys = new Set([
         '<',
         '>',
         ',',
         '.',
-        '0',
-        '1',
-        '2',
-        '3',
-        '4',
-        '5',
-        '6',
-        '7',
-        '8',
-        '9',
-        'MediaFastForward',
-        'MediaRewind',
         'MediaTrackNext',
         'MediaTrackPrevious',
       ])
 
-      if (blockedSeekOrSpeedKeys.has(key)) {
+      if (blockedSpeedKeys.has(key)) {
         e.preventDefault()
         e.stopPropagation()
-        showToastRef.current('Không được phép tua nhanh hoặc thay đổi tốc độ video.')
+        showToastRef.current('Không thể thay đổi tốc độ video.')
         return
       }
 
@@ -1162,19 +1868,40 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
   }, [])
 
   // Lesson switching handler — saves active lesson position BEFORE switching ID
+  // (force=true so the position is persisted even if the 5s throttle/dedupe would skip it)
   const handleSelectLesson = (lesson: StudentLessonItem) => {
     if (lesson.id === activeLessonId) return
 
     if (activeLessonId) {
-      saveCurrentPosition(activeLessonId, false)
+      sampleActivePlayerTime(activeLessonId)
+      if (playerRef.current && ytReadyRef.current) {
+        try {
+          playerRef.current.pauseVideo?.()
+        } catch {
+          // ignore
+        }
+      } else if (videoRef.current && !videoRef.current.paused) {
+        videoRef.current.pause()
+      }
+      saveCurrentPosition(activeLessonId, false, true)
     }
 
     setActiveLessonId(lesson.id)
     setIsPlaying(false)
     setIsExerciseOpen(false)
-    setQuizSubmitted(false)
     setCurrentQuestionIndex(0)
     setPlayerError(null)
+
+    if (lesson.status === 'completed') {
+      const exercise = getLessonExercise(lesson)
+      const allCorrect: Record<number, boolean> = {}
+      exercise.questions.forEach((_, idx) => {
+        allCorrect[idx] = true
+      })
+      setCorrectAnswersMap((prev) => ({ ...prev, [lesson.id]: allCorrect }))
+      setUnlockedExerciseMap((prev) => ({ ...prev, [lesson.id]: true }))
+    }
+
     showToast(`Đã chuyển tới ${lesson.title}`)
   }
 
@@ -1215,148 +1942,195 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
     }))
   }
 
-  const handleSubmitQuiz = () => {
+  const handleCheckAnswer = () => {
     if (!currentLessonItem) return
     const questions = currentLessonExercise.questions
     const total = questions.length
     if (total === 0) return
 
-    const firstUnansweredIdx = questions.findIndex((_, idx) => !selectedAnswers[idx])
-    if (firstUnansweredIdx !== -1) {
-      setCurrentQuestionIndex(firstUnansweredIdx)
-      showToast('Vui lòng chọn đáp án cho tất cả câu hỏi trước khi nộp bài.')
-      return
-    }
+    const isAlreadyCompleted = currentLessonItem.status === 'completed'
 
-    let correctCount = 0
-    questions.forEach((q, idx) => {
-      if (selectedAnswers[idx] === q.correctOptionId) {
-        correctCount++
-      }
+    const validation = validateExerciseSubmission({
+      questions,
+      selectedAnswers,
+      isAlreadyCompleted,
     })
 
-    setQuizSubmitted(true)
-
-    if (correctCount < total) {
-      // Any wrong answer: immediately close popup, reset tracker, and replay video from start
-      handleRetryVideo(
-        `Bạn trả lời đúng ${correctCount}/${total} câu hỏi. Vì chọn đáp án chưa chính xác, hệ thống tự động phát lại video từ đầu để bạn ôn tập lại!`
-      )
+    if (!validation.allAnswered) {
+      showToast(validation.message)
+      if (validation.unansweredIndex !== undefined) {
+        setCurrentQuestionIndex(validation.unansweredIndex)
+      }
       return
     }
 
-    // All answers correct: auto-close popup, mark 100% + is_completed: true, sync sidebar & backend
-    const completedLessonId = currentLessonItem.id
-    const dur =
-      trackerRef.current.getDuration() ||
-      currentLessonItem.durationSeconds ||
-      videoDuration ||
-      0
-    const finalPosition = Math.floor(
-      Math.max(
-        trackerRef.current.getLessonId() === completedLessonId
-          ? trackerRef.current.getLastValidTime()
-          : currentLessonItem.lastPositionSeconds,
-        dur
-      )
-    )
-
-    if (trackerRef.current.getLessonId() === completedLessonId) {
-      trackerRef.current.markLessonCompleted()
-    }
-
-    setQuizSubmitted(false)
-    setIsExerciseOpen(false)
-    setVideoCompletedByLesson((prev) => ({ ...prev, [completedLessonId]: true }))
-    setVideoWatchedPercent(100)
-
-    setLessonsList((prev) =>
-      prev.map((item) =>
-        item.id === completedLessonId
-          ? {
-              ...item,
-              status: 'completed',
-              progressPercent: 100,
-              lastPositionSeconds: finalPosition,
-            }
-          : item
-      )
-    )
-
-    void handleUpdateProgress(
-      completedLessonId,
-      finalPosition,
-      100,
-      true,
-      dur > 0 ? dur : undefined,
-      false
-    )
-    showToast('🎉 Chính xác 100%! Bạn đã hoàn thành bài học.')
-  }
-
-  const handleRetryVideo = (customMessage?: string) => {
-    const lessonId = activeLessonId
-    const targetLesson = lessonsListRef.current.find((l) => l.id === lessonId)
-    const alreadyCompleted = Boolean(targetLesson?.status === 'completed')
-    const dur =
-      trackerRef.current.getDuration() ||
-      targetLesson?.durationSeconds ||
-      videoDuration ||
-      0
-
-    setIsExerciseOpen(false)
-    setQuizSubmitted(false)
-    setSelectedAnswersMap((prev) => ({
+    const { passed, message, correctMap, scorePercent } = validation
+    const latestExerciseResult: LatestExerciseResult = { scorePercent, passed }
+    setLatestExerciseResultMap((prev) => ({
       ...prev,
-      [lessonId]: {},
+      [currentLessonItem.id]: latestExerciseResult,
     }))
-    setCurrentQuestionIndex(0)
+    writeLatestExerciseResult(currentLessonItem.id, latestExerciseResult)
 
-    trackerRef.current.resetForReplay(Date.now())
-    setVideoCompletedByLesson((prev) => ({ ...prev, [lessonId]: false }))
-    setVideoWatchedPercent(0)
-    setVideoCurrentTime(0)
+    if (passed) {
+      // Score >= 80%: Mark exercise and lesson completed
+      const completedLessonId = currentLessonItem.id
+      const dur =
+        trackerRef.current.getDuration() ||
+        currentLessonItem.durationSeconds ||
+        videoDuration ||
+        0
+      const finalPosition = Math.floor(
+        Math.max(
+          trackerRef.current.getLessonId() === completedLessonId
+            ? trackerRef.current.getLastValidTime()
+            : currentLessonItem.lastPositionSeconds,
+          dur
+        )
+      )
 
-    if (videoRef.current) {
-      videoRef.current.currentTime = 0
-      videoRef.current.playbackRate = 1
-      void videoRef.current.play().catch(() => {})
-    } else if (playerRef.current && ytReadyRef.current) {
+      if (trackerRef.current.getLessonId() === completedLessonId) {
+        trackerRef.current.markLessonCompleted()
+      }
+
       try {
-        playerRef.current.seekTo?.(0, true)
-        playerRef.current.playVideo?.()
+        localStorage.removeItem(`lesson_retry_required:${completedLessonId}`)
       } catch {
         // ignore
       }
-    }
+      clearPendingPlaybackCache(completedLessonId)
 
-    if (lessonId) {
+      savedLessonStateRef.current[completedLessonId] = {
+        lastPositionSeconds: finalPosition,
+        furthestWatchedTime: Math.max(dur, finalPosition),
+        progressPercent: 100,
+        isCompleted: true,
+      }
+
+      setCorrectAnswersMap((prev) => ({
+        ...prev,
+        [completedLessonId]: correctMap,
+      }))
+      setVideoCompletedByLesson((prev) => ({ ...prev, [completedLessonId]: true }))
+      setUnlockedExerciseMap((prev) => ({ ...prev, [completedLessonId]: true }))
+      setVideoWatchedPercent(100)
+      if (dur > 0) {
+        setMaxSeekableTime(dur)
+      }
+      setIsExerciseOpen(false)
+
       setLessonsList((prev) =>
         prev.map((item) =>
-          item.id === lessonId
+          item.id === completedLessonId
             ? {
                 ...item,
-                lastPositionSeconds: 0,
-                ...(alreadyCompleted ? {} : { progressPercent: 0 }),
+                status: 'completed',
+                progressPercent: 100,
+                lastPositionSeconds: finalPosition,
               }
             : item
         )
       )
+
       void handleUpdateProgress(
-        lessonId,
-        0,
-        alreadyCompleted ? 100 : 0,
-        alreadyCompleted,
+        completedLessonId,
+        finalPosition,
+        100,
+        true,
         dur > 0 ? dur : undefined,
         false
       )
-    }
+      showToast(message)
+    } else if (isAlreadyCompleted) {
+      // CASE B: Lesson already completed — preserve 100% video & sidebar progress,
+      // keep exercise unlocked/accessible, and do NOT require rewatching the video.
+      showToast(message)
+    } else {
+      // CASE A: First attempt / not yet completed — reset video & sidebar progress to 0%,
+      // lock exercise again, and require rewatching the entire video from 0:00.
+      const failedLessonId = currentLessonItem.id
+      const dur =
+        trackerRef.current.getDuration() ||
+        currentLessonItem.durationSeconds ||
+        videoDuration ||
+        0
 
-    showToast(
-      customMessage ||
-        'Đang phát lại từ đầu để bạn ôn tập trước khi làm bài kiểm tra.'
-    )
+      try {
+        localStorage.setItem(`lesson_retry_required:${failedLessonId}`, 'true')
+      } catch {
+        // ignore
+      }
+      clearPendingPlaybackCache(failedLessonId)
+
+      savedLessonStateRef.current[failedLessonId] = {
+        lastPositionSeconds: 0,
+        furthestWatchedTime: 0,
+        progressPercent: 0,
+        isCompleted: false,
+      }
+      pendingRestoreSecondsRef.current = 0
+      isRestoringPositionRef.current = false
+      lastSavedKeyRef.current = ''
+      lastSaveTimeRef.current = 0
+
+      // Reset tracker state (anti-seek locks forward seeking beyond 0)
+      trackerRef.current.resetForRequiredReplay(Date.now())
+
+      // Reset UI state & locks
+      setVideoWatchedPercent(0)
+      setVideoCurrentTime(0)
+      setMaxSeekableTime(0)
+      setVideoCompletedByLesson((prev) => ({ ...prev, [failedLessonId]: false }))
+      setUnlockedExerciseMap((prev) => ({ ...prev, [failedLessonId]: false }))
+      setSelectedAnswersMap((prev) => ({ ...prev, [failedLessonId]: {} }))
+      setCorrectAnswersMap((prev) => ({ ...prev, [failedLessonId]: {} }))
+      setCurrentQuestionIndex(0)
+      setIsExerciseOpen(false)
+
+      // Update lessons list state (sidebar progress resets to 0%)
+      setLessonsList((prev) =>
+        prev.map((item) =>
+          item.id === failedLessonId
+            ? {
+                ...item,
+                status: 'not_started',
+                progressPercent: 0,
+                lastPositionSeconds: 0,
+              }
+            : item
+        )
+      )
+
+      // Persist reset progress to backend API
+      void handleUpdateProgress(
+        failedLessonId,
+        0,
+        0,
+        false,
+        dur > 0 ? dur : undefined,
+        false,
+        true
+      )
+
+      // Reset video player to beginning and start replay
+      if (videoRef.current) {
+        videoRef.current.currentTime = 0
+        videoRef.current.playbackRate = 1
+        void videoRef.current.play().catch(() => {})
+      } else if (playerRef.current && ytReadyRef.current) {
+        try {
+          playerRef.current.seekTo?.(0, true)
+          playerRef.current.playVideo?.()
+        } catch {
+          // ignore
+        }
+      }
+
+      showToast(message)
+    }
   }
+
+
 
   const handleAddComment = (e: React.FormEvent) => {
     e.preventDefault()
@@ -1583,17 +2357,43 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                       className="h-full w-full rounded-2xl object-contain bg-black"
                       onLoadedMetadata={(e) => {
                         const target = e.currentTarget
-                        const lessonId = currentLessonItem.id
                         target.playbackRate = 1
                         target.muted = isMutedRef.current
-                        const dur = Number.isFinite(target.duration) ? target.duration : 0
-                        const { restorePosition } = trackerRef.current.setDuration(dur)
-
-                        if (restorePosition > 0 && dur > restorePosition) {
-                          trackerRef.current.beginAuthorizedSeek(restorePosition, Date.now())
-                          target.currentTime = restorePosition
+                        applyPendingHtml5Restore(target, currentLessonItem.id)
+                      }}
+                      onLoadedData={(e) => {
+                        if (pendingRestoreSecondsRef.current > 0) {
+                          applyPendingHtml5Restore(e.currentTarget, currentLessonItem.id)
                         }
-                        applyLiveTrackerSnapshot(lessonId, trackerRef.current.getSnapshot())
+                      }}
+                      onCanPlay={(e) => {
+                        if (pendingRestoreSecondsRef.current > 0) {
+                          applyPendingHtml5Restore(e.currentTarget, currentLessonItem.id)
+                        }
+                      }}
+                      onSeeked={(e) => {
+                        const target = e.currentTarget
+                        if (
+                          pendingRestoreSecondsRef.current > 0 &&
+                          Math.abs(target.currentTime - pendingRestoreSecondsRef.current) <= 1.5
+                        ) {
+                          pendingRestoreSecondsRef.current = 0
+                          isRestoringPositionRef.current = false
+                          trackerRef.current.onTimeSample(
+                            target.currentTime,
+                            Date.now(),
+                            target.playbackRate
+                          )
+                          applyLiveTrackerSnapshot(
+                            currentLessonItem.id,
+                            trackerRef.current.getSnapshot()
+                          )
+                          if (pendingPlayRef.current) {
+                            pendingPlayRef.current = false
+                            target.playbackRate = 1
+                            void target.play().catch(() => {})
+                          }
+                        }
                       }}
                       onSeeking={(e) => {
                         const target = e.currentTarget
@@ -1610,8 +2410,19 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                         }
                       }}
                       onPlay={(e) => {
-                        if (Math.abs(e.currentTarget.playbackRate - 1) > 0.05) {
-                          e.currentTarget.playbackRate = 1
+                        const target = e.currentTarget
+                        if (
+                          isRestoringPositionRef.current ||
+                          (pendingRestoreSecondsRef.current > 0 &&
+                            Math.abs(target.currentTime - pendingRestoreSecondsRef.current) > 1.5)
+                        ) {
+                          target.pause()
+                          pendingPlayRef.current = true
+                          applyPendingHtml5Restore(target, currentLessonItem.id)
+                          return
+                        }
+                        if (Math.abs(target.playbackRate - 1) > 0.05) {
+                          target.playbackRate = 1
                         }
                         trackerRef.current.onPlay(Date.now())
                         setIsPlaying(true)
@@ -1623,14 +2434,39 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                         trackerRef.current.onPauseOrBuffer()
                       }}
                       onPause={(e) => {
+                        const target = e.currentTarget
+                        if (
+                          !isRestoringPositionRef.current &&
+                          pendingRestoreSecondsRef.current === 0 &&
+                          !target.ended &&
+                          Number.isFinite(target.currentTime) &&
+                          target.currentTime >= 0
+                        ) {
+                          trackerRef.current.onTimeSample(
+                            target.currentTime,
+                            Date.now(),
+                            target.playbackRate || 1
+                          )
+                        }
                         trackerRef.current.onPauseOrBuffer()
                         setIsPlaying(false)
-                        if (!e.currentTarget.ended) {
-                          saveCurrentPosition(currentLessonItem.id, false)
+                        applyLiveTrackerSnapshot(
+                          currentLessonItem.id,
+                          trackerRef.current.getSnapshot()
+                        )
+                        if (!target.ended) {
+                          saveCurrentPosition(currentLessonItem.id, false, true)
                         }
                       }}
                       onTimeUpdate={(e) => {
                         const target = e.currentTarget
+                        if (
+                          pendingRestoreSecondsRef.current > 0 &&
+                          Math.abs(target.currentTime - pendingRestoreSecondsRef.current) > 1.5
+                        ) {
+                          applyPendingHtml5Restore(target, currentLessonItem.id)
+                          return
+                        }
                         if (Math.abs(target.playbackRate - 1) > 0.05) {
                           target.playbackRate = 1
                         }
@@ -1715,13 +2551,23 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
 
                     <div className="flex items-center gap-2">
                       {currentLessonItem.status === 'completed' ? (
-                        <span className="flex items-center gap-1 rounded-full bg-emerald-500/90 px-2.5 py-1 text-xs font-semibold text-white shadow-sm">
-                          <Check size={13} /> Đã hoàn thành 100%
-                        </span>
-                      ) : isCurrentLessonVideoCompleted ? (
-                        <span className="flex items-center gap-1 rounded-full bg-amber-500/90 px-2.5 py-1 text-xs font-semibold text-white shadow-sm">
-                          Đã xem hết • Hoàn thành bài tập để đạt 100%
-                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setIsExerciseOpen(true)}
+                          className="flex items-center gap-1 rounded-full bg-emerald-500/90 hover:bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white shadow-sm cursor-pointer transition-colors"
+                          title="Làm lại bài tập"
+                        >
+                          <Check size={13} /> Đã hoàn thành 100% • Làm lại bài tập
+                        </button>
+                      ) : isCurrentLessonVideoCompleted || unlockedExerciseMap[currentLessonItem.id] ? (
+                        <button
+                          type="button"
+                          onClick={() => setIsExerciseOpen(true)}
+                          className="flex items-center gap-1 rounded-full bg-amber-500/90 hover:bg-amber-600 px-2.5 py-1 text-xs font-semibold text-white shadow-sm cursor-pointer transition-colors"
+                          title="Mở bài tập để làm tiếp"
+                        >
+                          📝 Làm bài tập ({Object.keys(selectedAnswers).length}/{currentLessonExercise.totalQuestions} đã chọn)
+                        </button>
                       ) : (
                         <span
                           className="flex items-center gap-1.5 rounded-full bg-black/60 backdrop-blur-sm px-3 py-1 text-xs font-medium text-white/85"
@@ -1753,13 +2599,59 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                     </button>
                   )}
 
-                {/* Bottom Controls Bar (minimal: Play/Pause, Volume, Time, Fullscreen) */}
+                {/* Bottom Controls Bar */}
                 {(currentYouTubeId || isHtml5Video) && !playerError && (
                   <div
                     className={`video-bottom-controls ${
                       !isControlsVisible && isPlaying ? 'video-controls-hidden' : ''
                     }`}
                   >
+                    {/* Interactive Scrubber Bar */}
+                    <div
+                      className="video-progress-scrubber"
+                      onClick={handleSeekScrubber}
+                      onPointerDown={handleScrubberPointerDown}
+                      onPointerMove={handleScrubberPointerMove}
+                      onPointerUp={handleScrubberPointerUp}
+                      onPointerCancel={handleScrubberPointerUp}
+                      role="slider"
+                      tabIndex={0}
+                      aria-label="Tiến độ video"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={
+                        videoDuration > 0
+                          ? Math.round((videoCurrentTime / videoDuration) * 100)
+                          : 0
+                      }
+                    >
+                      <div
+                        className="scrubber-watched-track"
+                        style={{
+                          width: `${
+                            videoDuration > 0
+                              ? Math.min(
+                                  100,
+                                  (maxSeekableTime / videoDuration) * 100
+                                )
+                              : 0
+                          }%`,
+                        }}
+                      />
+                      <div
+                        className="scrubber-fill"
+                        style={{
+                          width: `${
+                            videoDuration > 0
+                              ? Math.min(100, (videoCurrentTime / videoDuration) * 100)
+                              : 0
+                          }%`,
+                        }}
+                      >
+                        <span className="scrubber-thumb" />
+                      </div>
+                    </div>
+
                     <div className="video-controls-row">
                       <div className="video-controls-left">
                         <button
@@ -1860,6 +2752,7 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                           </span>
                           <div className="quiz-bubbles-list">
                             {currentLessonExercise.questions.map((q, idx) => {
+                              const isCorrect = Boolean(correctAnswersMap[activeLessonId]?.[idx])
                               const isAnswered = Boolean(selectedAnswers[idx])
                               const isActive = idx === currentQuestionIndex
                               return (
@@ -1868,7 +2761,13 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                                   type="button"
                                   onClick={() => setCurrentQuestionIndex(idx)}
                                   className={`quiz-bubble ${
-                                    isActive ? 'active' : isAnswered ? 'completed' : 'pending'
+                                    isActive
+                                      ? 'active'
+                                      : isCorrect
+                                      ? 'completed'
+                                      : isAnswered
+                                      ? 'completed'
+                                      : 'pending'
                                   }`}
                                   aria-label={`Câu ${idx + 1}`}
                                 >
@@ -1887,6 +2786,7 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                       <div className="quiz-question-box">
                         <span className="question-tag-pill">
                           {currentQuestion.questionNumberStr}
+                          {currentLessonItem.status === 'completed' && ' • ĐÃ HOÀN THÀNH'}
                         </span>
                         <h3 className="question-text-heading">{currentQuestion.questionText}</h3>
 
@@ -1966,11 +2866,15 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                         <button
                           type="button"
                           className="btn-submit-quiz cursor-pointer"
-                          onClick={handleSubmitQuiz}
+                          onClick={handleCheckAnswer}
+                          aria-label="Check Answer"
+                          title="Check Answer"
                         >
                           <Check size={15} />
                           <span>
-                            {quizSubmitted ? 'Nộp lại bài kiểm tra' : 'Nộp Bài Kiểm Tra'}
+                            {currentLessonItem.status === 'completed'
+                              ? 'Kiểm tra đáp án (Làm lại)'
+                              : 'Kiểm tra đáp án (Check Answer)'}
                           </span>
                         </button>
                       </div>
@@ -2140,6 +3044,10 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                 lessonsList.map((lesson) => {
                   const isSelected = lesson.id === activeLessonId
                   const isCompleted = lesson.status === 'completed'
+                  const sidebarInfo = formatSidebarLessonInfo(
+                    lesson,
+                    latestExerciseResultMap[lesson.id]
+                  )
 
                   return (
                     <div
@@ -2175,22 +3083,33 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                       <div className="lesson-item-text-group">
                         <h4 className="lesson-item-title">{lesson.title}</h4>
                         <div className="lesson-item-meta">
-                          <span>⏱ {lesson.duration} • </span>
-                          {isCompleted ? (
-                            <strong className="text-emerald-600 font-semibold">
-                              Đã Hoàn Thành ✓ (100%)
-                            </strong>
-                          ) : isSelected ? (
-                            <span className="text-brand-600 font-medium">
-                              ĐANG CHỌN / ĐANG HỌC ({lesson.progressPercent}%)
+                          <div className="lesson-meta-line">
+                            <span>{sidebarInfo.durationText} · </span>
+                            <span
+                              className={
+                                sidebarInfo.isCompleted
+                                  ? 'text-emerald-600 font-semibold'
+                                  : 'text-brand-600 font-medium'
+                              }
+                            >
+                              {sidebarInfo.statusText}
                             </span>
-                          ) : lesson.progressPercent > 0 ? (
-                            <span className="text-brand-600 font-medium">
-                              Đang Học ({lesson.progressPercent}%)
+                          </div>
+                          <div className="lesson-meta-line lesson-meta-secondary">
+                            {sidebarInfo.playbackPositionLine}
+                          </div>
+                          <div className="lesson-meta-line">
+                            <span>Bài tập: {sidebarInfo.exerciseScorePercent}% · </span>
+                            <span
+                              className={
+                                sidebarInfo.exercisePassed
+                                  ? 'text-emerald-600 font-semibold'
+                                  : 'text-ink-500 font-medium'
+                              }
+                            >
+                              {sidebarInfo.exerciseStatusText}
                             </span>
-                          ) : (
-                            <span>Chưa Bắt Đầu (0%)</span>
-                          )}
+                          </div>
                         </div>
                       </div>
                     </div>
