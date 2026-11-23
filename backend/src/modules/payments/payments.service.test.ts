@@ -429,6 +429,64 @@ describe('SePay pending order reuse', () => {
     }
   })
 
+  it('returns dynamic VietQR paymentInformation when bank details are configured even in hosted mode', async () => {
+    const original = {
+      mode: env.sepayCheckoutMode,
+      merchantId: env.sepayMerchantId,
+      secretKey: env.sepaySecretKey,
+      bankCode: env.sepayBankCode,
+      bankName: env.sepayBankName,
+      accountNumber: env.sepayAccountNumber,
+      accountName: env.sepayAccountName,
+    }
+    Object.assign(env, {
+      sepayCheckoutMode: 'hosted',
+      sepayMerchantId: 'test-merchant',
+      sepaySecretKey: 'test-secret',
+      sepayBankCode: 'VCB',
+      sepayBankName: 'Vietcombank',
+      sepayAccountNumber: '0123456789',
+      sepayAccountName: 'YOUR VOICE ENGLISH',
+    })
+    const pendingOrder = { ...createOrder('pending'), amount: 75000, expired_at: new Date(Date.now() + 60_000).toISOString() }
+    const repository = {
+      findPublishedCourse: async () => ({
+        id: COURSE_ID,
+        title: 'English course',
+        slug: 'english-course',
+        description: null,
+        thumbnail_url: null,
+        price: 100000,
+        discounted_price: 75000,
+      }),
+      findStudentSummary: async () => ({ id: STUDENT_ID, fullName: 'Student', email: 'student@example.test', phoneNumber: null }),
+      hasActiveEnrollment: async () => false,
+      createOrReusePendingOrder: async () => pendingOrder,
+    }
+    try {
+      const result = await new PaymentService(repository as never).createOrder({ studentId: STUDENT_ID, courseId: COURSE_ID })
+      assert.ok(result.paymentInformation)
+      assert.equal(result.paymentInformation.bankName, 'Vietcombank')
+      assert.equal(result.paymentInformation.accountNumber, '0123456789')
+      assert.equal(result.paymentInformation.accountName, 'YOUR VOICE ENGLISH')
+      assert.equal(result.paymentInformation.amount, 75000)
+      assert.equal(result.paymentInformation.transferContent, pendingOrder.transfer_content)
+      const qrUrl = new URL(result.paymentInformation.qrCodeUrl)
+      assert.equal(qrUrl.searchParams.get('amount'), '75000')
+      assert.equal(qrUrl.searchParams.get('des'), pendingOrder.transfer_content)
+    } finally {
+      Object.assign(env, {
+        sepayCheckoutMode: original.mode,
+        sepayMerchantId: original.merchantId,
+        sepaySecretKey: original.secretKey,
+        sepayBankCode: original.bankCode,
+        sepayBankName: original.bankName,
+        sepayAccountNumber: original.accountNumber,
+        sepayAccountName: original.accountName,
+      })
+    }
+  })
+
   it('rejects guest checkout with 403 when email is not a verified student account', async () => {
     const repository = {
       findVerifiedStudentByEmail: async () => null,

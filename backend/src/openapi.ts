@@ -490,11 +490,14 @@ export const openApiDocument = {
         tags: ['Authentication'],
         summary: 'Register a student account',
         description:
-          'Creates a pending, unverified PostgreSQL student profile (is_verified = false, status = pending) and stores its bcrypt password hash in the private auth_credentials table. Selected course IDs must identify published courses. Request a verification code using the resend endpoint, then verify it (sets is_verified = true while keeping status pending) and complete course payment before logging in. The role is always assigned server-side as STUDENT; a client-supplied role is ignored. Requires the database auth and registration profile migrations.',
+          'Creates a pending, unverified PostgreSQL student profile (is_verified = false, status = pending) or reuses an existing pending student profile with the same email (updating selectedCourseIds for pending accounts, returning 202 with savedRegistration when unverified, or returning 200 with verificationRequired = false to skip OTP and proceed directly to checkout when already verified). Rejects registration with 409 when an active verified or non-reusable account already exists. Stores bcrypt password hashes in auth_credentials. The role is always assigned server-side as STUDENT; a client-supplied role is ignored.',
         operationId: 'register',
         requestBody: jsonBody('RegisterRequest'),
         responses: {
-          '202': jsonResponse('Account created and awaiting email verification', {
+          '200': jsonResponse('Existing verified pending account reused; skip OTP and proceed to checkout', {
+            $ref: '#/components/schemas/RegistrationPendingResponse',
+          }),
+          '202': jsonResponse('Account created or pending unverified account reused and awaiting email verification', {
             $ref: '#/components/schemas/RegistrationPendingResponse',
           }),
           '409': jsonResponse('Email is already registered', {
@@ -1039,9 +1042,19 @@ export const openApiDocument = {
             type: 'object',
             required: ['verificationRequired', 'email', 'selectedCourseIds'],
             properties: {
-              verificationRequired: { type: 'boolean', enum: [true] },
+              verificationRequired: { type: 'boolean' },
               email: { type: 'string', format: 'email' },
               selectedCourseIds: { type: 'array', items: { type: 'string', format: 'uuid' } },
+              reusedExistingAccount: { type: 'boolean' },
+              savedRegistration: {
+                type: 'object',
+                properties: {
+                  fullName: { type: 'string' },
+                  dateOfBirth: { type: 'string', format: 'date', nullable: true },
+                  phoneNumber: { type: 'string', nullable: true },
+                  selectedCourseIds: { type: 'array', items: { type: 'string', format: 'uuid' } },
+                },
+              },
             },
           },
         },

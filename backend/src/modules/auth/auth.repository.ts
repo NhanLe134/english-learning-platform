@@ -29,6 +29,14 @@ export type GoogleIdentityResolution =
   | { status: 'resolved'; user: UserProfile }
   | { status: 'link_required' | 'conflict' }
 
+export interface StudentRegistrationAccountResult extends UserProfile {
+  reusedExistingAccount?: boolean
+  registrationDetails?: {
+    dateOfBirth: string | null
+    selectedCourseIds: string[]
+  }
+}
+
 const USER_COLUMNS =
   'id,email,full_name,nickname,phone_number,role,avatar_url,status,is_verified,created_at,updated_at'
 const QUALIFIED_USER_COLUMNS = USER_COLUMNS.split(',')
@@ -265,11 +273,142 @@ export class AuthRepository {
     phoneNumber: string,
     selectedCourseIds: string[],
     googleDetails?: { phoneNumber: string | null; dateOfBirth: string | null; avatarUrl: string | null; googleId: string }
-  ): Promise<UserProfile> {
+  ): Promise<StudentRegistrationAccountResult> {
+    const normalizedEmail = email.trim().toLowerCase()
     const passwordHash = await bcrypt.hash(password, 12)
     const client = await getDatabasePool().connect()
+    let txFinished = false
     try {
       await client.query('BEGIN')
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+        [`profile-email:${normalizedEmail}`]
+      )
+      const existing = await client.query(
+        `SELECT ${QUALIFIED_USER_COLUMNS},
+                to_char(d.date_of_birth, 'YYYY-MM-DD') AS registration_date_of_birth,
+                d.selected_course_ids AS registration_selected_course_ids
+         FROM public.profiles AS p
+         LEFT JOIN public.auth_registration_details AS d ON d.user_id = p.id
+         WHERE lower(p.email) = $1
+         FOR UPDATE OF p`,
+        [normalizedEmail]
+      )
+      const existingRow = existing.rows[0] as Record<string, unknown> | undefined
+      if (existingRow) {
+        const existingUser = mapUser(existingRow)
+        const existingCourseIds = Array.isArray(existingRow.registration_selected_course_ids)
+          ? existingRow.registration_selected_course_ids.map(String)
+          : []
+        if (
+          (existingUser.status === 'active' && existingUser.is_verified) ||
+          existingUser.status !== 'pending' ||
+          existingUser.role !== 'STUDENT'
+        ) {
+          await client.query('ROLLBACK')
+          txFinished = true
+          throw new Error('Email is already registered')
+        }
+
+        if (existingUser.is_verified) {
+          const { rows: detailRows } = await client.query(
+            `INSERT INTO public.auth_registration_details
+              (user_id, date_of_birth, selected_course_ids, google_id)
+             VALUES ($1, $2, $3::UUID[], $4)
+             ON CONFLICT (user_id) DO UPDATE
+             SET selected_course_ids = CASE
+                   WHEN cardinality(EXCLUDED.selected_course_ids) > 0 THEN EXCLUDED.selected_course_ids
+                   ELSE auth_registration_details.selected_course_ids
+                 END
+             RETURNING to_char(date_of_birth, 'YYYY-MM-DD') AS date_of_birth, selected_course_ids`,
+            [
+              existingUser.id,
+              dateOfBirth ?? googleDetails?.dateOfBirth ?? null,
+              selectedCourseIds,
+              googleDetails?.googleId ?? null,
+            ]
+          )
+          const detailsRow = detailRows[0] as Record<string, unknown> | undefined
+          await client.query('COMMIT')
+          txFinished = true
+          return {
+            ...existingUser,
+            reusedExistingAccount: true,
+            registrationDetails: {
+              dateOfBirth: typeof detailsRow?.date_of_birth === 'string'
+                ? detailsRow.date_of_birth
+                : (typeof existingRow.registration_date_of_birth === 'string'
+                  ? existingRow.registration_date_of_birth
+                  : null),
+              selectedCourseIds: Array.isArray(detailsRow?.selected_course_ids)
+                ? detailsRow.selected_course_ids.map(String)
+                : existingCourseIds,
+            },
+          }
+        }
+
+        const { rows: updatedRows } = await client.query(
+          `UPDATE public.profiles
+           SET full_name = COALESCE(NULLIF($2, ''), full_name),
+               phone_number = COALESCE(NULLIF($3, ''), phone_number),
+               avatar_url = COALESCE(avatar_url, $4),
+               updated_at = now()
+           WHERE id = $1 AND status = 'pending' AND is_verified = false
+           RETURNING ${USER_COLUMNS}`,
+          [
+            existingUser.id,
+            fullName,
+            phoneNumber || googleDetails?.phoneNumber || null,
+            googleDetails?.avatarUrl ?? null,
+          ]
+        )
+        const updatedRow = updatedRows[0] as Record<string, unknown> | undefined
+        if (!updatedRow) {
+          throw new Error('Unable to update pending authentication account in PostgreSQL')
+        }
+        const { rows: detailRows } = await client.query(
+          `INSERT INTO public.auth_registration_details
+            (user_id, date_of_birth, selected_course_ids, google_id)
+           VALUES ($1, $2, $3::UUID[], $4)
+           ON CONFLICT (user_id) DO UPDATE
+           SET date_of_birth = COALESCE(EXCLUDED.date_of_birth, auth_registration_details.date_of_birth),
+               selected_course_ids = CASE
+                 WHEN cardinality(EXCLUDED.selected_course_ids) > 0 THEN EXCLUDED.selected_course_ids
+                 ELSE auth_registration_details.selected_course_ids
+               END,
+               google_id = COALESCE(auth_registration_details.google_id, EXCLUDED.google_id)
+           RETURNING to_char(date_of_birth, 'YYYY-MM-DD') AS date_of_birth, selected_course_ids`,
+          [
+            existingUser.id,
+            dateOfBirth ?? googleDetails?.dateOfBirth ?? null,
+            selectedCourseIds,
+            googleDetails?.googleId ?? null,
+          ]
+        )
+        const detailsRow = detailRows[0] as Record<string, unknown> | undefined
+        await client.query(
+          `INSERT INTO public.auth_credentials (user_id, password_hash)
+           VALUES ($1, $2)
+           ON CONFLICT (user_id) DO UPDATE
+           SET password_hash = EXCLUDED.password_hash, updated_at = now()`,
+          [existingUser.id, passwordHash]
+        )
+        await client.query('COMMIT')
+        txFinished = true
+        return {
+          ...mapUser(updatedRow),
+          reusedExistingAccount: true,
+          registrationDetails: {
+            dateOfBirth: typeof detailsRow?.date_of_birth === 'string'
+              ? detailsRow.date_of_birth
+              : null,
+            selectedCourseIds: Array.isArray(detailsRow?.selected_course_ids)
+              ? detailsRow.selected_course_ids.map(String)
+              : selectedCourseIds,
+          },
+        }
+      }
+
       const { rows } = await client.query(
         `INSERT INTO public.profiles
           (id, email, full_name, nickname, phone_number, role, avatar_url,
@@ -278,7 +417,7 @@ export class AuthRepository {
           (gen_random_uuid(), $1, $2, NULL, $3, 'STUDENT',
            $4, 'pending', false, now(), now())
          RETURNING ${USER_COLUMNS}`,
-        [email, fullName, phoneNumber || googleDetails?.phoneNumber || null, googleDetails?.avatarUrl ?? null]
+        [normalizedEmail, fullName, phoneNumber || googleDetails?.phoneNumber || null, googleDetails?.avatarUrl ?? null]
       )
       const row = rows[0] as Record<string, unknown> | undefined
       if (!row) throw new Error('Database did not return the created user profile')
@@ -294,12 +433,18 @@ export class AuthRepository {
         [row.id, passwordHash]
       )
       await client.query('COMMIT')
+      txFinished = true
       return mapUser(row)
     } catch (error) {
-      try {
-        await client.query('ROLLBACK')
-      } catch (rollbackError) {
-        throw new AggregateError([error, rollbackError], 'Failed to roll back account creation')
+      if (!txFinished) {
+        try {
+          await client.query('ROLLBACK')
+        } catch (rollbackError) {
+          throw new AggregateError([error, rollbackError], 'Failed to roll back account creation')
+        }
+      }
+      if (error instanceof Error && error.message === 'Email is already registered') {
+        throw error
       }
       if (
         error &&

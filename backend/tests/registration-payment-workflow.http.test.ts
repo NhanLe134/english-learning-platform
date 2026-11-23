@@ -44,6 +44,7 @@ const frontendOrigin = new URL(env.frontendUrl).origin
 const refreshCookieName = 'english_learning_platform_refresh'
 
 const COURSE_ID = '2f0e53db-e138-4dd1-9314-b0045631cb36'
+const COURSE_ID_2 = '3f0e53db-e138-4dd1-9314-b0045631cb37'
 const COURSE_CATALOG_ENTRY: CourseCatalogEntry = {
   id: COURSE_ID,
   title: 'IELTS Speaking Mastery',
@@ -148,9 +149,10 @@ describe('End-to-end registration, OTP verification, SePay payment, and login wo
 
     courseService.validateSelectedCourseIds = async (ids) => {
       const list = Array.isArray(ids) ? ids.map(String) : []
+      const validIds = new Set([COURSE_ID, COURSE_ID_2])
       return {
-        courseIds: list.filter((id) => id === COURSE_ID),
-        missingIds: list.filter((id) => id !== COURSE_ID),
+        courseIds: list.filter((id) => validIds.has(id)),
+        missingIds: list.filter((id) => !validIds.has(id)),
       }
     }
     courseService.getCourseForPaidOrder = async (courseId) =>
@@ -187,14 +189,47 @@ describe('End-to-end registration, OTP verification, SePay payment, and login wo
       phoneNumber,
       selectedCourseIds,
     ) => {
-      const existing = findStoredUserByEmail(email)
+      const normalizedEmail = email.trim().toLowerCase()
+      const existing = findStoredUserByEmail(normalizedEmail)
       if (existing) {
-        throw new Error('duplicate email')
+        if ((existing.status === 'active' && existing.is_verified) || existing.status !== 'pending' || existing.role !== 'STUDENT') {
+          throw new Error('Email is already registered')
+        }
+        if (existing.is_verified) {
+          const nextCourseIds = selectedCourseIds.length > 0
+            ? selectedCourseIds
+            : (existing.registration_course_ids ?? [])
+          existing.registration_course_ids = nextCourseIds
+          return {
+            ...existing,
+            reusedExistingAccount: true,
+            registrationDetails: {
+              dateOfBirth: existing.date_of_birth ?? null,
+              selectedCourseIds: nextCourseIds,
+            },
+          }
+        }
+        existing.full_name = fullName || existing.full_name
+        existing.phone_number = phoneNumber || existing.phone_number
+        existing.date_of_birth = dateOfBirth ?? existing.date_of_birth ?? null
+        existing.registration_course_ids = selectedCourseIds.length > 0
+          ? selectedCourseIds
+          : (existing.registration_course_ids ?? [])
+        existing.password = password
+        existing.updated_at = new Date().toISOString()
+        return {
+          ...existing,
+          reusedExistingAccount: true,
+          registrationDetails: {
+            dateOfBirth: existing.date_of_birth ?? null,
+            selectedCourseIds: existing.registration_course_ids,
+          },
+        }
       }
       const now = new Date().toISOString()
       const user: StoredStudent = {
         id: randomUUID(),
-        email: email.trim().toLowerCase(),
+        email: normalizedEmail,
         full_name: fullName,
         nickname: null,
         phone_number: phoneNumber,
@@ -898,5 +933,134 @@ describe('End-to-end registration, OTP verification, SePay payment, and login wo
     } finally {
       Object.assign(env, { sepayCheckoutMode: previousMode })
     }
+  })
+
+  it('handles pending unverified reuse, verified pending OTP skip, and active account 409 blocking over HTTP', async () => {
+    const email = 'pending.reuse.http@example.test'
+    const password = 'StrongPendingPassword123!'
+
+    // 1. Initial registration creates unverified pending student for COURSE_ID
+    const firstRes = await fetch(`${baseUrl}/api/auth/register`, {
+      method: 'POST',
+      headers: { Origin: frontendOrigin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fullName: 'Pending Reuse Student',
+        dateOfBirth: '2001-03-15',
+        email,
+        phoneNumber: '0912345670',
+        password,
+        confirmPassword: password,
+        selectedCourseIds: [COURSE_ID],
+      }),
+    })
+    assert.equal(firstRes.status, 202)
+    const student = findStoredUserByEmail(email)
+    assert.ok(student)
+    const originalId = student.id
+    assert.equal(student.is_verified, false)
+    assert.equal(student.status, 'pending')
+
+    // 2. Re-register with a different course (COURSE_ID_2) while unverified & pending -> reuses same ID (202)
+    const secondRes = await fetch(`${baseUrl}/api/auth/register`, {
+      method: 'POST',
+      headers: { Origin: frontendOrigin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fullName: 'Pending Reuse Student',
+        dateOfBirth: '2001-03-15',
+        email,
+        phoneNumber: '0912345670',
+        password,
+        confirmPassword: password,
+        selectedCourseIds: [COURSE_ID_2],
+      }),
+    })
+    assert.equal(secondRes.status, 202)
+    const secondBody = (await secondRes.json()) as {
+      data: {
+        verificationRequired: boolean
+        reusedExistingAccount?: boolean
+        selectedCourseIds: string[]
+        savedRegistration?: { fullName: string; dateOfBirth: string | null }
+      }
+    }
+    assert.equal(secondBody.data.verificationRequired, true)
+    assert.equal(secondBody.data.reusedExistingAccount, true)
+    assert.deepEqual(secondBody.data.selectedCourseIds, [COURSE_ID_2])
+    assert.equal(secondBody.data.savedRegistration?.dateOfBirth, '2001-03-15')
+    assert.equal(student.id, originalId)
+    assert.equal([...users.values()].filter((item) => item.email === email).length, 1)
+
+    // Complete OTP verification -> is_verified = true, status = pending
+    const resendRes = await fetch(`${baseUrl}/api/auth/register/verification/resend`, {
+      method: 'POST',
+      headers: { Origin: frontendOrigin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    })
+    assert.equal(resendRes.status, 202)
+    const otpMail = sentEmails.findLast((item) => item.to === email)
+    const otp = otpMail?.html.match(/\b(\d{6})\b/)?.[1]
+    assert.ok(otp)
+    const verifyRes = await fetch(`${baseUrl}/api/auth/register/verification/verify`, {
+      method: 'POST',
+      headers: { Origin: frontendOrigin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, otp }),
+    })
+    assert.equal(verifyRes.status, 200)
+    assert.equal(student.is_verified, true)
+    assert.equal(student.status, 'pending')
+
+    // 3. Verified pending student registers again with COURSE_ID -> skips OTP (200) and redirects to checkout
+    const verifiedRes = await fetch(`${baseUrl}/api/auth/register`, {
+      method: 'POST',
+      headers: { Origin: frontendOrigin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fullName: 'Overwrite Attempt',
+        dateOfBirth: '1998-01-01',
+        email,
+        phoneNumber: '0988888888',
+        password: 'AnotherPassword123!',
+        confirmPassword: 'AnotherPassword123!',
+        selectedCourseIds: [COURSE_ID],
+      }),
+    })
+    assert.equal(verifiedRes.status, 200)
+    const verifiedBody = (await verifiedRes.json()) as {
+      data: { verificationRequired: boolean; reusedExistingAccount?: boolean; selectedCourseIds: string[] }
+    }
+    assert.equal(verifiedBody.data.verificationRequired, false)
+    assert.equal(verifiedBody.data.reusedExistingAccount, true)
+    assert.deepEqual(verifiedBody.data.selectedCourseIds, [COURSE_ID])
+    assert.equal(student.full_name, 'Pending Reuse Student')
+    assert.equal(student.password, password)
+    assert.equal(student.is_verified, true)
+    assert.equal(student.status, 'pending')
+
+    // Verified pending student can proceed directly to guest order creation
+    const guestOrderRes = await fetch(`${baseUrl}/api/payment/orders/guest`, {
+      method: 'POST',
+      headers: { Origin: frontendOrigin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ courseId: COURSE_ID, email }),
+    })
+    assert.equal(guestOrderRes.status, 201)
+
+    // 4. Active verified student cannot register again (409) and status stays active
+    student.status = 'active'
+    const activeRes = await fetch(`${baseUrl}/api/auth/register`, {
+      method: 'POST',
+      headers: { Origin: frontendOrigin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fullName: 'Active Blocked',
+        dateOfBirth: '2001-03-15',
+        email,
+        phoneNumber: '0912345670',
+        password,
+        confirmPassword: password,
+        selectedCourseIds: [COURSE_ID],
+      }),
+    })
+    assert.equal(activeRes.status, 409)
+    assert.equal(student.status, 'active')
+    assert.equal(student.is_verified, true)
+    assert.equal([...users.values()].filter((item) => item.email === email).length, 1)
   })
 })

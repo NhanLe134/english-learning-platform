@@ -94,7 +94,13 @@ export class PaymentService {
       error_url: `${env.frontendUrl}/checkout?payment=error&orderId=${encodeURIComponent(order.id)}`,
       cancel_url: `${env.frontendUrl}/checkout?payment=cancel&orderId=${encodeURIComponent(order.id)}`,
     })
-    const paymentInformation = env.sepayCheckoutMode === 'direct_qr'
+    const hasBankTransferConfig = Boolean(
+      env.sepayBankCode &&
+      env.sepayBankName &&
+      env.sepayAccountNumber &&
+      env.sepayAccountName,
+    )
+    const paymentInformation = (env.sepayCheckoutMode === 'direct_qr' || hasBankTransferConfig)
       ? createBankTransferInformation(order.amount, order.transfer_content, order.expired_at ?? '')
       : null
     return {

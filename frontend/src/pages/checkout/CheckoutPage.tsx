@@ -211,6 +211,7 @@ export function CheckoutPage() {
   const [showQr, setShowQr] = useState(false)
   const [paymentOrder, setPaymentOrder] = useState<CreateOrderResponse | null>(null)
   const paymentOrderRef = useRef<CreateOrderResponse | null>(null)
+  const hasInlineQr = Boolean(paymentOrder?.paymentInformation || paymentOrder?.checkoutMode === 'direct_qr')
 
   const paymentReturn = initialUrl.paymentReturnParam
   const returnOrderId = initialUrl.orderIdParam
@@ -316,13 +317,6 @@ export function CheckoutPage() {
   }, [])
 
   const handleQrOrderStatusChange = useCallback((status: string) => {
-    if (status === 'paid') {
-      const orderId = paymentOrderRef.current?.orderId
-      if (orderId) {
-        window.location.assign(`/checkout/success?orderId=${encodeURIComponent(orderId)}`)
-      }
-      return
-    }
     setExpired(['expired', 'failed', 'cancelled'].includes(status))
   }, [])
 
@@ -364,7 +358,7 @@ export function CheckoutPage() {
             <ChevronRight size={13} />
             <span>Thanh toán an toàn</span>
           </nav>
-          {paymentOrder?.checkoutMode === 'hosted' && paymentOrder.expiredAt && (
+          {!hasInlineQr && paymentOrder?.checkoutMode === 'hosted' && paymentOrder.expiredAt && (
             <OrderHoldTimer onExpire={expireOrder} expiresAt={paymentOrder.expiredAt} />
           )}
         </div>
@@ -391,7 +385,7 @@ export function CheckoutPage() {
           </section>
         )}
 
-        <div className={`checkout-layout${paymentOrder?.checkoutMode === 'direct_qr' ? ' is-direct-qr' : ''}`}>
+        <div className={`checkout-layout${hasInlineQr ? ' is-direct-qr' : ''}`}>
           <div className="checkout-main-column">
             <section className="checkout-card checkout-student-card" aria-labelledby="student-info-title">
               <header className="checkout-section-heading">
@@ -436,7 +430,7 @@ export function CheckoutPage() {
               </div>
             </section>
 
-            {showQr && (!expired || paymentOrder?.checkoutMode === 'direct_qr') && (
+            {showQr && (!expired || hasInlineQr) && (
               <SePayVietQR
                 courseId={course.id}
                 studentEmail={currentStudent.email}
