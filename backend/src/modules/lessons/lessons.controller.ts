@@ -61,7 +61,10 @@ export class LessonsController {
       const user = getAuthUser(res)
       const courseId = String(req.params.courseId || '')
       const result = await lessonsService.createLessonInCourse(courseId, user, req.body)
-      res.status(201).json({ success: true, data: { lesson: result.lesson } })
+      res.status(201).json({
+        success: true,
+        data: { lesson: result.lesson, quiz_saved: result.quizSaved },
+      })
     } catch (error) {
       handleError(error, res, next)
     }
@@ -105,6 +108,42 @@ export class LessonsController {
         message: 'Đã xóa bài giảng',
         data: { id: lessonId },
       })
+    } catch (error) {
+      handleError(error, res, next)
+    }
+  }
+
+  // Lấy quiz của bài giảng (học viên: che đáp án đúng)
+  async getQuiz(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const user = getAuthUser(res)
+      const lessonId = String(req.params.lessonId || '')
+      const quiz = await lessonsService.getQuizForLesson(lessonId, user)
+      res.status(200).json({ success: true, data: quiz })
+    } catch (error) {
+      handleError(error, res, next)
+    }
+  }
+
+  // Lưu/tạo quiz cho bài giảng (ADMIN/TEACHER)
+  async saveQuiz(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const user = getAuthUser(res)
+      const lessonId = String(req.params.lessonId || '')
+      const result = await lessonsService.saveQuizForLesson(lessonId, user, req.body)
+      res.status(200).json({ success: true, data: result })
+    } catch (error) {
+      handleError(error, res, next)
+    }
+  }
+
+  // Học viên nộp bài quiz — chấm điểm server-side
+  async submitQuiz(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const user = getAuthUser(res)
+      const lessonId = String(req.params.lessonId || '')
+      const result = await lessonsService.submitQuiz(lessonId, user, req.body)
+      res.status(200).json({ success: true, data: result })
     } catch (error) {
       handleError(error, res, next)
     }

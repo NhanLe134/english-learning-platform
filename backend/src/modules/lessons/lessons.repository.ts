@@ -489,9 +489,25 @@ export class LessonsRepository {
     }
   }
 
-  // Xóa bài giảng (hàng đợi ôn tập/tiến độ liên quan tự xóa theo CASCADE)
+  // Xóa bài giảng (materials/progress/exercises tự xóa theo CASCADE;
+  // câu hỏi quiz đứng độc lập nên phải dọn tay trước khi xóa)
   async deleteLesson(lessonId: string): Promise<boolean> {
-    const { data, error } = await this.getClient()
+    const client = this.getClient()
+
+    // Dọn câu hỏi quiz gắn với bài giảng (exercise_questions → questions → exercise)
+    const old = await client.from('exercises').select('id').eq('lesson_id', lessonId).maybeSingle()
+    if (old.data?.id) {
+      const oldQuestionIds = await client
+        .from('exercise_questions')
+        .select('question_id')
+        .eq('exercise_id', old.data.id)
+      await client.from('exercise_questions').delete().eq('exercise_id', old.data.id)
+      for (const q of oldQuestionIds.data ?? []) {
+        await client.from('questions').delete().eq('id', (q as { question_id: string }).question_id)
+      }
+    }
+
+    const { data, error } = await client
       .from('lessons')
       .delete()
       .eq('id', lessonId)
@@ -501,6 +517,205 @@ export class LessonsRepository {
       throw new Error(`Không thể xóa bài giảng: ${error.message}`)
     }
     return Array.isArray(data) && data.length > 0
+  }
+
+  // ============ QUIZ TRẮC NGHIỆM THEO BÀI GIẢNG ============
+
+  async findExerciseByLesson(lessonId: string): Promise<{
+    id: string
+    title: string
+    lesson_id: string | null
+    questions: {
+      id: string
+      content: string
+      options: string[]
+      correct_index: number | null
+      sort_order: number
+    }[]
+  } | null> {
+    const client = this.getClient()
+    const { data: exercise, error } = await client
+      .from('exercises')
+      .select('id, title, lesson_id')
+      .eq('lesson_id', lessonId)
+      .limit(1)
+      .maybeSingle()
+
+    if (error || !exercise) return null
+
+    const { data: links, error: linkError } = await client
+      .from('exercise_questions')
+      .select('question_id, sort_order, questions (id, content, correct_answer)')
+      .eq('exercise_id', exercise.id)
+      .order('sort_order', { ascending: true })
+
+    if (linkError) return null
+
+    const questions = (links ?? []).map((link: any) => {
+      const q = Array.isArray(link.questions) ? link.questions[0] : link.questions
+      const answer = (q?.correct_answer ?? {}) as { options?: string[]; correct_index?: number }
+      return {
+        id: q?.id as string,
+        content: q?.content as string,
+        options: answer.options ?? [],
+        correct_index: typeof answer.correct_index === 'number' ? answer.correct_index : null,
+        sort_order: link.sort_order as number,
+      }
+    })
+
+    return {
+      id: exercise.id,
+      title: exercise.title,
+      lesson_id: exercise.lesson_id,
+      questions,
+    }
+  }
+
+  async replaceQuizForLesson(
+    lessonId: string,
+    teacherId: string,
+    courseId: string,
+    title: string,
+    questions: Array<{ content: string; options: string[]; correct_index: number }>
+  ): Promise<{ exerciseId: string }> {
+    const client = this.getClient()
+
+    // Xóa quiz cũ (nếu có): exercise_questions → questions rơi tự do → exercise
+    const old = await client
+      .from('exercises')
+      .select('id')
+      .eq('lesson_id', lessonId)
+      .maybeSingle()
+    if (old.data?.id) {
+      const oldQuestionIds = await client
+        .from('exercise_questions')
+        .select('question_id')
+        .eq('exercise_id', old.data.id)
+      await client.from('exercise_questions').delete().eq('exercise_id', old.data.id)
+      for (const q of oldQuestionIds.data ?? []) {
+        await client.from('questions').delete().eq('id', (q as { question_id: string }).question_id)
+      }
+      await client.from('exercises').delete().eq('id', old.data.id)
+    }
+
+    const { data: exercise, error: exError } = await client
+      .from('exercises')
+      .insert({
+        teacher_id: teacherId,
+        course_id: courseId,
+        lesson_id: lessonId,
+        title,
+        status: 'published',
+      })
+      .select('id')
+      .single()
+    if (exError || !exercise) {
+      throw new Error(`Không thể tạo quiz: ${exError?.message || 'no row'}`)
+    }
+
+    for (const [index, question] of questions.entries()) {
+      const { data: qRow, error: qError } = await client
+        .from('questions')
+        .insert({
+          question_type: 'multiple_choice',
+          content: question.content,
+          correct_answer: { options: question.options, correct_index: question.correct_index },
+          points: 1,
+        })
+        .select('id')
+        .single()
+      if (qError || !qRow) {
+        throw new Error(`Không thể tạo câu hỏi ${index + 1}: ${qError?.message || 'no row'}`)
+      }
+      const { error: linkError } = await client.from('exercise_questions').insert({
+        exercise_id: exercise.id,
+        question_id: qRow.id,
+        sort_order: index + 1,
+        points: 1,
+      })
+      if (linkError) {
+        throw new Error(`Không thể gắn câu hỏi vào quiz: ${linkError.message}`)
+      }
+    }
+
+    return { exerciseId: exercise.id }
+  }
+
+  /** Nộp bài quiz: chấm điểm server-side, lưu attempt + câu trả lời học viên */
+  async submitQuizAttempt(
+    lessonId: string,
+    exerciseId: string,
+    studentId: string,
+    answers: Array<{ question_id: string; selected_index: number }>
+  ): Promise<{
+    total: number
+    correct_count: number
+    passed: boolean
+    score_percent: number
+    results: Array<{ question_id: string; is_correct: boolean; correct_index: number }>
+  }> {
+    const exercise = await this.findExerciseByLesson(lessonId)
+    const target = exercise?.id
+    if (!exercise || !target) {
+      throw new Error('Bài giảng này chưa có quiz.')
+    }
+
+    let totalPoints = 0
+    let earnedPoints = 0
+    const results: Array<{ question_id: string; is_correct: boolean; correct_index: number }> = []
+
+    for (const q of exercise.questions) {
+      const correct = q.correct_index ?? 0
+      const given = answers.find((a) => a.question_id === q.id)
+      const isCorrect = given?.selected_index === correct
+      results.push({ question_id: q.id, is_correct: isCorrect, correct_index: correct })
+      totalPoints += 1
+      if (isCorrect) earnedPoints += 1
+    }
+
+    const scorePercent = totalPoints > 0 ? Math.round((earnedPoints / totalPoints) * 100) : 0
+
+    // Điều kiện đậu: đúng ≥ 60% số câu (làm tròn lên)
+    // VD: 1 câu → đúng 1 · 2 câu → đúng 2 · 3 câu → đúng 2 · 4 câu → đúng 3
+    const requiredCorrect = Math.ceil(totalPoints * 0.6)
+    const passed = results.length > 0 && earnedPoints >= requiredCorrect
+
+    const { data: attempt, error: attemptError } = await this.getClient()
+      .from('exercise_attempts')
+      .insert({
+        exercise_id: target,
+        student_id: studentId,
+        submitted_at: new Date().toISOString(),
+        score: scorePercent,
+        status: 'graded',
+      })
+      .select('id')
+      .single()
+    if (attemptError || !attempt) {
+      throw new Error(`Không thể lưu kết quả quiz: ${attemptError?.message || 'no row'}`)
+    }
+
+    for (const answer of answers) {
+      const result = results.find((x) => x.question_id === answer.question_id)
+      await this.getClient().from('student_answers').upsert(
+        {
+          attempt_id: attempt.id,
+          question_id: answer.question_id,
+          answer: { selected_index: answer.selected_index },
+          is_correct: result?.is_correct ?? false,
+          score: result?.is_correct ? 1 : 0,
+        },
+        { onConflict: 'attempt_id,question_id' }
+      )
+    }
+
+    return {
+      total: exercise.questions.length,
+      correct_count: results.filter((r) => r.is_correct).length,
+      passed,
+      score_percent: scorePercent,
+      results,
+    }
   }
 
   async updateLesson(

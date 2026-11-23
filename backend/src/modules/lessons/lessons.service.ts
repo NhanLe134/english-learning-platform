@@ -236,7 +236,7 @@ export class LessonsService {
     courseId: string,
     user: AuthenticatedUser,
     value: unknown
-  ): Promise<{ lesson: LessonItem }> {
+  ): Promise<{ lesson: LessonItem; quizSaved: boolean }> {
     await this.assertCourseAccess(courseId, user)
     if (!value || typeof value !== 'object') {
       throw new LessonRequestError('Lesson details are required.', 400)
@@ -246,6 +246,11 @@ export class LessonsService {
     const description = this.validateDescription(body.description)
     const videoUrl = this.validateVideoUrl(body.video_url)
     const status = this.validateStatus(body.status)
+
+    // Quiz tùy chọn gửi kèm — validate TOÀN BỘ trước khi tạo lesson để lỗi
+    // validate không bao giờ tạo dở bài giảng trong DB
+    const quiz = this.parseQuizPayload(body.quiz)
+
     const sortOrder = await this.repo.nextLessonSortOrder(courseId, null)
     const lesson = await this.repo.insertLesson({
       course_id: courseId,
@@ -256,7 +261,25 @@ export class LessonsService {
       status,
       sort_order: sortOrder,
     })
-    return { lesson }
+
+    if (quiz) {
+      try {
+        await this.repo.replaceQuizForLesson(
+          lesson.id,
+          user.id,
+          courseId,
+          quiz.title,
+          quiz.questions
+        )
+      } catch (err) {
+        // Supabase REST không có transaction — nếu tạo quiz lỗi sau khi đã tạo
+        // lesson thì xóa lesson vừa tạo để không để lại bài giảng dở dang
+        await this.repo.deleteLesson(lesson.id).catch(() => {})
+        throw err
+      }
+    }
+
+    return { lesson, quizSaved: Boolean(quiz) }
   }
 
   /** Tạo bài giảng mới trong một chủ đề */
@@ -382,6 +405,169 @@ export class LessonsService {
 
     const updated = await this.repo.updateLesson(lessonId, payload)
     return { lesson: updated, moved }
+  }
+
+  /**
+   * Lấy quiz của bài giảng. Học viên: ĐÁP ÁN ĐÚNG bị che (chấm điểm server-side).
+   * Admin/Teacher: trả đầy đủ đáp án để chỉnh sửa.
+   */
+  async getQuizForLesson(
+    lessonId: string,
+    user: AuthenticatedUser
+  ): Promise<{
+    title: string
+    questions: Array<{
+      id: string
+      content: string
+      options: string[]
+      correct_index?: number
+    }>
+  } | null> {
+    if (!UUID_PATTERN.test(lessonId)) {
+      throw new LessonRequestError('Lesson ID must be a valid UUID.', 400)
+    }
+    const lesson = await this.repo.findLessonById(lessonId)
+    if (!lesson) {
+      throw new LessonRequestError('Lesson not found.', 404)
+    }
+    await this.assertCourseAccess(lesson.course_id, user)
+
+    const quiz = await this.repo.findExerciseByLesson(lessonId)
+    if (!quiz) return null
+
+    const isStudent = user.role === 'STUDENT'
+    return {
+      title: quiz.title,
+      questions: quiz.questions
+        .slice()
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .map((q) => ({
+          id: q.id,
+          content: q.content,
+          options: q.options,
+          ...(isStudent ? {} : { correct_index: q.correct_index ?? 0 }),
+        })),
+    }
+  }
+
+  /**
+   * Validate payload quiz (từ PUT /lessons/:id/quiz hoặc trường quiz trong
+   * payload tạo lesson). value null/undefined → null (không có quiz).
+   * Trả về { title, questions } đã làm sạch nếu có quiz.
+   */
+  private parseQuizPayload(
+    value: unknown,
+    fallbackTitle = ''
+  ): { title: string; questions: Array<{ content: string; options: string[]; correct_index: number }> } | null {
+    if (value === undefined || value === null) return null
+    if (typeof value !== 'object' || Array.isArray(value)) {
+      throw new LessonRequestError('Quiz payload must be an object.', 400)
+    }
+    const body = value as Record<string, unknown>
+    const title =
+      typeof body.title === 'string' && body.title.trim()
+        ? body.title.trim()
+        : fallbackTitle || 'Quiz kiểm tra'
+
+    const rawQuestions = Array.isArray(body.questions) ? body.questions : []
+    if (rawQuestions.length === 0) {
+      throw new LessonRequestError('Quiz phải có ít nhất một câu hỏi.', 400)
+    }
+
+    const questions = rawQuestions.map((q: any, index: number) => {
+      const content = typeof q?.content === 'string' ? q.content.trim() : ''
+      if (!content) throw new LessonRequestError(`Câu hỏi ${index + 1}: nội dung không được để trống.`, 400)
+      const options = Array.isArray(q?.options) ? q.options.map((o: unknown) => String(o ?? '').trim()) : []
+      if (options.length < 2 || options.some((o: unknown) => !o)) {
+        throw new LessonRequestError(`Câu hỏi ${index + 1}: phải có ít nhất 2 đáp án, không để trống.`, 400)
+      }
+      const correctIndex = Number(q?.correct_index)
+      if (!Number.isSafeInteger(correctIndex) || correctIndex < 0 || correctIndex >= options.length) {
+        throw new LessonRequestError(`Câu hỏi ${index + 1}: đáp án đúng không hợp lệ.`, 400)
+      }
+      return { content, options, correct_index: correctIndex }
+    })
+
+    return { title, questions }
+  }
+
+  /**
+   * Lưu/tạo quiz cho bài giảng (chỉ định đáp án đúng qua correct_index 0-3)
+   */
+  async saveQuizForLesson(
+    lessonId: string,
+    user: AuthenticatedUser,
+    value: unknown
+  ): Promise<{ title: string; total_questions: number }> {
+    if (!UUID_PATTERN.test(lessonId)) {
+      throw new LessonRequestError('Lesson ID must be a valid UUID.', 400)
+    }
+    const lesson = await this.repo.findLessonById(lessonId)
+    if (!lesson) {
+      throw new LessonRequestError('Lesson not found.', 404)
+    }
+    await this.assertCourseAccess(lesson.course_id, user)
+
+    if (value === undefined || value === null) {
+      throw new LessonRequestError('Quiz payload is required.', 400)
+    }
+    const quiz = this.parseQuizPayload(value, `Quiz: ${lesson.title}`)
+    if (!quiz) {
+      throw new LessonRequestError('Quiz payload is required.', 400)
+    }
+
+    await this.repo.replaceQuizForLesson(lessonId, user.id, lesson.course_id, quiz.title, quiz.questions)
+    return { title: quiz.title, total_questions: quiz.questions.length }
+  }
+
+  /**
+   * Học viên nộp bài quiz — chấm điểm server-side, lưu attempt + câu trả lời
+   */
+  async submitQuiz(
+    lessonId: string,
+    user: AuthenticatedUser,
+    value: unknown
+  ): Promise<{
+    total: number
+    correct_count: number
+    passed: boolean
+    score_percent: number
+    results: Array<{ question_id: string; is_correct: boolean; correct_index: number }>
+  }> {
+    if (!UUID_PATTERN.test(lessonId)) {
+      throw new LessonRequestError('Lesson ID must be a valid UUID.', 400)
+    }
+    const lesson = await this.repo.findLessonById(lessonId)
+    if (!lesson) {
+      throw new LessonRequestError('Lesson not found.', 404)
+    }
+    await this.assertCourseAccess(lesson.course_id, user)
+
+    if (!value || typeof value !== 'object' || !Array.isArray((value as any).answers)) {
+      throw new LessonRequestError('Answers array is required.', 400)
+    }
+    const answers = (value as { answers: unknown }).answers as Array<{
+      question_id: string
+      selected_index: number
+    }>
+    for (const answer of answers) {
+      if (!answer || typeof answer.question_id !== 'string' || !Number.isSafeInteger(answer.selected_index)) {
+        throw new LessonRequestError('Answers format is invalid.', 400)
+      }
+    }
+
+    const exercise = await this.repo.findExerciseByLesson(lessonId)
+    if (!exercise) {
+      throw new LessonRequestError('Bài giảng này chưa có quiz.', 404)
+    }
+    const knownIds = new Set(exercise.questions.map((q) => q.id))
+    for (const answer of answers) {
+      if (!knownIds.has(answer.question_id)) {
+        throw new LessonRequestError('Câu trả lời chứa câu hỏi không thuộc quiz này.', 400)
+      }
+    }
+
+    return this.repo.submitQuizAttempt(lessonId, exercise.id, user.id, answers)
   }
 
   /**

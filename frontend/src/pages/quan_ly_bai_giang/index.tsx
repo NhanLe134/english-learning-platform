@@ -130,7 +130,7 @@ export function QuanLyBaiGiangKhoaHocPage() {
                   )}
                   <span className="flex items-center gap-1 text-xs text-ink-500">
                     <Layers size={13} className="text-ink-400" />
-                    {totalLessons} bài giảng trong {visibleTopics.length} chủ đề
+                    {totalLessons} bài giảng
                   </span>
                 </div>
               </div>
@@ -155,25 +155,28 @@ export function QuanLyBaiGiangKhoaHocPage() {
               <div className="flex flex-col gap-6">
                 {visibleTopics.map((topic, topicIndex) => (
                   <section
-                    key={topic.id}
+                    key={topic.id ?? 'none'}
                     className="overflow-hidden rounded-lg border border-slate-200 bg-white"
                   >
-                    <header className="flex items-center justify-between border-b border-slate-100 bg-slate-50/60 px-5 py-3">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <span className="flex size-7 shrink-0 items-center justify-center rounded bg-brand-50 text-xs font-bold text-brand-600">
-                          {topicIndex + 1}
-                        </span>
-                        <div className="min-w-0">
-                          <h2 className="truncate text-sm font-semibold text-ink-900">{topic.title}</h2>
-                          {topic.description && (
-                            <p className="truncate text-xs text-ink-500">{topic.description}</p>
-                          )}
+                    {/* Nhóm ảo "Không chia chủ đề" (id null) không hiển thị header */}
+                    {topic.id !== null && (
+                      <header className="flex items-center justify-between border-b border-slate-100 bg-slate-50/60 px-5 py-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span className="flex size-7 shrink-0 items-center justify-center rounded bg-brand-50 text-xs font-bold text-brand-600">
+                            {topicIndex + 1}
+                          </span>
+                          <div className="min-w-0">
+                            <h2 className="truncate text-sm font-semibold text-ink-900">{topic.title}</h2>
+                            {topic.description && (
+                              <p className="truncate text-xs text-ink-500">{topic.description}</p>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                      <span className="shrink-0 text-xs text-ink-500">
-                        {topic.lessons.length} bài
-                      </span>
-                    </header>
+                        <span className="shrink-0 text-xs text-ink-500">
+                          {topic.lessons.length} bài
+                        </span>
+                      </header>
+                    )}
                     <ol className="divide-y divide-slate-100">
                       {topic.lessons.map((lesson, lessonIndex) => {
                         const isPublished = lesson.status === 'published'
@@ -237,7 +240,6 @@ export function QuanLyBaiGiangKhoaHocPage() {
       {/* Drawer xem trước / chỉnh sửa / xóa bài giảng */}
       {previewLesson && previewTopic && (
         <LessonPreviewDrawer
-          topics={topics}
           topicTitle={previewTopic.title}
           lesson={previewLesson}
           onClose={() => setPreview(null)}

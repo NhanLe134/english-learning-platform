@@ -27,6 +27,7 @@ export interface LichDangItem {
   nguon_du_lieu: NguonDuLieu
   ten_tep_nguon?: string | null
   da_gui_thong_bao: boolean
+  ngay_cap_nhat?: string
   thoi_gian_gui_thong_bao?: string | null
   tu_vung: TuVungChiTiet
 }

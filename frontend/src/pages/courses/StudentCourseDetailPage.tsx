@@ -6,7 +6,6 @@ import {
   VolumeX,
   Maximize2,
   Minimize2,
-  Clock,
   User,
   BookOpen,
   ArrowLeft,
@@ -15,10 +14,10 @@ import {
   FileText,
   FileAudio,
   Download,
-  X,
   AlertTriangle,
 } from 'lucide-react'
 import { StudentHeader } from './components/StudentHeader'
+import { StudentQuizOverlay } from './components/StudentQuizOverlay'
 import type { StudentProfile } from './student-courses-data'
 import { useAuth } from '../auth/auth-context'
 import { courseCatalogApi } from './services/courseCatalogApi'
@@ -27,13 +26,12 @@ import {
   lessonApi,
   extractGoogleDriveEmbedUrl,
   extractYouTubeVideoId,
+  type LessonQuiz,
 } from '../them_bai_giang/services/lessonApi'
-import type { QuizQuestion } from './student-course-detail-data'
 import {
   DEFAULT_LESSON_THUMBNAIL,
   formatLessonDuration,
   formatPlaybackTime,
-  getLessonExercise,
   getLessonThumbnail,
   type StudentLessonItem,
 } from './studentLessonHelpers'
@@ -164,9 +162,9 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
   // Exercise & completion states (kept distinct from last_position_seconds)
   const [videoCompletedByLesson, setVideoCompletedByLesson] = useState<Record<string, boolean>>({})
   const [isExerciseOpen, setIsExerciseOpen] = useState(false)
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
-  const [selectedAnswersMap, setSelectedAnswersMap] = useState<Record<string, Record<number, string>>>({})
-  const [quizSubmitted, setQuizSubmitted] = useState(false)
+
+  // Quiz thật từ backend (GET /lessons/:id/quiz — không kèm đáp án đúng)
+  const [lessonQuiz, setLessonQuiz] = useState<LessonQuiz | null>(null)
 
   // Tab & discussion state
   const [activeTab, setActiveTab] = useState<'objectives' | 'attachments' | 'discussion'>('objectives')
@@ -229,7 +227,6 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
   const ytHostRef = useRef<HTMLDivElement | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const playerRef = useRef<any>(null)
-  const quizSectionRef = useRef<HTMLDivElement | null>(null)
 
   const trackerRef = useRef<VideoWatchTracker>(new VideoWatchTracker())
   const playerLessonIdRef = useRef<string>('')
@@ -497,14 +494,21 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
     )
 
     if (res.shouldOpenExercise) {
-      setQuizSubmitted(false)
-      setCurrentQuestionIndex(0)
-      setIsExerciseOpen(true)
-      showToastRef.current(
-        alreadyCompleted
-          ? 'Video đã kết thúc! Bạn có thể làm lại bài kiểm tra ôn tập.'
-          : '🎉 Bạn đã xem hết video! Hãy hoàn thành bài kiểm tra để đạt 100%.'
-      )
+      if (quizStatusRef.current === 'ready') {
+        setIsExerciseOpen(true)
+        showToastRef.current(
+          alreadyCompleted
+            ? 'Video đã kết thúc! Bạn có thể làm lại bài kiểm tra ôn tập.'
+            : '🎉 Bạn đã xem hết video! Hãy hoàn thành bài kiểm tra để đạt 100%.'
+        )
+      } else if (quizStatusRef.current === 'loading') {
+        // Quiz đang tải — vẫn mở, overlay sẽ hiện "Đang tải câu hỏi..."
+        setIsExerciseOpen(true)
+      } else if (quizStatusRef.current === 'error') {
+        showToastRef.current(`Video đã kết thúc nhưng không tải được bài kiểm tra: ${quizErrorRef.current}`)
+      } else {
+        showToastRef.current('Video đã kết thúc. Bài giảng này hiện chưa có bài kiểm tra trắc nghiệm.')
+      }
     }
   }, [])
 
@@ -523,15 +527,8 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
     : null
   const isHtml5Video = Boolean(currentLessonItem?.videoUrl && !currentYouTubeId && !driveEmbedUrl)
 
-  const currentLessonExercise = currentLessonItem
-    ? getLessonExercise(currentLessonItem)
-    : {
-        title: 'Bài tập thực hành',
-        subtitle: 'Kiểm tra kiến thức bài học',
-        totalQuestions: 2,
-        durationMinutes: 5,
-        questions: [] as QuizQuestion[],
-      }
+
+  // Ưu tiên quiz thật từ backend; không có quiz → fallback mock cũ
 
   const isCurrentLessonVideoCompleted = Boolean(
     currentLessonItem &&
@@ -1161,6 +1158,46 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
     return () => window.removeEventListener('keydown', handleKeyDown, true)
   }, [])
 
+  // Tải quiz thật của bài học đang mở (không kèm đáp án đúng — chấm điểm server-side)
+  const [quizStatus, setQuizStatus] = useState<'loading' | 'ready' | 'missing' | 'error'>('loading')
+  const [quizErrorMessage, setQuizErrorMessage] = useState('')
+  const quizStatusRef = useRef<'loading' | 'ready' | 'missing' | 'error'>('loading')
+  const quizErrorRef = useRef('')
+  useEffect(() => {
+    quizStatusRef.current = quizStatus
+  }, [quizStatus])
+  useEffect(() => {
+    quizErrorRef.current = quizErrorMessage
+  }, [quizErrorMessage])
+
+  useEffect(() => {
+    if (!activeLessonId || !accessToken) return
+    let cancelled = false
+    setQuizStatus('loading')
+    setQuizErrorMessage('')
+    setLessonQuiz(null)
+    lessonApi
+      .getQuiz(activeLessonId, accessToken, async () => (await refreshSession()).accessToken)
+      .then((quiz) => {
+        if (cancelled) return
+        if (quiz && quiz.questions.length > 0) {
+          setLessonQuiz(quiz)
+          setQuizStatus('ready')
+        } else {
+          setQuizStatus('missing')
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setQuizStatus('error')
+          setQuizErrorMessage(err instanceof Error ? err.message : 'Không thể tải bài kiểm tra.')
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeLessonId, accessToken, refreshSession])
+
   // Lesson switching handler — saves active lesson position BEFORE switching ID
   const handleSelectLesson = (lesson: StudentLessonItem) => {
     if (lesson.id === activeLessonId) return
@@ -1172,128 +1209,12 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
     setActiveLessonId(lesson.id)
     setIsPlaying(false)
     setIsExerciseOpen(false)
-    setQuizSubmitted(false)
-    setCurrentQuestionIndex(0)
     setPlayerError(null)
     showToast(`Đã chuyển tới ${lesson.title}`)
   }
 
-  // Audio speech synthesis helper inside quiz questions
-  const speakText = (text: string) => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-      showToast(`Đang phát âm: "${text}"`)
-      return
-    }
-    window.speechSynthesis.cancel()
-    const utterance = new SpeechSynthesisUtterance(text)
-    utterance.lang = 'en-US'
-    utterance.rate = 0.9
-    window.speechSynthesis.speak(utterance)
-  }
-
-  // Quiz state & submission handlers
-  const currentQuestion: QuizQuestion =
-    currentLessonExercise.questions[currentQuestionIndex] ??
-    currentLessonExercise.questions[0] ?? {
-      id: 1,
-      questionNumberStr: 'CÂU 01',
-      questionText: 'Đang tải câu hỏi...',
-      audioText: '',
-      options: [],
-      correctOptionId: 'A',
-    }
-
-  const selectedAnswers = selectedAnswersMap[activeLessonId] || {}
-
-  const handleSelectOption = (optionId: string) => {
-    setSelectedAnswersMap((prev) => ({
-      ...prev,
-      [activeLessonId]: {
-        ...(prev[activeLessonId] || {}),
-        [currentQuestionIndex]: optionId,
-      },
-    }))
-  }
-
-  const handleSubmitQuiz = () => {
-    if (!currentLessonItem) return
-    const questions = currentLessonExercise.questions
-    const total = questions.length
-    if (total === 0) return
-
-    const firstUnansweredIdx = questions.findIndex((_, idx) => !selectedAnswers[idx])
-    if (firstUnansweredIdx !== -1) {
-      setCurrentQuestionIndex(firstUnansweredIdx)
-      showToast('Vui lòng chọn đáp án cho tất cả câu hỏi trước khi nộp bài.')
-      return
-    }
-
-    let correctCount = 0
-    questions.forEach((q, idx) => {
-      if (selectedAnswers[idx] === q.correctOptionId) {
-        correctCount++
-      }
-    })
-
-    setQuizSubmitted(true)
-
-    if (correctCount < total) {
-      // Any wrong answer: immediately close popup, reset tracker, and replay video from start
-      handleRetryVideo(
-        `Bạn trả lời đúng ${correctCount}/${total} câu hỏi. Vì chọn đáp án chưa chính xác, hệ thống tự động phát lại video từ đầu để bạn ôn tập lại!`
-      )
-      return
-    }
-
-    // All answers correct: auto-close popup, mark 100% + is_completed: true, sync sidebar & backend
-    const completedLessonId = currentLessonItem.id
-    const dur =
-      trackerRef.current.getDuration() ||
-      currentLessonItem.durationSeconds ||
-      videoDuration ||
-      0
-    const finalPosition = Math.floor(
-      Math.max(
-        trackerRef.current.getLessonId() === completedLessonId
-          ? trackerRef.current.getLastValidTime()
-          : currentLessonItem.lastPositionSeconds,
-        dur
-      )
-    )
-
-    if (trackerRef.current.getLessonId() === completedLessonId) {
-      trackerRef.current.markLessonCompleted()
-    }
-
-    setQuizSubmitted(false)
-    setIsExerciseOpen(false)
-    setVideoCompletedByLesson((prev) => ({ ...prev, [completedLessonId]: true }))
-    setVideoWatchedPercent(100)
-
-    setLessonsList((prev) =>
-      prev.map((item) =>
-        item.id === completedLessonId
-          ? {
-              ...item,
-              status: 'completed',
-              progressPercent: 100,
-              lastPositionSeconds: finalPosition,
-            }
-          : item
-      )
-    )
-
-    void handleUpdateProgress(
-      completedLessonId,
-      finalPosition,
-      100,
-      true,
-      dur > 0 ? dur : undefined,
-      false
-    )
-    showToast('🎉 Chính xác 100%! Bạn đã hoàn thành bài học.')
-  }
-
+  // Nộp bài quiz — chấm điểm SERVER-SIDE (đáp án đúng không bao giờ gửi cho FE).
+  // Quiz thật từ backend; không có quiz → fallback mock chấm local.
   const handleRetryVideo = (customMessage?: string) => {
     const lessonId = activeLessonId
     const targetLesson = lessonsListRef.current.find((l) => l.id === lessonId)
@@ -1305,12 +1226,6 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
       0
 
     setIsExerciseOpen(false)
-    setQuizSubmitted(false)
-    setSelectedAnswersMap((prev) => ({
-      ...prev,
-      [lessonId]: {},
-    }))
-    setCurrentQuestionIndex(0)
 
     trackerRef.current.resetForReplay(Date.now())
     setVideoCompletedByLesson((prev) => ({ ...prev, [lessonId]: false }))
@@ -1798,6 +1713,24 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                       </div>
 
                       <div className="video-controls-right">
+                        {/* Video Drive nhúng không có sự kiện kết thúc → nút mở quiz thủ công */}
+                        {driveEmbedUrl &&
+                          !currentYouTubeId &&
+                          !isHtml5Video &&
+                          quizStatus === 'ready' && (
+                            <button
+                              type="button"
+                              className="control-icon-btn"
+                              onClick={() => {
+                                resetControlsTimeout()
+                                setIsExerciseOpen(true)
+                              }}
+                              title="Làm bài tập trắc nghiệm"
+                              aria-label="Làm bài tập trắc nghiệm"
+                            >
+                              <FileText size={18} />
+                            </button>
+                          )}
                         <button
                           type="button"
                           className="control-icon-btn"
@@ -1814,170 +1747,74 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                   </div>
                 )}
 
-                {/* Exercise Popup Overlay over video container */}
-                {isExerciseOpen && (
-                  <div
-                    ref={quizSectionRef}
-                    className="absolute inset-0 z-40 bg-white flex flex-col text-ink-900 overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200"
-                  >
-                    {/* Header popup */}
-                    <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3 bg-gray-50/90 shrink-0 backdrop-blur-sm">
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg">📝</span>
-                        <div>
-                          <h3 className="text-sm font-bold text-ink-900 leading-tight">
-                            {currentLessonExercise.title}
-                          </h3>
-                          <p className="text-xs text-ink-500 flex items-center gap-1.5 flex-wrap">
-                            <span>{currentLessonExercise.subtitle}</span>
-                            <span>•</span>
-                            <span>{currentLessonExercise.totalQuestions} câu hỏi</span>
-                            <span>•</span>
-                            <span className="inline-flex items-center gap-1">
-                              <Clock size={12} />
-                              {currentLessonExercise.durationMinutes} phút
-                            </span>
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setIsExerciseOpen(false)}
-                        className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-200 hover:text-gray-800 transition-colors cursor-pointer"
-                        title="Đóng bài kiểm tra"
-                      >
-                        <X size={18} />
-                      </button>
-                    </div>
-
-                    {/* Quiz Questions Body */}
-                    <div className="flex-1 overflow-y-auto p-5">
-                      {/* Stepper Header with clickable question bubbles */}
-                      <div className="quiz-stepper-row mb-3">
-                        <div className="quiz-stepper-left">
-                          <span className="quiz-stepper-label">
-                            CÂU HỎI {currentQuestion.id} / {currentLessonExercise.totalQuestions}
-                          </span>
-                          <div className="quiz-bubbles-list">
-                            {currentLessonExercise.questions.map((q, idx) => {
-                              const isAnswered = Boolean(selectedAnswers[idx])
-                              const isActive = idx === currentQuestionIndex
-                              return (
-                                <button
-                                  key={q.id}
-                                  type="button"
-                                  onClick={() => setCurrentQuestionIndex(idx)}
-                                  className={`quiz-bubble ${
-                                    isActive ? 'active' : isAnswered ? 'completed' : 'pending'
-                                  }`}
-                                  aria-label={`Câu ${idx + 1}`}
-                                >
-                                  {idx + 1}
-                                </button>
-                              )
-                            })}
-                          </div>
-                        </div>
-                        <span className="quiz-stepper-count">
-                          {currentQuestionIndex + 1} / {currentLessonExercise.totalQuestions} câu
-                        </span>
-                      </div>
-
-                      {/* Question Box */}
-                      <div className="quiz-question-box">
-                        <span className="question-tag-pill">
-                          {currentQuestion.questionNumberStr}
-                        </span>
-                        <h3 className="question-text-heading">{currentQuestion.questionText}</h3>
-
-                        {/* Audio Listen Box */}
-                        {currentQuestion.audioText && (
-                          <div className="quiz-audio-pronounce-card">
-                            <button
-                              type="button"
-                              className="audio-icon-circle"
-                              onClick={() => speakText(currentQuestion.audioText)}
-                              title="Nghe câu hỏi tiếng Anh"
-                              aria-label="Nghe câu hỏi"
-                            >
-                              <Volume2 size={15} />
-                            </button>
-                            <div className="audio-label-text">
-                              <span>Nghe phát âm mẫu: </span>
-                              <strong>"{currentQuestion.audioText}"</strong>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Options List */}
-                        <div className="quiz-options-group" role="radiogroup" aria-label="Các đáp án">
-                          {currentQuestion.options.map((option) => {
-                            const isSelected = selectedAnswers[currentQuestionIndex] === option.id
-
-                            return (
-                              <button
-                                key={option.id}
-                                type="button"
-                                className={`quiz-option-item ${isSelected ? 'selected' : ''}`}
-                                onClick={() => handleSelectOption(option.id)}
-                                role="radio"
-                                aria-checked={isSelected}
-                              >
-                                <span className="quiz-option-left">
-                                  <span className="quiz-radio-outer">
-                                    {isSelected && <span className="quiz-radio-inner" />}
-                                  </span>
-                                  <span className="quiz-option-text">{option.text}</span>
-                                </span>
-                                <span className="quiz-option-letter-badge">{option.label}</span>
-                              </button>
-                            )
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Navigation & Submit Action Row */}
-                      <div className="quiz-actions-footer mt-4">
-                        <div className="quiz-nav-buttons-group">
-                          <button
-                            type="button"
-                            className="btn-quiz-nav cursor-pointer"
-                            disabled={currentQuestionIndex === 0}
-                            onClick={() => setCurrentQuestionIndex((prev) => Math.max(0, prev - 1))}
-                          >
-                            <span>← Câu trước</span>
-                          </button>
-                          <button
-                            type="button"
-                            className="btn-quiz-nav cursor-pointer"
-                            disabled={
-                              currentQuestionIndex === currentLessonExercise.questions.length - 1
-                            }
-                            onClick={() =>
-                              setCurrentQuestionIndex((prev) =>
-                                Math.min(currentLessonExercise.questions.length - 1, prev + 1)
-                              )
-                            }
-                          >
-                            <span>Câu tiếp theo →</span>
-                          </button>
-                        </div>
-
-                        <button
-                          type="button"
-                          className="btn-submit-quiz cursor-pointer"
-                          onClick={handleSubmitQuiz}
-                        >
-                          <Check size={15} />
-                          <span>
-                            {quizSubmitted ? 'Nộp lại bài kiểm tra' : 'Nộp Bài Kiểm Tra'}
-                          </span>
-                        </button>
-                      </div>
+                {/* Exercise Popup Overlay over video container — thẻ nhỏ căn giữa */}
+                {isExerciseOpen && !lessonQuiz && quizStatus === 'loading' && (
+                  <div className="absolute inset-0 z-50 flex items-center justify-center bg-ink-900/70 backdrop-blur-sm">
+                    <div className="flex items-center gap-2 rounded-2xl bg-white px-5 py-4 text-sm font-semibold text-ink-700 shadow-2xl">
+                      <LoaderCircle size={16} className="animate-spin" />
+                      Đang tải câu hỏi…
                     </div>
                   </div>
                 )}
+                {isExerciseOpen && lessonQuiz && (
+                  <StudentQuizOverlay
+                    questions={lessonQuiz.questions}
+                    lessonTitle={currentLessonItem?.title ?? ''}
+                    onClose={() => setIsExerciseOpen(false)}
+                    onSubmit={async (answers) => {
+                      const result = await lessonApi.submitQuiz(
+                        activeLessonId,
+                        answers,
+                        accessToken,
+                        async () => (await refreshSession()).accessToken,
+                      )
+                      return result
+                    }}
+                    onPassed={() => {
+                      const completedLessonId = currentLessonItem?.id
+                      const dur =
+                        trackerRef.current.getDuration() ||
+                        currentLessonItem?.durationSeconds ||
+                        videoDuration ||
+                        0
+                      const finalPosition = Math.floor(
+                        Math.max(
+                          trackerRef.current.getLessonId() === completedLessonId
+                            ? trackerRef.current.getLastValidTime()
+                            : currentLessonItem?.lastPositionSeconds ?? 0,
+                          dur
+                        )
+                      )
+                      if (completedLessonId) {
+                        if (trackerRef.current.getLessonId() === completedLessonId) {
+                          trackerRef.current.markLessonCompleted()
+                        }
+                        setIsExerciseOpen(false)
+                        setVideoCompletedByLesson((prev) => ({ ...prev, [completedLessonId]: true }))
+                        setVideoWatchedPercent(100)
+                        setLessonsList((prev) =>
+                          prev.map((item) =>
+                            item.id === completedLessonId
+                              ? { ...item, status: 'completed', progressPercent: 100, lastPositionSeconds: finalPosition }
+                              : item,
+                          ),
+                        )
+                        void handleUpdateProgress(
+                          completedLessonId,
+                          finalPosition,
+                          100,
+                          true,
+                          dur > 0 ? dur : undefined,
+                          false,
+                        )
+                        showToast('🎉 Chính xác! Bạn đã hoàn thành bài học.')
+                      }
+                    }}
+                    onFailed={(message) => handleRetryVideo(message)}
+                  />
+                )}
               </div>
+
             </section>
 
             {/* Section C: Tabbed Content & Objectives */}

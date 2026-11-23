@@ -242,21 +242,22 @@ export class CourseRepository {
     }
   }
 
-  // Đếm số bài giảng thật của từng khóa (qua bảng topics trung gian)
+  // Đếm số bài giảng thật của từng khóa — đếm trực tiếp theo lessons.course_id
+  // (bao gồm cả bài KHÔNG chia chủ đề; trước đây đếm qua topics nên bị thiếu)
   private async demBaiGiangTheoKhoa(courseIds: string[], onlyPublished = false): Promise<Map<string, number>> {
     const map = new Map<string, number>()
     if (courseIds.length === 0) return map
     let query = this.clientFactory()
       .from('lessons')
-      .select('id, topics!inner(course_id)')
-      .in('topics.course_id', courseIds)
+      .select('course_id')
+      .in('course_id', courseIds)
     if (onlyPublished) {
       query = query.eq('status', 'published')
     }
     const { data, error } = await query
     if (error) return map
     for (const row of data ?? []) {
-      const cid = (row as { topics?: { course_id?: string } }).topics?.course_id
+      const cid = (row as { course_id?: string }).course_id
       if (cid) map.set(cid, (map.get(cid) ?? 0) + 1)
     }
     return map
