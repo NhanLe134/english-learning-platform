@@ -1,5 +1,5 @@
 import { useContext, useEffect, useState } from 'react'
-import { Layers, Menu, User, X } from 'lucide-react'
+import { Layers, Loader2, LogOut, Menu, User, X } from 'lucide-react'
 import { AuthContext, getRoleHomePath } from '../../pages/auth/auth-context'
 
 export type NavTabId = 'home' | 'about' | 'courses' | 'ebook' | 'workshop' | 'contact'
@@ -149,40 +149,68 @@ export function SiteHeader({ activeTab: explicitActiveTab, brandName = 'Your Eng
 
         {/* Actions */}
         <div className="flex items-center gap-3">
-          <a
-            href={isLoginPage ? '/course' : '/register'}
-            className="rounded-full bg-brand-600 px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-brand-700"
-          >
-            Đăng ký
-          </a>
+          {user ? (
+            <>
+              {/* Chip người dùng đã đăng nhập — thay nút Đăng ký/Đăng nhập cho khách */}
+              <span
+                className="hidden items-center gap-2 rounded-full border border-gray-200 bg-white py-1 pl-1 pr-3 sm:flex"
+                title={user.email}
+              >
+                <span className="flex size-7 items-center justify-center rounded-full bg-brand-600 text-xs font-bold text-white">
+                  {(user.fullName || user.email || '?').charAt(0).toUpperCase()}
+                </span>
+                <span className="flex flex-col leading-tight">
+                  <span className="text-xs font-bold text-ink-900">
+                    {user.fullName || user.email}
+                  </span>
+                  <span className="text-[10px] font-medium text-slate-400">
+                    {user.role === 'STUDENT' ? 'Học viên' : user.role === 'TEACHER' ? 'Giáo viên' : 'Quản trị viên'}
+                  </span>
+                </span>
+              </span>
+              <button
+                type="button"
+                aria-label={`Đăng xuất (${user.email})`}
+                title={`Đăng xuất (${user.email})`}
+                onClick={() => void handleAccountClick()}
+                disabled={loggingOut}
+                className="hidden size-10 items-center justify-center rounded-full border border-brand-600 bg-brand-50 text-brand-600 transition-colors hover:bg-brand-100 sm:flex"
+              >
+                {loggingOut ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <LogOut className="size-4" />
+                )}
+              </button>
+            </>
+          ) : (
+            <>
+              <a
+                href={isLoginPage ? '/course' : '/register'}
+                className="rounded-full bg-brand-600 px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-brand-700"
+              >
+                Đăng ký
+              </a>
 
-          {/* Nút hình người - Bấm để chuyển đến trang đăng nhập */}
-          <button
-            type="button"
-            aria-label={
-              user
-                ? `Tài khoản (${user.email}) - Bấm để đăng xuất`
-                : isLoginPage
-                  ? 'Đang ở trang đăng nhập'
-                  : 'Đăng nhập'
-            }
-            title={
-              user
-                ? `Đăng xuất (${user.email})`
-                : isLoginPage
-                  ? 'Đang ở trang đăng nhập'
-                  : 'Đăng nhập'
-            }
-            onClick={() => void handleAccountClick()}
-            disabled={loggingOut}
-            className={`hidden size-10 items-center justify-center rounded-full border transition-colors sm:flex ${
-              user || isLoginPage
-                ? 'border-brand-600 bg-brand-50 text-brand-600 hover:bg-brand-100'
-                : 'border-gray-200 text-ink-700 hover:border-brand-600 hover:text-brand-600'
-            }`}
-          >
-            <User className="size-5" />
-          </button>
+              {/* Nút hình người - Bấm để chuyển đến trang đăng nhập */}
+              <button
+                type="button"
+                aria-label={
+                  isLoginPage ? 'Đang ở trang đăng nhập' : 'Đăng nhập'
+                }
+                title={isLoginPage ? 'Đang ở trang đăng nhập' : 'Đăng nhập'}
+                onClick={() => void handleAccountClick()}
+                disabled={loggingOut}
+                className={`hidden size-10 items-center justify-center rounded-full border transition-colors sm:flex ${
+                  isLoginPage
+                    ? 'border-brand-600 bg-brand-50 text-brand-600 hover:bg-brand-100'
+                    : 'border-gray-200 text-ink-700 hover:border-brand-600 hover:text-brand-600'
+                }`}
+              >
+                <User className="size-5" />
+              </button>
+            </>
+          )}
 
           {/* Toggle menu mobile */}
           <button

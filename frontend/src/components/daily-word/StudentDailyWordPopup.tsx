@@ -22,6 +22,7 @@ interface FlashcardItem {
   vi_du_tieng_anh: string
   vi_du_tieng_viet?: string
   la_tu_hom_nay: boolean
+  ngay_cap_nhat?: string
 }
 
 // Dữ liệu mẫu dự phòng ban đầu nếu học viên mới chưa có từ trong database
@@ -78,23 +79,23 @@ export const StudentDailyWordPopup: React.FC = () => {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   }
 
-  // Trạng thái "đã xem" lưu theo user: { ngày, ID từ hôm nay đã hiển thị }.
-  // Popup hiện lại khi: sang ngày mới, HOẶC admin đăng TỪ MỚI trong ngày
-  // (ID từ hôm nay khác ID đã xem lần trước).
+  // Trạng thái "đã xem" lưu theo user: { ngày, wordKey } — wordKey định danh
+  // từ hôm nay (tu_vung_id + thời gian cập nhật) nên admin ĐĂNG ĐÈ/đổi từ
+  // trong ngày → wordKey đổi → popup hiện thêm 1 lần nữa với từ mới.
   function seenKey(): string {
     return `daily_word_seen_${user?.id ?? 'guest'}`
   }
-  function readSeen(): { date: string; wordId: string } | null {
+  function readSeen(): { date: string; wordKey: string } | null {
     try {
       const raw = localStorage.getItem(seenKey())
-      return raw ? (JSON.parse(raw) as { date: string; wordId: string }) : null
+      return raw ? (JSON.parse(raw) as { date: string; wordKey: string }) : null
     } catch {
       return null
     }
   }
-  function writeSeen(wordId: string) {
+  function writeSeen(wordKey: string) {
     try {
-      localStorage.setItem(seenKey(), JSON.stringify({ date: todayStr(), wordId }))
+      localStorage.setItem(seenKey(), JSON.stringify({ date: todayStr(), wordKey }))
     } catch {
       // Bỏ qua nếu storage bị chặn
     }
@@ -163,15 +164,16 @@ export const StudentDailyWordPopup: React.FC = () => {
           const list = wordList.length > 0 ? wordList : FALLBACK_WORDS
           setWords(list)
 
-          // Quyết định hiển thị: hiện khi có TỪ MỚI trong ngày
-          // (ID từ hôm nay khác ID đã xem lần trước) hoặc sang ngày mới
+          // Quyết định hiển thị: hiện khi sang ngày mới HOẶC wordKey đổi
+          // (admin đăng đè/đổi từ hôm nay → wordKey khác → hiện thêm 1 lần)
           const today = todayStr()
-          const todayWordId = list.find((w) => w.la_tu_hom_nay)?.id ?? 'fallback'
+          const todayItem = list.find((w) => w.la_tu_hom_nay)
+          const wordKey = todayItem ? `${todayItem.tu_vung_id}|${todayItem.ngay_cap_nhat ?? ''}` : 'fallback'
           const seen = readSeen()
-          const shouldShow = !seen || seen.date !== today || seen.wordId !== todayWordId
+          const shouldShow = !seen || seen.date !== today || seen.wordKey !== wordKey
           if (shouldShow) {
             setIsOpen(true)
-            writeSeen(todayWordId) // Ghi nhận ngay khi hiển thị — mỗi từ chỉ hiện 1 lần
+            writeSeen(wordKey) // Ghi nhận ngay khi hiển thị — mỗi từ chỉ hiện 1 lần
           }
         }
       } catch (err) {
@@ -278,11 +280,11 @@ export const StudentDailyWordPopup: React.FC = () => {
     setTouchStartX(null)
   }
 
-  // Đóng popup: ghi nhận từ hôm nay đã xem — trong ngày không hiện lại từ này.
-  // Nếu admin đăng từ mới (ID khác) popup sẽ hiện thêm một lần nữa.
+  // Đóng popup: ghi nhận wordKey hiện tại — trong ngày không hiện lại từ này.
+  // Nếu admin đăng đè/đổi từ hôm nay → wordKey khác → popup hiện thêm 1 lần nữa.
   function markShownToday() {
-    const todayWordId = words.find((w) => w.la_tu_hom_nay)?.id ?? 'fallback'
-    writeSeen(todayWordId)
+    const todayItem = words.find((w) => w.la_tu_hom_nay)
+    writeSeen(todayItem ? `${todayItem.tu_vung_id}|${todayItem.ngay_cap_nhat ?? ''}` : 'fallback')
     setIsOpen(false)
   }
 

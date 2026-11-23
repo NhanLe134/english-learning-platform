@@ -305,6 +305,71 @@ export const openApiDocument = {
         },
       },
     },
+    '/api/lessons/courses/{courseId}/lessons': {
+      post: {
+        tags: ['Lessons'],
+        summary: 'Create a lesson in a course (no topic)',
+        description:
+          'ADMIN or assigned TEACHER only. Creates a lesson attached directly to the course (topic_id null). An optional quiz payload saves the lesson quiz in the same request; if quiz creation fails after the lesson insert, the lesson is removed again.',
+        operationId: 'createLessonInCourse',
+        security: adminSecurity,
+        parameters: [
+          {
+            in: 'path',
+            name: 'courseId',
+            required: true,
+            schema: { type: 'string' },
+            description: 'Course UUID or URL slug.',
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['title', 'video_url'],
+                properties: {
+                  title: { type: 'string', maxLength: 200 },
+                  description: { type: 'string', nullable: true, maxLength: 2000 },
+                  video_url: { type: 'string', format: 'uri' },
+                  status: { type: 'string', enum: ['draft', 'published'], default: 'draft' },
+                  quiz: {
+                    type: 'object',
+                    nullable: true,
+                    description: 'Optional quiz saved together with the lesson.',
+                    properties: {
+                      title: { type: 'string' },
+                      questions: {
+                        type: 'array',
+                        minItems: 1,
+                        items: {
+                          type: 'object',
+                          required: ['content', 'options', 'correct_index'],
+                          properties: {
+                            content: { type: 'string' },
+                            options: { type: 'array', minItems: 2, items: { type: 'string' } },
+                            correct_index: { type: 'integer', minimum: 0 },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '201': jsonResponse('Created lesson (quiz_saved indicates whether the quiz was saved)'),
+          '400': jsonResponse('Validation error', { $ref: '#/components/schemas/ErrorResponse' }),
+          '401': jsonResponse('Unauthorized', { $ref: '#/components/schemas/ErrorResponse' }),
+          '403': jsonResponse('Teacher not assigned to this course', {
+            $ref: '#/components/schemas/ErrorResponse',
+          }),
+        },
+      },
+    },
     '/api/lessons/lessons/{lessonId}/progress': {
       put: {
         tags: ['Lessons'],

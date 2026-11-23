@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'react'
-import { Check, ChevronDown, Edit3, ExternalLink, Layers, LoaderCircle, Save, Trash2, X } from 'lucide-react'
+import { Check, Edit3, ExternalLink, Layers, LoaderCircle, Plus, Save, Trash2, X } from 'lucide-react'
 import { ConfirmModal } from '../../daily-word/components/ConfirmModal'
-import type { LessonTopicItem } from '../../them_bai_giang/services/lessonApi'
+import { lessonApi, type LessonQuiz, type LessonTopicItem } from '../../them_bai_giang/services/lessonApi'
+import type { BuilderQuestion } from '../../them_bai_giang/components/QuizBuilderSection'
+import { useAuth } from '../../auth/auth-context'
 
 interface LessonPreviewDrawerProps {
-  topics: LessonTopicItem[]
   topicTitle: string
   lesson: NonNullable<LessonTopicItem['lessons'][number]>
   onClose: () => void
   /** Lưu chỉnh sửa — trang cha sẽ reload danh sách sau khi lưu thành công */
   onSaveEdit: (input: {
     lessonId: string
-    topicId: string
     title: string
     description: string | null
     videoUrl: string
@@ -54,7 +54,6 @@ function buildEmbedUrl(url: string): string | null {
  *   trạng thái và thứ tự hiển thị (thứ tự tính riêng theo từng chủ đề)
  */
 export function LessonPreviewDrawer({
-  topics,
   topicTitle,
   lesson,
   onClose,
@@ -67,9 +66,104 @@ export function LessonPreviewDrawer({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
+  // Quiz của bài giảng (admin/teacher được trả cả correct_index)
+  const { accessToken, refreshSession } = useAuth()
+  const [quiz, setQuiz] = useState<LessonQuiz | null>(null)
+  const [quizLoading, setQuizLoading] = useState(true)
+  const [quizSaving, setQuizSaving] = useState(false)
+  const [quizError, setQuizError] = useState<string | null>(null)
+  const [quizSavedNote, setQuizSavedNote] = useState<string | null>(null)
+
+  // Tải quiz mỗi lần mở bài giảng khác
+  useEffect(() => {
+    let cancelled = false
+    setQuizLoading(true)
+    setQuiz(null)
+    setQuizError(null)
+    setQuizSavedNote(null)
+    lessonApi
+      .getQuiz(lesson.id, accessToken, async () => (await refreshSession()).accessToken)
+      .then((data) => {
+        if (!cancelled) setQuiz(data)
+      })
+      .catch(() => {
+        /* không tải được quiz → coi như chưa có quiz */
+      })
+      .finally(() => {
+        if (!cancelled) setQuizLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lesson.id])
+
+  // Chế độ chỉnh sửa: bản nháp câu hỏi đang soạn (không có quiz → bắt đầu 1 câu rỗng)
+  const [editQuiz, setEditQuiz] = useState<BuilderQuestion[]>([])
+  useEffect(() => {
+    if (!editing) return
+    setQuizError(null)
+    setQuizSavedNote(null)
+    setEditQuiz(
+      (quiz?.questions ?? []).map((q) => ({
+        content: q.content,
+        options: q.options.length >= 2 ? q.options : ['', ''],
+        correct_index: q.correct_index ?? 0,
+      }))
+    )
+    if (!quiz || quiz.questions.length === 0) {
+      setEditQuiz([{ content: '', options: ['', '', '', ''], correct_index: 0 }])
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, lesson.id])
+
+  /** Lưu quiz (PUT /lessons/:id/quiz) — thay toàn bộ câu hỏi của bài giảng */
+  function handleSaveQuiz() {
+    const cleaned = editQuiz
+      .map((q) => ({
+        content: q.content.trim(),
+        options: q.options.map((o) => o.trim()),
+        correct_index: q.correct_index,
+      }))
+      .filter((q) => q.content)
+    if (cleaned.length === 0) {
+      setQuizError('Quiz phải có ít nhất một câu hỏi có nội dung.')
+      return
+    }
+    for (const [i, q] of cleaned.entries()) {
+      if (q.options.filter((o) => o).length < 2) {
+        setQuizError(`Câu hỏi ${i + 1}: phải có ít nhất 2 đáp án không để trống.`)
+        return
+      }
+      if (q.correct_index >= q.options.length || !q.options[q.correct_index]) {
+        setQuizError(`Câu hỏi ${i + 1}: hãy chọn một đáp án đúng hợp lệ.`)
+        return
+      }
+    }
+    setQuizError(null)
+    setQuizSaving(true)
+    void lessonApi
+      .saveQuiz(
+        lesson.id,
+        { title: quiz?.title || `Quiz: ${lesson.title}`, questions: cleaned },
+        accessToken,
+        async () => (await refreshSession()).accessToken
+      )
+      .then((result) => {
+        setQuizSavedNote(`Đã lưu quiz (${result.total_questions} câu hỏi).`)
+        setTimeout(() => setQuizSavedNote(null), 4000)
+        return lessonApi
+          .getQuiz(lesson.id, accessToken, async () => (await refreshSession()).accessToken)
+          .then((data) => setQuiz(data))
+      })
+      .catch((err) => {
+        setQuizError(err instanceof Error ? err.message : 'Không thể lưu quiz.')
+      })
+      .finally(() => setQuizSaving(false))
+  }
+
   // Form chỉnh sửa
   const [editTitle, setEditTitle] = useState(lesson.title)
-  const [editTopicId, setEditTopicId] = useState(lesson.topic_id)
   const [editDescription, setEditDescription] = useState(lesson.description ?? '')
   const [editVideoUrl, setEditVideoUrl] = useState(lesson.video_url ?? '')
   const [editStatus, setEditStatus] = useState<'draft' | 'published'>(lesson.status)
@@ -79,7 +173,6 @@ export function LessonPreviewDrawer({
   useEffect(() => {
     if (editing) {
       setEditTitle(lesson.title)
-      setEditTopicId(lesson.topic_id)
       setEditDescription(lesson.description ?? '')
       setEditVideoUrl(lesson.video_url ?? '')
       setEditStatus(lesson.status)
@@ -94,10 +187,6 @@ export function LessonPreviewDrawer({
   function handleSaveEdit() {
     if (!editTitle.trim()) {
       setFormError('Vui lòng nhập tiêu đề bài giảng.')
-      return
-    }
-    if (!editTopicId) {
-      setFormError('Vui lòng chọn chủ đề.')
       return
     }
     const url = editVideoUrl.trim()
@@ -121,7 +210,6 @@ export function LessonPreviewDrawer({
     setSaving(true)
     void onSaveEdit({
       lessonId: lesson.id,
-      topicId: editTopicId,
       title: editTitle.trim(),
       description: editDescription.trim() || null,
       videoUrl: url,
@@ -156,7 +244,7 @@ export function LessonPreviewDrawer({
                 {editing ? 'Chỉnh sửa bài giảng' : lesson.title}
               </h2>
               <p className="mt-0.5 truncate text-xs text-ink-500">
-                {editing ? 'Sửa mọi trường — kể cả chuyển chủ đề và thứ tự hiển thị' : topicTitle}
+                {editing ? 'Sửa mọi trường — thứ tự hiển thị tính riêng theo nhóm không chủ đề' : topicTitle}
               </p>
             </div>
           </div>
@@ -235,6 +323,52 @@ export function LessonPreviewDrawer({
               )}
             </div>
 
+            {/* Quiz trắc nghiệm của bài giảng */}
+            <div>
+              <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                QUIZ TRẮC NGHIỆM
+              </h4>
+              {quizLoading ? (
+                <p className="mt-2 flex items-center gap-1.5 text-xs text-ink-500">
+                  <LoaderCircle className="size-3.5 animate-spin" /> Đang tải quiz…
+                </p>
+              ) : !quiz || quiz.questions.length === 0 ? (
+                <p className="mt-2 text-xs italic text-ink-400">
+                  Bài giảng chưa có quiz — bấm "Chỉnh sửa" để soạn câu hỏi.
+                </p>
+              ) : (
+                <div className="mt-2 space-y-3">
+                  {quiz.questions.map((q, qIndex) => (
+                    <div key={q.id ?? qIndex} className="rounded-xl border border-slate-200 bg-slate-50/60 p-3.5">
+                      <span className="rounded bg-brand-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                        CÂU {qIndex + 1}
+                      </span>
+                      <p className="mt-1.5 text-xs font-semibold leading-relaxed text-ink-900">{q.content}</p>
+                      <ul className="mt-1.5 space-y-1">
+                        {q.options.map((option, oIndex) => (
+                          <li
+                            key={oIndex}
+                            className={`flex items-center gap-1.5 text-xs ${
+                              q.correct_index === oIndex
+                                ? 'font-bold text-emerald-700'
+                                : 'text-ink-600'
+                            }`}
+                          >
+                            {q.correct_index === oIndex ? (
+                              <Check className="size-3 shrink-0" />
+                            ) : (
+                              <span className="size-3 shrink-0" />
+                            )}
+                            {option}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Liên kết video gốc */}
             {lesson.video_url && (
               <div>
@@ -273,26 +407,6 @@ export function LessonPreviewDrawer({
               />
             </div>
 
-            <div>
-              <label htmlFor="edit-lesson-topic" className="text-xs font-bold text-ink-900">
-                Chủ đề (chương) <span className="text-brand-600">*</span>
-              </label>
-              <div className="relative mt-1.5">
-                <select
-                  id="edit-lesson-topic"
-                  value={editTopicId}
-                  onChange={(event) => setEditTopicId(event.target.value)}
-                  className="h-[38px] w-full cursor-pointer appearance-none rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 pr-9 text-xs font-medium text-ink-900 outline-none focus:border-brand-600 focus:bg-white focus:ring-1 focus:ring-brand-600"
-                >
-                  {topics.map((topic) => (
-                    <option key={topic.id} value={topic.id}>
-                      {topic.title} ({topic.lessons.length} bài)
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 size-4 -translate-y-1/2 text-ink-400" />
-              </div>
-            </div>
 
             <div>
               <label htmlFor="edit-lesson-video" className="text-xs font-bold text-ink-900">
@@ -358,6 +472,119 @@ export function LessonPreviewDrawer({
                   onChange={(event) => setEditSortOrder(event.target.value)}
                   className="mt-1.5 h-[38px] w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 text-xs font-medium text-ink-900 outline-none focus:border-brand-600 focus:bg-white focus:ring-1 focus:ring-brand-600"
                 />
+              </div>
+            </div>
+
+            {/* Quiz trắc nghiệm — soạn/lưu riêng qua PUT /lessons/:id/quiz */}
+            <div className="rounded-xl border border-slate-200 p-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-ink-900">Quiz trắc nghiệm</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEditQuiz((prev) => [
+                      ...prev,
+                      { content: '', options: ['', '', '', ''], correct_index: 0 },
+                    ])
+                  }
+                  className="flex cursor-pointer items-center gap-1 text-[11px] font-semibold text-brand-700 transition-colors hover:text-brand-600"
+                >
+                  <Plus className="size-3" /> Thêm câu hỏi
+                </button>
+              </div>
+
+              {quizError && (
+                <div role="alert" className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-semibold text-rose-700">
+                  {quizError}
+                </div>
+              )}
+              {quizSavedNote && (
+                <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-semibold text-emerald-700">
+                  {quizSavedNote}
+                </div>
+              )}
+
+              <div className="mt-3 space-y-3">
+                {editQuiz.map((question, qIndex) => (
+                  <div key={qIndex} className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="rounded bg-brand-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                        CÂU {qIndex + 1}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setEditQuiz((prev) => prev.filter((_, i) => i !== qIndex))}
+                        className="flex cursor-pointer items-center gap-1 text-[11px] font-semibold text-rose-600 transition-colors hover:text-rose-700"
+                      >
+                        <Trash2 className="size-3" /> Xóa câu
+                      </button>
+                    </div>
+                    <textarea
+                      rows={2}
+                      value={question.content}
+                      maxLength={1000}
+                      onChange={(event) =>
+                        setEditQuiz((prev) =>
+                          prev.map((q, i) => (i === qIndex ? { ...q, content: event.target.value } : q))
+                        )
+                      }
+                      placeholder="Nội dung câu hỏi"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-ink-900 outline-none placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600"
+                    />
+                    <div className="mt-2 space-y-1.5">
+                      {question.options.map((option, oIndex) => (
+                        <div key={oIndex} className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            aria-label={`Đáp án đúng ${oIndex + 1}`}
+                            aria-pressed={question.correct_index === oIndex}
+                            onClick={() =>
+                              setEditQuiz((prev) =>
+                                prev.map((q, i) => (i === qIndex ? { ...q, correct_index: oIndex } : q))
+                              )
+                            }
+                            className={`flex size-5 shrink-0 items-center justify-center rounded-full border text-[9px] font-bold transition-colors ${
+                              question.correct_index === oIndex
+                                ? 'border-emerald-500 bg-emerald-500 text-white'
+                                : 'border-slate-300 bg-white text-slate-500 hover:border-emerald-400'
+                            }`}
+                            title="Đặt làm đáp án đúng"
+                          >
+                            {question.correct_index === oIndex ? <Check className="size-2.5" /> : oIndex + 1}
+                          </button>
+                          <input
+                            type="text"
+                            value={option}
+                            maxLength={300}
+                            onChange={(event) =>
+                              setEditQuiz((prev) =>
+                                prev.map((q, i) =>
+                                  i === qIndex
+                                    ? { ...q, options: q.options.map((o, j) => (j === oIndex ? event.target.value : o)) }
+                                    : q
+                                )
+                              )
+                            }
+                            placeholder={`Nội dung đáp án ${oIndex + 1}`}
+                            className="h-[30px] flex-1 rounded-md border border-slate-200 bg-white px-2.5 text-xs text-ink-900 outline-none placeholder:text-ink-400 focus:border-brand-600 focus:ring-1 focus:ring-brand-600"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-3 flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleSaveQuiz}
+                  disabled={quizSaving}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-bold text-ink-900 transition-colors hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
+                >
+                  {quizSaving ? <LoaderCircle className="size-3 animate-spin" /> : <Save className="size-3" />}
+                  {quizSaving ? 'Đang lưu quiz…' : 'Lưu câu hỏi quiz'}
+                </button>
               </div>
             </div>
           </div>

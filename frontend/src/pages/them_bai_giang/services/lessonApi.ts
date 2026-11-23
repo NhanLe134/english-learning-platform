@@ -147,6 +147,31 @@ export interface CreatedLesson {
   sort_order: number
 }
 
+export interface LessonQuizQuestion {
+  id?: string
+  content: string
+  options: string[]
+  correct_index?: number
+}
+
+export interface LessonQuiz {
+  title: string
+  questions: LessonQuizQuestion[]
+}
+
+export interface LessonQuizPayload {
+  title: string
+  questions: LessonQuizQuestion[]
+}
+
+export interface QuizSubmitResult {
+  total: number
+  correct_count: number
+  passed: boolean
+  score_percent: number
+  results: Array<{ question_id: string; is_correct: boolean; correct_index: number }>
+}
+
 interface ApiResponse<T> {
   success: boolean
   error?: string
@@ -192,6 +217,65 @@ export const lessonApi = {
    * Kiểm tra video (YouTube/Drive) có phát được cho học viên không —
    * backend hỏi YouTube oEmbed / thử tải Drive, phát hiện video riêng tư
    */
+  /**
+   * Lấy quiz của bài giảng. Admin/Teacher: có correct_index để chỉnh sửa.
+   * Học viên: không có correct_index (chấm điểm server-side).
+   */
+  async getQuiz(
+    lessonId: string,
+    accessToken: string | null,
+    refreshAccessToken: () => Promise<string>
+  ): Promise<LessonQuiz | null> {
+    return authenticatedRequest<LessonQuiz | null>(
+      `/lessons/${encodeURIComponent(lessonId)}/quiz`,
+      { method: 'GET' },
+      accessToken,
+      refreshAccessToken
+    )
+  },
+
+  /**
+   * Lưu/tạo quiz cho bài giảng (chỉ định đáp án đúng qua correct_index 0-3)
+   */
+  async saveQuiz(
+    lessonId: string,
+    quiz: LessonQuizPayload,
+    accessToken: string | null,
+    refreshAccessToken: () => Promise<string>
+  ): Promise<{ title: string; total_questions: number }> {
+    return authenticatedRequest<{ title: string; total_questions: number }>(
+      `/lessons/${encodeURIComponent(lessonId)}/quiz`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(quiz),
+      },
+      accessToken,
+      refreshAccessToken
+    )
+  },
+
+  /**
+   * Học viên nộp bài quiz — server chấm điểm, trả kết quả từng câu
+   */
+  async submitQuiz(
+    lessonId: string,
+    answers: Array<{ question_id: string; selected_index: number }>,
+    accessToken: string | null,
+    refreshAccessToken: () => Promise<string>
+  ): Promise<QuizSubmitResult> {
+    return authenticatedRequest<QuizSubmitResult>(
+      `/lessons/${encodeURIComponent(lessonId)}/quiz/submit`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers }),
+      },
+      accessToken,
+      refreshAccessToken
+    )
+  },
+
   async checkVideo(
     url: string,
     accessToken: string | null,
@@ -283,11 +367,13 @@ export const lessonApi = {
       description: string | null
       videoUrl: string
       status: 'draft' | 'published'
+      /** Quiz lưu CÙNG LẦN với bài giảng (tùy chọn — không gửi nếu không soạn câu hỏi) */
+      quiz?: { title: string; questions: Array<{ content: string; options: string[]; correct_index: number }> }
     },
     accessToken: string | null,
     refreshAccessToken: () => Promise<string>
-  ): Promise<{ topic: CreatedTopic; lesson: CreatedLesson }> {
-    return authenticatedRequest<{ topic: CreatedTopic; lesson: CreatedLesson }>(
+  ): Promise<{ topic: CreatedTopic; lesson: CreatedLesson; quiz_saved?: boolean }> {
+    return authenticatedRequest<{ topic: CreatedTopic; lesson: CreatedLesson; quiz_saved?: boolean }>(
       `/courses/${encodeURIComponent(input.courseId)}/lessons`,
       {
         method: 'POST',
@@ -297,6 +383,7 @@ export const lessonApi = {
           description: input.description,
           video_url: input.videoUrl,
           status: input.status,
+          ...(input.quiz ? { quiz: input.quiz } : {}),
         }),
       },
       accessToken,

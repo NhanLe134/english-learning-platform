@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { AlertCircle, CheckCircle2, Eye, LoaderCircle, Save, Upload } from 'lucide-react'
 import { Sidebar } from '../quan_ly_nguoi_dung/components/Sidebar'
 import { TopHeader } from '../quan_ly_nguoi_dung/components/TopHeader'
 import { LessonInfoSection } from './components/LessonInfoSection'
 import { VideoSourceSection, type VideoSource } from './components/VideoSourceSection'
 import { SectionCard } from './components/SectionCard'
+import { QuizBuilderSection, type BuilderQuestion } from './components/QuizBuilderSection'
 import { lessonApi } from './services/lessonApi'
-import type { LessonTopicItem } from './services/lessonApi'
 import { useAuth } from '../auth/auth-context'
 
 /**
@@ -26,15 +26,8 @@ export default function ThemBaiGiangPage() {
     if (tab === 'thanh_toan') window.location.assign('/admin/payments')
   }
 
-  // Dữ liệu chủ đề
-  const [topics, setTopics] = useState<LessonTopicItem[]>([])
-  const [loadingTopics, setLoadingTopics] = useState(true)
-
   // Form
   const [title, setTitle] = useState('')
-  const [topicId, setTopicId] = useState('')
-  const [newTopicMode, setNewTopicMode] = useState(false)
-  const [newTopicTitle, setNewTopicTitle] = useState('')
   const [description, setDescription] = useState('')
   const [videoUrl, setVideoUrl] = useState('')
   const [videoSource, setVideoSource] = useState<VideoSource>('youtube')
@@ -43,38 +36,44 @@ export default function ThemBaiGiangPage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [saving, setSaving] = useState(false)
-  const latestRequest = useRef(0)
+
+  // Quiz soạn kèm bài giảng — lưu CÙNG LẦN khi bấm Lưu/Xuất bản (không lưu riêng)
+  const [quizQuestions, setQuizQuestions] = useState<BuilderQuestion[]>([])
+  const [quizError, setQuizError] = useState<string | null>(null)
+
+  /** Quiz hợp lệ để gửi kèm; có nhập câu hỏi nhưng thiếu nội dung/đáp án đúng → trả lỗi */
+  function buildQuizPayload(): { title: string; questions: BuilderQuestion[] } | null {
+    if (quizQuestions.length === 0) return null
+    const cleaned = quizQuestions
+      .map((q) => ({
+        content: q.content.trim(),
+        options: q.options.map((o) => o.trim()),
+        correct_index: q.correct_index,
+      }))
+      .filter((q) => q.content)
+    if (cleaned.length === 0) {
+      // Chỉ nhập câu hỏi rỗng → coi như không có quiz
+      setQuizError(null)
+      return null
+    }
+    for (const [i, q] of cleaned.entries()) {
+      if (q.options.filter((o) => o).length < 2) {
+        setQuizError(`Câu hỏi ${i + 1}: phải có ít nhất 2 đáp án không để trống.`)
+        return null
+      }
+      if (q.correct_index >= q.options.length || !q.options[q.correct_index]) {
+        setQuizError(`Câu hỏi ${i + 1}: hãy chọn một đáp án đúng hợp lệ.`)
+        return null
+      }
+    }
+    setQuizError(null)
+    return { title: 'Quiz kiểm tra', questions: cleaned }
+  }
 
   const showToast = useCallback((type: 'success' | 'error', message: string) => {
     setToast({ type, message })
     setTimeout(() => setToast(null), 4000)
   }, [])
-
-  // Tải danh sách chủ đề của khóa
-  const loadTopics = useCallback(async () => {
-    if (!courseId) {
-      setLoadingTopics(false)
-      return
-    }
-    const requestId = ++latestRequest.current
-    try {
-      setLoadingTopics(true)
-      const data = await lessonApi.getTopics(courseId, accessToken, async () => (await refreshSession()).accessToken)
-      if (requestId !== latestRequest.current) return
-      setTopics(data)
-      // Mặc định chọn chủ đề đầu tiên nếu có
-      setTopicId((current) => current || data[0]?.id || '')
-    } catch (error) {
-      if (requestId !== latestRequest.current) return
-      setFormError(error instanceof Error ? error.message : 'Không thể tải chủ đề của khóa học.')
-    } finally {
-      if (requestId === latestRequest.current) setLoadingTopics(false)
-    }
-  }, [accessToken, courseId, refreshSession])
-
-  useEffect(() => {
-    void loadTopics()
-  }, [loadTopics])
 
   // Kiểm tra định dạng URL video
   function validateVideoUrl(): string | null {
@@ -98,9 +97,10 @@ export default function ThemBaiGiangPage() {
     setVideoSuccess(err ? null : '✓ Định dạng liên kết hợp lệ. Nhớ đặt video ở chế độ Unlisted (YouTube) hoặc "Bất kỳ ai có liên kết" (Drive) rồi lưu bài giảng.')
   }
 
-  // Lưu bài giảng (status: draft hoặc published) — tự tạo chủ đề mới nếu đang ở chế độ đó
+  // Lưu bài giảng (status: draft hoặc published) — quiz (nếu có) được lưu CÙNG request
   async function handleSave(status: 'draft' | 'published') {
     setFormError(null)
+    setQuizError(null)
 
     if (!title.trim()) {
       setFormError('Vui lòng nhập tiêu đề bài giảng.')
@@ -113,57 +113,33 @@ export default function ThemBaiGiangPage() {
       setFormError(videoErr)
       return
     }
-    if (newTopicMode && !newTopicTitle.trim()) {
-      setFormError('Vui lòng nhập tên chủ đề mới.')
+    const quiz = buildQuizPayload()
+    if (quiz === null && quizQuestions.length > 0) {
+      // buildQuizPayload đã set quizError tương ứng
       return
     }
-    if (!newTopicMode && !topicId) {
-      setFormError('Vui lòng chọn chủ đề cho bài giảng, hoặc chọn "Không chia chủ đề".')
-      return
-    }
-
     setSaving(true)
     try {
-      if (newTopicMode) {
-        const topic = await lessonApi.createTopic(courseId, newTopicTitle.trim(), accessToken, async () => (await refreshSession()).accessToken)
-        await lessonApi.createLesson(
-          {
-            topicId: topic.id,
-            title: title.trim(),
-            description: description.trim() || null,
-            videoUrl: videoUrl.trim(),
-            status,
-          },
-          accessToken,
-          async () => (await refreshSession()).accessToken
-        )
-      } else if (topicId === '__none__') {
-        // Không chia chủ đề — backend tự gắn vào chủ đề mặc định "Bài giảng"
-        await lessonApi.createLessonInCourse(
-          {
-            courseId,
-            title: title.trim(),
-            description: description.trim() || null,
-            videoUrl: videoUrl.trim(),
-            status,
-          },
-          accessToken,
-          async () => (await refreshSession()).accessToken
-        )
-      } else {
-        await lessonApi.createLesson(
-          {
-            topicId,
-            title: title.trim(),
-            description: description.trim() || null,
-            videoUrl: videoUrl.trim(),
-            status,
-          },
-          accessToken,
-          async () => (await refreshSession()).accessToken
-        )
-      }
-      showToast('success', status === 'published' ? 'Đã xuất bản bài giảng.' : 'Đã lưu bài giảng vào bản nháp.')
+      // Bài giảng không chia chủ đề — gắn thẳng vào khóa (topic_id null)
+      const result = await lessonApi.createLessonInCourse(
+        {
+          courseId,
+          title: title.trim(),
+          description: description.trim() || null,
+          videoUrl: videoUrl.trim(),
+          status,
+          ...(quiz ? { quiz } : {}),
+        },
+        accessToken,
+        async () => (await refreshSession()).accessToken
+      )
+      const quizNote = result.quiz_saved ? ` (kèm ${quiz?.questions.length ?? 0} câu hỏi quiz)` : ''
+      showToast(
+        'success',
+        status === 'published'
+          ? `Đã xuất bản bài giảng${quizNote}.`
+          : `Đã lưu bài giảng vào bản nháp${quizNote}.`
+      )
       window.location.assign(`/admin/lessons?courseId=${courseId}`)
     } catch (error) {
       setSaving(false)
@@ -224,7 +200,7 @@ export default function ThemBaiGiangPage() {
                 </button>
                 <button
                   type="button"
-                  disabled={saving || loadingTopics}
+                  disabled={saving}
                   onClick={() => void handleSave('draft')}
                   className="flex h-[34px] cursor-pointer items-center gap-2 whitespace-nowrap rounded border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-ink-900 transition-colors hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-brand-500 disabled:cursor-not-allowed disabled:opacity-50"
                 >
@@ -237,7 +213,7 @@ export default function ThemBaiGiangPage() {
                 </button>
                 <button
                   type="button"
-                  disabled={saving || loadingTopics}
+                  disabled={saving}
                   onClick={() => void handleSave('published')}
                   className="flex h-[34px] cursor-pointer items-center gap-2 whitespace-nowrap rounded bg-gradient-to-r from-brand-600 to-brand-700 px-3.5 py-2 text-xs font-bold text-white shadow-[0_2px_8px_rgba(200,16,46,0.25)] transition-all duration-150 ease-out hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(200,16,46,0.35)] active:translate-y-0 active:scale-98 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0"
                 >
@@ -272,16 +248,6 @@ export default function ThemBaiGiangPage() {
                 <LessonInfoSection
                   title={title}
                   onTitleChange={setTitle}
-                  topics={topics}
-                  topicId={topicId}
-                  onTopicChange={setTopicId}
-                  newTopicMode={newTopicMode}
-                  onToggleNewTopic={() => {
-                    setNewTopicMode((mode) => !mode)
-                    setNewTopicTitle('')
-                  }}
-                  newTopicTitle={newTopicTitle}
-                  onNewTopicTitleChange={setNewTopicTitle}
                   description={description}
                   onDescriptionChange={setDescription}
                 />
@@ -300,24 +266,13 @@ export default function ThemBaiGiangPage() {
                   onValidate={handleValidateVideo}
                 />
 
-                {/* Section Bài tập tương tác + Tài liệu đính kèm — hoàn thiện sau
-                    (module exercises và Supabase Storage chưa sẵn sàng) */}
-                <SectionCard
-                  icon={LoaderCircle}
-                  title="3. Bài tập tương tác & Tài liệu đính kèm"
-                  subtitle="Đang hoàn thiện — sẽ mở sau khi phần bài giảng ổn định"
-                >
-                  <p className="text-xs leading-relaxed text-ink-500">
-                    Tính năng đang hoàn thiện — hiện tại hãy tập trung vào phần Thêm bài giảng.
-                    Sau khi lưu, bài giảng sẽ xuất hiện trong trang Quản lý bài giảng của khóa.
-                  </p>
-                </SectionCard>
+                {/* Section 3: Bài tập tương tác — quiz trắc nghiệm gắn theo bài giảng */}
+                <QuizBuilderSection
+                  questions={quizQuestions}
+                  onChange={setQuizQuestions}
+                  error={quizError}
+                />
 
-                {loadingTopics && (
-                  <p className="flex items-center gap-1.5 text-xs text-ink-500">
-                    <LoaderCircle size={14} className="animate-spin" /> Đang tải chủ đề của khóa…
-                  </p>
-                )}
               </div>
             )}
           </div>

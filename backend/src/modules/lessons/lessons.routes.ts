@@ -57,6 +57,32 @@ lessonsRouter.delete(
   (req, res, next) => lessonsController.deleteLesson(req, res, next)
 )
 
+// ============ QUIZ TRẮC NGHIỆM ============
+
+// Lấy quiz của bài giảng (học viên: che đáp án đúng; admin/teacher: full)
+lessonsRouter.get(
+  '/lessons/:lessonId/quiz',
+  authenticate,
+  authorize('ADMIN', 'TEACHER', 'STUDENT'),
+  (req, res, next) => lessonsController.getQuiz(req, res, next)
+)
+
+// Lưu/tạo quiz cho bài giảng
+lessonsRouter.put(
+  '/lessons/:lessonId/quiz',
+  authenticate,
+  authorize('ADMIN', 'TEACHER'),
+  (req, res, next) => lessonsController.saveQuiz(req, res, next)
+)
+
+// Học viên nộp bài — chấm điểm server-side
+lessonsRouter.post(
+  '/lessons/:lessonId/quiz/submit',
+  authenticate,
+  authorize('ADMIN', 'TEACHER', 'STUDENT'),
+  (req, res, next) => lessonsController.submitQuiz(req, res, next)
+)
+
 // Kiểm tra video (YouTube/Drive) có phát được cho học viên không — kể cả video riêng tư
 lessonsRouter.get('/check-video', authorize('ADMIN', 'TEACHER'), (req, res, next) =>
   lessonsController.kiemTraVideo(req, res, next)
