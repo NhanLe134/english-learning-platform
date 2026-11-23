@@ -338,6 +338,49 @@ describe('LessonsService - Student access & lesson retrieval', () => {
     assert.equal(pausedEarlier.is_completed, false)
   })
 
+  it('resets progress_percent to 0 when reset_progress is true after a failed exercise, but preserves completed lessons', async () => {
+    const { service } = setup()
+
+    // Student watched to 99% before taking exercise
+    const watched = await service.updateLessonProgress(publishedLessonId, enrolledStudent, {
+      last_position_seconds: 900,
+      progress_percent: 99,
+      is_completed: false,
+    })
+    assert.equal(watched.progress_percent, 99)
+    assert.equal(watched.is_completed, false)
+
+    // Failed exercise (< 80%): resets progress to 0
+    const reset = await service.updateLessonProgress(publishedLessonId, enrolledStudent, {
+      last_position_seconds: 0,
+      progress_percent: 0,
+      is_completed: false,
+      reset_progress: true,
+    })
+    assert.equal(reset.last_position_seconds, 0)
+    assert.equal(reset.progress_percent, 0)
+    assert.equal(reset.is_completed, false)
+
+    // Complete the lesson with >= 80%
+    const passed = await service.updateLessonProgress(publishedLessonId, enrolledStudent, {
+      last_position_seconds: 900,
+      progress_percent: 100,
+      is_completed: true,
+    })
+    assert.equal(passed.progress_percent, 100)
+    assert.equal(passed.is_completed, true)
+
+    // Completed lesson must never be reset even if reset_progress is sent
+    const completedAfterReset = await service.updateLessonProgress(publishedLessonId, enrolledStudent, {
+      last_position_seconds: 0,
+      progress_percent: 0,
+      is_completed: false,
+      reset_progress: true,
+    })
+    assert.equal(completedAfterReset.progress_percent, 100)
+    assert.equal(completedAfterReset.is_completed, true)
+  })
+
   it('backfills missing lesson duration_seconds when reported by player', async () => {
     const { service, repo } = setup()
     const lesson = repo.mockLessons.find((l) => l.id === publishedLessonId)!

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from 'react'
 import {
+  ArrowLeft,
   BadgeCheck,
   Clock3,
   Headset,
@@ -22,9 +23,12 @@ interface EmailOtpVerificationProps {
   successMessage: string
   developmentOtp?: string
   canResendImmediately?: boolean
+  initialRemainingSeconds?: number
+  initialResendSeconds?: number
   onVerify: (otp: string) => void
   onResend: () => Promise<boolean>
   onChangeEmail: () => void
+  onBack?: () => void
 }
 
 function formatTime(seconds: number): string {
@@ -42,14 +46,23 @@ export function EmailOtpVerification({
   successMessage,
   developmentOtp,
   canResendImmediately = false,
+  initialRemainingSeconds,
+  initialResendSeconds,
   onVerify,
   onResend,
   onChangeEmail,
+  onBack,
 }: EmailOtpVerificationProps) {
   const [digits, setDigits] = useState<string[]>(() => Array(OTP_LENGTH).fill(''))
-  const [remainingSeconds, setRemainingSeconds] = useState(OTP_VALIDITY_SECONDS)
-  const [resendSeconds, setResendSeconds] = useState(
-    canResendImmediately ? 0 : RESEND_COOLDOWN_SECONDS
+  const [remainingSeconds, setRemainingSeconds] = useState(() =>
+    initialRemainingSeconds !== undefined
+      ? Math.max(0, Math.min(OTP_VALIDITY_SECONDS, Math.floor(initialRemainingSeconds)))
+      : OTP_VALIDITY_SECONDS
+  )
+  const [resendSeconds, setResendSeconds] = useState(() =>
+    initialResendSeconds !== undefined
+      ? Math.max(0, Math.floor(initialResendSeconds))
+      : canResendImmediately ? 0 : RESEND_COOLDOWN_SECONDS
   )
   const [resending, setResending] = useState(false)
   const inputs = useRef<Array<HTMLInputElement | null>>([])
@@ -131,6 +144,18 @@ export function EmailOtpVerification({
 
   return (
     <section className="email-otp-card" aria-labelledby="email-otp-title">
+      <div className="email-otp-top-bar">
+        <button
+          type="button"
+          className="email-otp-back-btn"
+          onClick={onBack ?? onChangeEmail}
+          disabled={submitting || verified}
+          aria-label="Quay lại biểu mẫu đăng ký"
+        >
+          <ArrowLeft size={16} aria-hidden="true" />
+          <span>Quay lại</span>
+        </button>
+      </div>
       <div className="email-otp-icon" aria-hidden="true">
         <Mail size={27} strokeWidth={1.8} />
         <span><ShieldCheck size={15} strokeWidth={2.5} /></span>
@@ -209,9 +234,9 @@ export function EmailOtpVerification({
       </p>
 
       <div className="email-otp-options">
-        <button type="button" onClick={onChangeEmail} disabled={submitting || verified}>
+        <button type="button" onClick={onBack ?? onChangeEmail} disabled={submitting || verified}>
           <PencilLine size={15} aria-hidden="true" />
-          Đổi địa chỉ email khác
+          Quay lại chỉnh sửa thông tin
         </button>
         <a href="tel:19008888">
           <Headset size={16} aria-hidden="true" />

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
   BookOpen,
   CheckCircle2,
@@ -28,22 +28,95 @@ type RegistrationStage = 'details' | 'verification'
 
 const MAX_BIRTH_DATE = new Date().toISOString().slice(0, 10)
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const PENDING_REGISTRATION_DRAFT_KEY = 'your-voice-pending-registration-draft'
+const OTP_VALIDITY_MS = 10 * 60 * 1000
+const OTP_RESEND_COOLDOWN_MS = 60 * 1000
+
+interface PendingRegistrationDraft {
+  fullName: string
+  dateOfBirth: string
+  email: string
+  phoneNumber: string
+  selectedCourseIds: string[]
+  courseSearch: string
+  otpPending: boolean
+  otpSentAt: string | null
+  otpExpiresAt: string | null
+}
+
+function readPendingRegistrationDraft(): PendingRegistrationDraft | null {
+  try {
+    const raw = sessionStorage.getItem(PENDING_REGISTRATION_DRAFT_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<PendingRegistrationDraft>
+    return {
+      fullName: typeof parsed.fullName === 'string' ? parsed.fullName : '',
+      dateOfBirth: typeof parsed.dateOfBirth === 'string' ? parsed.dateOfBirth : '',
+      email: typeof parsed.email === 'string' ? parsed.email : '',
+      phoneNumber: typeof parsed.phoneNumber === 'string' ? parsed.phoneNumber : '',
+      selectedCourseIds: Array.isArray(parsed.selectedCourseIds)
+        ? parsed.selectedCourseIds.filter((id): id is string => typeof id === 'string')
+        : [],
+      courseSearch: typeof parsed.courseSearch === 'string' ? parsed.courseSearch : '',
+      otpPending: parsed.otpPending === true,
+      otpSentAt: typeof parsed.otpSentAt === 'string' ? parsed.otpSentAt : null,
+      otpExpiresAt: typeof parsed.otpExpiresAt === 'string' ? parsed.otpExpiresAt : null,
+    }
+  } catch {
+    return null
+  }
+}
+
+function savePendingRegistrationDraft(draft: PendingRegistrationDraft): void {
+  try {
+    // Store only non-sensitive registration progress; never store passwords in browser storage.
+    sessionStorage.setItem(PENDING_REGISTRATION_DRAFT_KEY, JSON.stringify(draft))
+  } catch {
+    // Storage may be unavailable; registration still works from form state and backend DB.
+  }
+}
+
+function secondsUntil(isoTimestamp: string | null): number | undefined {
+  if (!isoTimestamp) return undefined
+  const targetMs = Date.parse(isoTimestamp)
+  if (!Number.isFinite(targetMs)) return undefined
+  return Math.max(0, Math.ceil((targetMs - Date.now()) / 1000))
+}
 
 function formatCurrency(amount: number): string {
   return `${amount.toLocaleString('vi-VN')}đ`
 }
 
 export function RegisterPage() {
-  const course = readCheckoutCourse(window.location.search)
+  const [urlSearch] = useState(() => window.location.search)
+  const [savedDraft] = useState(() => readPendingRegistrationDraft())
+  const urlCourse = readCheckoutCourse(urlSearch)
+  const hasUrlCourse = Boolean(urlCourse.id && UUID_REGEX.test(urlCourse.id))
+  const course = hasUrlCourse
+    ? urlCourse
+    : savedDraft?.courseSearch
+      ? readCheckoutCourse(savedDraft.courseSearch)
+      : urlCourse
+  const checkoutSearch = hasUrlCourse ? urlSearch : (savedDraft?.courseSearch || urlSearch)
+  const currentSelectedCourseIds = useMemo(() => {
+    if (course.id && UUID_REGEX.test(course.id)) return [course.id]
+    return savedDraft?.selectedCourseIds.filter((id) => UUID_REGEX.test(id)) ?? []
+  }, [course.id, savedDraft])
+
   const [stage, setStage] = useState<RegistrationStage>('details')
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [acceptedTerms, setAcceptedTerms] = useState(false)
-  const [fullName, setFullName] = useState('')
+  const [fullName, setFullName] = useState(() => savedDraft?.fullName ?? '')
   const [googleAccessToken, setGoogleAccessToken] = useState('')
-  const [dateOfBirth, setDateOfBirth] = useState('')
-  const [phoneNumber, setPhoneNumber] = useState('')
-  const [email, setEmail] = useState('')
+  const [dateOfBirth, setDateOfBirth] = useState(() => savedDraft?.dateOfBirth ?? '')
+  const [phoneNumber, setPhoneNumber] = useState(() => savedDraft?.phoneNumber ?? '')
+  const [email, setEmail] = useState(() => savedDraft?.email ?? '')
+  const [otpPending, setOtpPending] = useState(() => savedDraft?.otpPending ?? false)
+  const [otpSentAt, setOtpSentAt] = useState<string | null>(() => savedDraft?.otpSentAt ?? null)
+  const [otpExpiresAt, setOtpExpiresAt] = useState<string | null>(() => savedDraft?.otpExpiresAt ?? null)
+  const [savedDraftEmail, setSavedDraftEmail] = useState(() => savedDraft?.email ?? '')
+  const [savedDraftCourseIds, setSavedDraftCourseIds] = useState<string[]>(() => savedDraft?.selectedCourseIds ?? [])
   const [verified, setVerified] = useState(false)
   const [otpDeliveryFailed, setOtpDeliveryFailed] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
@@ -52,6 +125,44 @@ export function RegisterPage() {
   const [developmentOtp, setDevelopmentOtp] = useState('')
   const [googleLoading, setGoogleLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    if (!fullName && !dateOfBirth && !email && !phoneNumber && currentSelectedCourseIds.length === 0) {
+      return
+    }
+    savePendingRegistrationDraft({
+      fullName,
+      dateOfBirth,
+      email,
+      phoneNumber,
+      selectedCourseIds: currentSelectedCourseIds,
+      courseSearch: checkoutSearch,
+      otpPending,
+      otpSentAt,
+      otpExpiresAt,
+    })
+  }, [checkoutSearch, currentSelectedCourseIds, dateOfBirth, email, fullName, otpExpiresAt, otpPending, otpSentAt, phoneNumber])
+
+  const normalizedDraftEmail = savedDraftEmail.trim().toLowerCase()
+  const courseMatchesDraft = !hasUrlCourse || savedDraftCourseIds.length === 0 || savedDraftCourseIds[0] === urlCourse.id
+  const canResumeOtp = Boolean(
+    otpPending &&
+    email.trim() &&
+    email.trim().toLowerCase() === normalizedDraftEmail &&
+    courseMatchesDraft
+  )
+
+  function handleResumeOtpVerification() {
+    setErrorMessage('')
+    setSuccessMessage('')
+    const otpExpired = Boolean(otpExpiresAt && Date.parse(otpExpiresAt) <= Date.now())
+    setInfoMessage(
+      otpExpired
+        ? 'Mã OTP trước đó đã hết hạn. Vui lòng bấm "Gửi lại mã xác minh" để nhận mã mới.'
+        : 'Vui lòng nhập mã OTP đã gửi đến email của bạn hoặc bấm gửi lại nếu chưa nhận được.'
+    )
+    setStage('verification')
+  }
 
 
   async function handleGoogleLogin() {
@@ -99,13 +210,14 @@ export function RegisterPage() {
 
     setSubmitting(true)
     const normalizedFullName = String(formData.get('fullName') ?? '').trim()
+    const normalizedDateOfBirth = String(formData.get('dateOfBirth') ?? '')
     const normalizedEmail = String(formData.get('email') ?? '').trim()
     const normalizedPhoneNumber = String(formData.get('phoneNumber') ?? '').trim()
-    const validCourseId = course?.id && UUID_REGEX.test(course.id) ? [course.id] : []
+    const validCourseId = currentSelectedCourseIds
     try {
       const registration = await authApi.register(
         normalizedFullName,
-        String(formData.get('dateOfBirth') ?? ''),
+        normalizedDateOfBirth,
         normalizedEmail,
         normalizedPhoneNumber,
         password,
@@ -113,11 +225,71 @@ export function RegisterPage() {
         validCourseId,
         googleAccessToken || undefined
       )
-      setFullName(normalizedFullName)
-      setPhoneNumber(normalizedPhoneNumber)
+      const resolvedFullName = registration.savedRegistration?.fullName || normalizedFullName
+      const resolvedDateOfBirth = registration.savedRegistration?.dateOfBirth ?? normalizedDateOfBirth
+      const resolvedPhoneNumber = registration.savedRegistration?.phoneNumber ?? normalizedPhoneNumber
+      const resolvedCourseIds = registration.selectedCourseIds ?? validCourseId
+      setFullName(resolvedFullName)
+      if (resolvedDateOfBirth) setDateOfBirth(resolvedDateOfBirth)
+      setPhoneNumber(resolvedPhoneNumber)
       setEmail(registration.email)
+      setSavedDraftEmail(registration.email)
+      setSavedDraftCourseIds(resolvedCourseIds)
+
+      if (!registration.verificationRequired) {
+        setOtpPending(false)
+        setOtpSentAt(null)
+        setOtpExpiresAt(null)
+        savePendingRegistrationDraft({
+          fullName: resolvedFullName,
+          dateOfBirth: resolvedDateOfBirth,
+          email: registration.email,
+          phoneNumber: resolvedPhoneNumber,
+          selectedCourseIds: resolvedCourseIds,
+          courseSearch: checkoutSearch,
+          otpPending: false,
+          otpSentAt: null,
+          otpExpiresAt: null,
+        })
+        try {
+          sessionStorage.setItem('your-voice-pending-checkout-student', JSON.stringify({
+            fullName: resolvedFullName,
+            email: registration.email,
+            phone: resolvedPhoneNumber,
+          }))
+        } catch {
+          // Checkout can still collect the required student details if storage is unavailable.
+        }
+        setSuccessMessage('Email đã được xác minh. Đang chuyển đến thanh toán.')
+        window.location.assign(`/checkout${checkoutSearch}`)
+        return
+      }
+
       try {
         const result = await authApi.requestRegistrationOtp(registration.email)
+        const nowMs = Date.now()
+        const cooldownElapsed = !otpSentAt || (nowMs - Date.parse(otpSentAt)) >= OTP_RESEND_COOLDOWN_MS
+        const previousExpired = !otpExpiresAt || Date.parse(otpExpiresAt) <= nowMs
+        const nextSentAt = (cooldownElapsed || previousExpired || registration.email !== normalizedDraftEmail)
+          ? new Date(nowMs).toISOString()
+          : otpSentAt
+        const nextExpiresAt = (cooldownElapsed || previousExpired || registration.email !== normalizedDraftEmail)
+          ? new Date(nowMs + OTP_VALIDITY_MS).toISOString()
+          : otpExpiresAt
+        setOtpPending(true)
+        setOtpSentAt(nextSentAt)
+        setOtpExpiresAt(nextExpiresAt)
+        savePendingRegistrationDraft({
+          fullName: resolvedFullName,
+          dateOfBirth: resolvedDateOfBirth,
+          email: registration.email,
+          phoneNumber: resolvedPhoneNumber,
+          selectedCourseIds: resolvedCourseIds,
+          courseSearch: checkoutSearch,
+          otpPending: true,
+          otpSentAt: nextSentAt,
+          otpExpiresAt: nextExpiresAt,
+        })
         setOtpDeliveryFailed(false)
         setDevelopmentOtp(result.developmentOtp ?? '')
         setInfoMessage(result.developmentEmailFallback
@@ -126,6 +298,18 @@ export function RegisterPage() {
             ? 'Mã OTP dùng cho kiểm thử phát triển được hiển thị bên dưới. Bạn cũng có thể kiểm tra email.'
             : 'Vui lòng kiểm tra hộp thư đến và mục thư rác để tìm mã xác minh.')
       } catch (error) {
+        setOtpPending(true)
+        savePendingRegistrationDraft({
+          fullName: resolvedFullName,
+          dateOfBirth: resolvedDateOfBirth,
+          email: registration.email,
+          phoneNumber: resolvedPhoneNumber,
+          selectedCourseIds: resolvedCourseIds,
+          courseSearch: checkoutSearch,
+          otpPending: true,
+          otpSentAt,
+          otpExpiresAt,
+        })
         setOtpDeliveryFailed(true)
         setDevelopmentOtp('')
         setErrorMessage(getErrorMessage(error))
@@ -146,6 +330,20 @@ export function RegisterPage() {
     try {
       await authApi.verifyRegistrationOtp(email, otp)
       setVerified(true)
+      setOtpPending(false)
+      setOtpSentAt(null)
+      setOtpExpiresAt(null)
+      savePendingRegistrationDraft({
+        fullName,
+        dateOfBirth,
+        email,
+        phoneNumber,
+        selectedCourseIds: currentSelectedCourseIds,
+        courseSearch: checkoutSearch,
+        otpPending: false,
+        otpSentAt: null,
+        otpExpiresAt: null,
+      })
       try {
         sessionStorage.setItem('your-voice-pending-checkout-student', JSON.stringify({
           fullName,
@@ -156,7 +354,7 @@ export function RegisterPage() {
         // Checkout can still collect the required student details if storage is unavailable.
       }
       setSuccessMessage('Xác minh thành công. Đang chuyển đến thanh toán.')
-      window.location.assign(`/checkout${window.location.search}`)
+      window.location.assign(`/checkout${checkoutSearch}`)
     } catch (error) {
       setErrorMessage(getErrorMessage(error))
     } finally {
@@ -170,6 +368,23 @@ export function RegisterPage() {
     setInfoMessage('')
     try {
       const result = await authApi.requestRegistrationOtp(email)
+      const nowMs = Date.now()
+      const nextSentAt = new Date(nowMs).toISOString()
+      const nextExpiresAt = new Date(nowMs + OTP_VALIDITY_MS).toISOString()
+      setOtpPending(true)
+      setOtpSentAt(nextSentAt)
+      setOtpExpiresAt(nextExpiresAt)
+      savePendingRegistrationDraft({
+        fullName,
+        dateOfBirth,
+        email,
+        phoneNumber,
+        selectedCourseIds: currentSelectedCourseIds,
+        courseSearch: checkoutSearch,
+        otpPending: true,
+        otpSentAt: nextSentAt,
+        otpExpiresAt: nextExpiresAt,
+      })
       setOtpDeliveryFailed(false)
       setDevelopmentOtp(result.developmentOtp ?? '')
       setInfoMessage(result.developmentEmailFallback
@@ -355,6 +570,19 @@ export function RegisterPage() {
                 {errorMessage && <p className="auth-feedback auth-feedback-error" role="alert">{errorMessage}</p>}
                 {successMessage && <p className="auth-feedback auth-feedback-success" role="status">{successMessage}</p>}
                 {infoMessage && <p className="auth-feedback auth-feedback-success" role="status">{infoMessage}</p>}
+                {canResumeOtp && (
+                  <div className="auth-feedback auth-feedback-info" role="status">
+                    Đã lưu thông tin đăng ký trước đó cho <strong>{email}</strong>.
+                    <button
+                      type="button"
+                      className="resend-otp-button"
+                      onClick={handleResumeOtpVerification}
+                      disabled={submitting}
+                    >
+                      Tiếp tục xác minh OTP
+                    </button>
+                  </div>
+                )}
 
                 <button type="submit" className="submit-button" disabled={submitting}>
                   {submitting ? 'ĐANG TẠO TÀI KHOẢN…' : 'XÁC THỰC NGAY'}
@@ -362,7 +590,7 @@ export function RegisterPage() {
                 </button>
               </form>
               <p className="signup-prompt">
-                Đã có tài khoản học viên? <a href={`/login${window.location.search}`}>Đăng nhập ngay</a>
+                Đã có tài khoản học viên? <a href={`/login${checkoutSearch}`}>Đăng nhập ngay</a>
               </p>
             </section>
           ) : (
@@ -375,6 +603,12 @@ export function RegisterPage() {
               successMessage={successMessage}
               developmentOtp={developmentOtp}
               canResendImmediately={otpDeliveryFailed}
+              initialRemainingSeconds={secondsUntil(otpExpiresAt)}
+              initialResendSeconds={otpDeliveryFailed
+                ? 0
+                : otpSentAt && Number.isFinite(Date.parse(otpSentAt))
+                  ? Math.max(0, Math.ceil((Date.parse(otpSentAt) + OTP_RESEND_COOLDOWN_MS - Date.now()) / 1000))
+                  : undefined}
               onVerify={(otp) => void handleVerify(otp)}
               onResend={handleResend}
               onChangeEmail={() => {

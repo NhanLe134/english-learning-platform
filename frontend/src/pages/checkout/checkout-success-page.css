@@ -1,5 +1,5 @@
 .success-page {
-  background: #F7F7F8;
+  background: #F9FAFB;
 }
 
 .checkout-success-main {
@@ -33,17 +33,24 @@
 .payment-success-empty {
   box-sizing: border-box;
   display: flex;
-  width: min(100%, 800px);
+  width: min(100%, 880px);
   min-width: 0;
   flex-direction: column;
   align-items: center;
   gap: 12px;
   padding: clamp(22px, 4vw, 36px);
-  border: 1px solid #F0EEEE;
+  border: 1px solid #E5E7EB;
   border-radius: 16px;
   background: #FFFFFF;
-  box-shadow: 0 8px 30px #C8102E14;
+  box-shadow: 0 8px 30px rgba(200, 16, 46, 0.08);
   text-align: center;
+}
+
+.payment-success-empty > .sepay-order-card.sepay-custom-qr {
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 6px;
+  text-align: left;
 }
 
 .payment-success-state-icon {
@@ -53,8 +60,8 @@
   flex: 0 0 64px;
   place-items: center;
   border-radius: 50%;
-  background: #FEF1F2;
-  color: #C8102E;
+  background: var(--color-brand-50);
+  color: var(--color-brand-600);
 }
 
 .payment-success-empty.is-paid .payment-success-state-icon {
@@ -63,8 +70,8 @@
 }
 
 .payment-success-empty.has-error .payment-success-state-icon {
-  background: #FEF1F2;
-  color: #C8102E;
+  background: var(--color-brand-50);
+  color: var(--color-brand-600);
 }
 
 .payment-success-status-pill {
@@ -76,8 +83,8 @@
   justify-content: center;
   padding: 6px 12px;
   border-radius: 999px;
-  background: #FEF1F2;
-  color: #C8102E;
+  background: var(--color-brand-50);
+  color: var(--color-brand-600);
   font-size: 12px;
   font-weight: 700;
   line-height: 1.25;
@@ -90,16 +97,16 @@
 }
 
 .payment-success-status-pill.failed {
-  background: #FEF1F2;
-  color: #A30D26;
+  background: var(--color-brand-50);
+  color: var(--color-brand-700);
 }
 
 .payment-success-empty > h1 {
   max-width: 100%;
   margin: 0;
-  color: #17181C;
+  color: var(--color-ink-900);
   font-size: clamp(22px, 4vw, 30px);
-  font-weight: 600;
+  font-weight: 800;
   line-height: 1.25;
   overflow-wrap: anywhere;
 }
@@ -107,9 +114,9 @@
 .payment-success-empty > p {
   max-width: 620px;
   margin: 0 0 4px;
-  color: #3D4046;
+  color: var(--color-ink-700);
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.625;
   overflow-wrap: anywhere;
 }
 
@@ -189,14 +196,14 @@
 
 .payment-success-metadata dt {
   margin-bottom: 5px;
-  color: #6B7076;
+  color: var(--color-ink-500);
   font-size: 12px;
 }
 
 .payment-success-metadata dd {
   min-width: 0;
   margin: 0;
-  color: #17181C;
+  color: var(--color-ink-900);
   font-size: 13px;
   font-weight: 700;
   line-height: 1.5;
@@ -205,7 +212,7 @@
 
 .payment-success-metadata dd.paid,
 .payment-success-metadata dd.amount {
-  color: #C8102E;
+  color: var(--color-brand-600);
   font-weight: 800;
 }
 
@@ -222,10 +229,10 @@
 
 .payment-success-reference code {
   min-width: 0;
-  color: #C8102E;
+  color: var(--color-brand-600);
   font-family: var(--font-sans);
   font-size: 13px;
-  font-weight: 750;
+  font-weight: 700;
   overflow-wrap: anywhere;
 }
 
@@ -238,10 +245,12 @@
   min-height: 36px;
   padding: 7px 10px;
   border: 1px solid #E5E7EB;
-  border-radius: 7px;
+  border-radius: 8px;
   background: #FFFFFF;
-  color: #303238;
+  color: var(--color-ink-700);
+  font-family: inherit;
   font-size: 12px;
+  font-weight: 700;
   white-space: nowrap;
 }
 
@@ -251,10 +260,10 @@
   min-width: 0;
   margin-top: 16px;
   padding: clamp(16px, 3vw, 24px);
-  border: 1px solid #F0EEEE;
-  border-radius: 12px;
+  border: 1px solid #E5E7EB;
+  border-radius: 16px;
   background: #FFFFFF;
-  box-shadow: 0 3px 12px #2417140A;
+  box-shadow: 0 1px 2px rgba(23, 24, 28, 0.04);
   text-align: left;
 }
 
@@ -264,21 +273,21 @@
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 18px;
-  color: #C8102E;
+  color: var(--color-brand-600);
 }
 
 .payment-success-course-heading > div { min-width: 0; }
 .payment-success-course-heading span {
-  color: #9B5960;
-  font-size: 10px;
-  font-weight: 750;
+  color: var(--color-brand-600);
+  font-size: 11px;
+  font-weight: 700;
   letter-spacing: .08em;
 }
 .payment-success-course-heading h2 {
   margin: 4px 0 0;
-  color: #17181C;
-  font-size: clamp(18px, 2.5vw, 22px);
-  font-weight: 600;
+  color: var(--color-ink-900);
+  font-size: clamp(18px, 2.5vw, 24px);
+  font-weight: 800;
   line-height: 1.3;
 }
 .payment-success-course-state {
@@ -286,11 +295,11 @@
   align-items: center;
   gap: 8px;
   margin: 0;
-  color: #5F3E39;
+  color: var(--color-ink-700);
   font-size: 13px;
   line-height: 1.5;
 }
-.payment-success-course-state.is-error { color: #A30D26; }
+.payment-success-course-state.is-error { color: var(--color-brand-700); }
 
 .payment-success-course-overview {
   display: grid;
@@ -405,9 +414,9 @@
 .payment-success-price-summary span { color: #6B7076; font-size: 11px; line-height: 1.4; }
 .payment-success-price-summary strong { color: #303238; font-size: 15px; line-height: 1.35; overflow-wrap: anywhere; }
 .payment-success-price-summary strong.discount { color: #16834B; }
-.payment-success-price-summary > .paid-total { border-color: #F3DADD; background: #FDF1F2; }
-.payment-success-price-summary > .paid-total span { color: #8E434D; }
-.payment-success-price-summary > .paid-total strong { color: #C8102E; font-size: 18px; font-weight: 800; }
+.payment-success-price-summary > .paid-total { border-color: var(--color-brand-100); background: var(--color-brand-50); }
+.payment-success-price-summary > .paid-total span { color: var(--color-brand-800); }
+.payment-success-price-summary > .paid-total strong { color: var(--color-brand-600); font-size: 18px; font-weight: 800; }
 
 .payment-success-curriculum { margin-top: 22px; }
 .payment-success-curriculum > h3 {
@@ -415,10 +424,11 @@
   align-items: center;
   gap: 8px;
   margin: 0 0 10px;
-  color: #17181C;
-  font-size: 15px;
+  color: var(--color-ink-900);
+  font-size: 16px;
+  font-weight: 700;
 }
-.payment-success-curriculum > h3 svg { flex: 0 0 auto; color: #C8102E; }
+.payment-success-curriculum > h3 svg { flex: 0 0 auto; color: var(--color-brand-600); }
 .payment-success-curriculum details { border-top: 1px solid #ECEDEF; }
 .payment-success-curriculum summary {
   display: flex;
@@ -430,11 +440,11 @@
   list-style: none;
 }
 .payment-success-curriculum summary::-webkit-details-marker { display: none; }
-.payment-success-curriculum summary > span { flex: 0 0 auto; color: #C8102E; font-size: 11px; font-weight: 750; }
-.payment-success-curriculum summary > strong { min-width: 0; flex: 1; color: #25272B; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
-.payment-success-curriculum summary > small { flex: 0 0 auto; color: #6B7076; font-size: 11px; }
-.payment-success-curriculum details > p { margin: 0 0 9px 30px; color: #5F6368; font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; }
-.payment-success-curriculum ul { margin: 0 0 14px 30px; padding-left: 18px; color: #51545A; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.payment-success-curriculum summary > span { flex: 0 0 auto; color: var(--color-brand-600); font-size: 12px; font-weight: 700; }
+.payment-success-curriculum summary > strong { min-width: 0; flex: 1; color: var(--color-ink-900); font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
+.payment-success-curriculum summary > small { flex: 0 0 auto; color: var(--color-ink-500); font-size: 12px; }
+.payment-success-curriculum details > p { margin: 0 0 9px 30px; color: var(--color-ink-500); font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+.payment-success-curriculum ul { margin: 0 0 14px 30px; padding-left: 18px; color: var(--color-ink-700); font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
 
 .payment-success-access {
   display: flex;
@@ -442,7 +452,7 @@
   gap: 8px;
   margin: 16px 0 0;
   color: #16834B;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.5;
 }
 .payment-success-access svg { flex: 0 0 auto; }
@@ -450,14 +460,17 @@
 .payment-success-empty > a.checkout-primary-button {
   min-height: 44px;
   margin-top: 4px;
-  border-color: #C8102E;
+  border-color: var(--color-brand-600);
   border-radius: 12px;
-  background: #C8102E;
+  background: var(--color-brand-600);
   font-size: 14px;
   font-weight: 700;
   text-decoration: none;
 }
-.payment-success-empty > a.checkout-primary-button:hover { background: #A30D26; }
+.payment-success-empty > a.checkout-primary-button:hover {
+  border-color: var(--color-brand-700);
+  background: var(--color-brand-700);
+}
 
 .payment-result-api-error,
 .payment-result-enrollment-pending {

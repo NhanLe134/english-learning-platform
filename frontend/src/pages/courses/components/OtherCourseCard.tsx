@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Clock3, CalendarCheck, Sparkles, BarChart2, MessageSquare, FileText, BookOpen } from 'lucide-react'
+import { Clock3, CalendarCheck, Sparkles, BarChart2, MessageSquare, FileText, BookOpen, User } from 'lucide-react'
 import type { OtherCourse } from '../student-courses-data'
 
 interface OtherCourseCardProps {
@@ -93,7 +93,8 @@ export const OtherCourseCard: React.FC<OtherCourseCardProps> = ({
           {/* Instructor */}
           {course.instructor && (
             <div className="other-course-instructor">
-              👤 <strong>{course.instructor}</strong>
+              <User size={13} aria-hidden="true" />
+              <strong>{course.instructor}</strong>
               {course.instructorRole ? ` (${course.instructorRole})` : ''}
             </div>
           )}

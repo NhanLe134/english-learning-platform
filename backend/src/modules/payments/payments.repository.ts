@@ -151,6 +151,42 @@ export class PaymentOrderRepository {
     return mapPaymentOrder(data as unknown as PaymentOrderRow)
   }
 
+  async findOrdersByProviderOrderId(providerOrderId: string): Promise<PaymentOrder[]> {
+    const { data, error } = await this.clientFactory()
+      .from('course_orders')
+      .select(COURSE_ORDER_COLUMNS)
+      .eq('provider_order_id', providerOrderId)
+      .order('created_at', { ascending: false })
+      .limit(2)
+
+    if (error) throw new Error(`Unable to fetch course orders by provider order reference: ${error.message}`, { cause: error })
+    return ((data ?? []) as unknown as PaymentOrderRow[]).map(mapPaymentOrder)
+  }
+
+  async findOrdersByTransferContent(transferContent: string): Promise<PaymentOrder[]> {
+    const { data, error } = await this.clientFactory()
+      .from('course_orders')
+      .select(COURSE_ORDER_COLUMNS)
+      .eq('transfer_content', transferContent)
+      .order('created_at', { ascending: false })
+      .limit(2)
+
+    if (error) throw new Error(`Unable to fetch course orders by transfer content: ${error.message}`, { cause: error })
+    return ((data ?? []) as unknown as PaymentOrderRow[]).map(mapPaymentOrder)
+  }
+
+  async findOrdersByProviderTransactionId(providerTransactionId: string): Promise<PaymentOrder[]> {
+    const { data, error } = await this.clientFactory()
+      .from('course_orders')
+      .select(COURSE_ORDER_COLUMNS)
+      .eq('provider_transaction_id', providerTransactionId)
+      .order('created_at', { ascending: false })
+      .limit(2)
+
+    if (error) throw new Error(`Unable to fetch course orders by provider transaction ID: ${error.message}`, { cause: error })
+    return ((data ?? []) as unknown as PaymentOrderRow[]).map(mapPaymentOrder)
+  }
+
   async confirmVerifiedPayment(
     orderId: string,
     providerOrderId: string | null,

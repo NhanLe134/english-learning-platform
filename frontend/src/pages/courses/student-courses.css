@@ -6,7 +6,7 @@
 
 .student-portal-page {
   min-height: 100vh;
-  background-color: #FAF8FF;
+  background-color: #F9FAFB;
   font-family: var(--font-sans, "Be Vietnam Pro", Inter, sans-serif);
   color: var(--color-ink-900, #17181C);
   display: flex;
@@ -20,8 +20,9 @@
   position: sticky;
   top: 0;
   z-index: 50;
-  background: #FFFFFF;
-  border-bottom: 1px solid #EFEFEF;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid #F3F4F6;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 
@@ -57,9 +58,9 @@
 }
 
 .student-navbar-logo-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
   background: var(--color-brand-600, #C8102E);
   color: #FFFFFF;
   display: flex;
@@ -69,21 +70,21 @@
 }
 
 .student-navbar-brand-name {
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 800;
   color: var(--color-ink-900, #17181C);
-  letter-spacing: -0.3px;
+  letter-spacing: -0.02em;
 }
 
 .student-navbar-links {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 28px;
 }
 
 .student-nav-link {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
   color: var(--color-ink-700, #3D4046);
   text-decoration: none;
   transition: color 0.2s;
@@ -132,8 +133,8 @@
 }
 
 .student-notification-btn:hover {
-  background: #FEF1F2;
-  border-color: #FBB5BC;
+  background: var(--color-brand-50, #FEF1F2);
+  border-color: var(--color-brand-200, #F7B4B9);
 }
 
 .notification-unread-dot {
@@ -488,14 +489,14 @@
 }
 
 .my-course-status-indicator.in-progress {
-  color: #DC2626;
+  color: var(--color-brand-600, #C8102E);
 }
 
 .my-course-status-indicator .status-pulse-dot {
   width: 6px;
   height: 6px;
   border-radius: 9999px;
-  background: #DC2626;
+  background: var(--color-brand-600, #C8102E);
 }
 
 .my-course-status-chip-completed {
@@ -620,7 +621,7 @@
 }
 
 .btn-continue-course:hover {
-  background: #A30D26;
+  background: var(--color-brand-700, #A30D26);
   box-shadow: 0 3px 8px rgba(200, 16, 46, 0.3);
 }
 
@@ -740,8 +741,8 @@
 }
 
 .level-badge-pill.rose {
-  background: #FFF1F2;
-  color: #BE123C;
+  background: var(--color-brand-50, #FEF1F2);
+  color: var(--color-brand-600, #C8102E);
 }
 
 .level-badge-pill.emerald {
@@ -750,15 +751,15 @@
 }
 
 .other-course-duration {
-  font-size: 11.5px;
-  color: var(--color-ink-500, #6B7076);
+  font-size: 12px;
+  color: var(--color-ink-500, #6E7179);
   display: inline-flex;
   align-items: center;
   gap: 4px;
 }
 
 .other-course-title {
-  font-size: 15.5px;
+  font-size: 16px;
   font-weight: 800;
   color: var(--color-ink-900, #17181C);
   line-height: 1.35;
@@ -766,8 +767,11 @@
 }
 
 .other-course-instructor {
-  font-size: 12px;
-  color: var(--color-ink-500, #6B7076);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--color-ink-500, #6E7179);
   margin-bottom: 8px;
 }
 
@@ -804,24 +808,24 @@
 }
 
 .sale-price {
-  font-size: 18px;
-  font-weight: 900;
+  font-size: 20px;
+  font-weight: 800;
   color: var(--color-brand-600, #C8102E);
 }
 
 .original-price {
-  font-size: 12px;
-  color: var(--color-ink-500, #6B7076);
+  font-size: 13px;
+  color: var(--color-ink-500, #6E7179);
   text-decoration: line-through;
 }
 
 .discount-badge {
-  background: #FFF1F2;
-  color: #E11D48;
+  background: var(--color-brand-50, #FEF1F2);
+  color: var(--color-brand-600, #C8102E);
   font-size: 11px;
-  font-weight: 800;
-  padding: 1px 5px;
-  border-radius: 4px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 6px;
 }
 
 .btn-enroll-now {
@@ -842,7 +846,7 @@
 }
 
 .btn-enroll-now:hover {
-  background: #A30D26;
+  background: var(--color-brand-700, #A30D26);
   box-shadow: 0 3px 8px rgba(200, 16, 46, 0.3);
 }
 
@@ -880,7 +884,7 @@
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: #FFF1F2;
+  background: var(--color-brand-50, #FEF1F2);
   color: var(--color-brand-600, #C8102E);
   display: flex;
   align-items: center;
@@ -888,8 +892,8 @@
 }
 
 .widget-icon-box.rose {
-  background: #FFF1F2;
-  color: #E11D48;
+  background: var(--color-brand-50, #FEF1F2);
+  color: var(--color-brand-600, #C8102E);
 }
 
 .widget-title-text h3 {
@@ -901,15 +905,15 @@
 }
 
 .widget-title-text p {
-  font-size: 11px;
-  color: var(--color-ink-500, #6B7076);
+  font-size: 12px;
+  color: var(--color-ink-500, #6E7179);
   margin: 0;
 }
 
 .widget-badge-date {
-  background: #FFF1F2;
+  background: var(--color-brand-50, #FEF1F2);
   color: var(--color-brand-600, #C8102E);
-  border: 1px solid #FDE0E3;
+  border: 1px solid var(--color-brand-100, #FDE0E3);
   font-size: 11px;
   font-weight: 700;
   padding: 3px 10px;
@@ -917,9 +921,9 @@
 }
 
 .widget-badge-ai {
-  background: #FFF1F2;
+  background: var(--color-brand-50, #FEF1F2);
   color: var(--color-brand-600, #C8102E);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 800;
   padding: 2px 8px;
   border-radius: 9999px;
@@ -1040,8 +1044,8 @@
 }
 
 .btn-ai-practice:hover {
-  background: #FEF1F2;
-  border-color: #FBB5BC;
+  background: var(--color-brand-50, #FEF1F2);
+  border-color: var(--color-brand-200, #F7B4B9);
   color: var(--color-brand-600, #C8102E);
 }
 
@@ -1053,14 +1057,14 @@
 
 /* Improvement Areas Widget */
 .improvement-alert-box {
-  background: #FFF5F5;
-  border: 1px solid #FFE4E6;
+  background: var(--color-brand-50, #FEF1F2);
+  border: 1px solid var(--color-brand-100, #FDE0E3);
   border-radius: 10px;
   padding: 8px 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 11.5px;
+  font-size: 12px;
   margin-bottom: 12px;
 }
 
@@ -1069,7 +1073,7 @@
   align-items: center;
   gap: 6px;
   font-weight: 700;
-  color: #E11D48;
+  color: var(--color-brand-600, #C8102E);
 }
 
 .btn-view-details-link {
@@ -1146,8 +1150,8 @@
 }
 
 .issue-severity-chip.rose {
-  background: #FFF1F2;
-  color: #E11D48;
+  background: var(--color-brand-50, #FEF1F2);
+  color: var(--color-brand-600, #C8102E);
 }
 
 .issue-severity-chip.amber {
@@ -1181,7 +1185,7 @@
   }
 
   .student-nav-link {
-    font-size: 10px;
+    font-size: 12px;
     white-space: nowrap;
   }
 
@@ -1262,7 +1266,7 @@
   }
 
   .student-navbar-brand-name {
-    font-size: 14px;
+    font-size: 15px;
   }
 
   .student-navbar-actions {
@@ -1287,6 +1291,6 @@
   .student-nav-link {
     flex: 0 0 auto;
     padding: 8px 0 10px;
-    font-size: 11px;
+    font-size: 12px;
   }
 }

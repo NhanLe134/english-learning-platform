@@ -247,54 +247,29 @@ export function SiteHeader({ activeTab: explicitActiveTab, brandName = 'Your Eng
           })}
 
           <div className="mt-3 flex flex-col gap-2 border-t border-gray-100 pt-3">
-            {user ? (
-              <>
-                <span className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2">
-                  <span className="flex size-7 items-center justify-center rounded-full bg-brand-600 text-xs font-bold text-white">
-                    {(user.fullName || user.email || '?').charAt(0).toUpperCase()}
-                  </span>
-                  <span className="flex flex-col leading-tight">
-                    <span className="text-xs font-bold text-ink-900">{user.fullName || user.email}</span>
-                    <span className="text-[10px] font-medium text-slate-400">
-                      {user.role === 'STUDENT' ? 'Học viên' : user.role === 'TEACHER' ? 'Giáo viên' : 'Quản trị viên'}
-                    </span>
-                  </span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false)
-                    void handleAccountClick()
-                  }}
-                  disabled={loggingOut}
-                  className="flex items-center justify-center gap-2 rounded-xl border border-brand-600 bg-brand-50 py-2.5 text-sm font-semibold text-brand-600 transition-colors hover:bg-brand-100 disabled:opacity-50"
-                >
-                  {loggingOut ? <Loader2 className="size-4 animate-spin" /> : <LogOut className="size-4" />}
-                  Đăng xuất
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false)
-                    void handleAccountClick()
-                  }}
-                  className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 py-2.5 text-sm font-semibold text-ink-700 transition-colors hover:border-brand-600 hover:text-brand-600"
-                >
-                  <User className="size-4" />
-                  Đăng nhập
-                </button>
-                <a
-                  href="/register"
-                  onClick={() => setMenuOpen(false)}
-                  className="flex items-center justify-center rounded-xl bg-brand-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-700"
-                >
-                  Đăng ký tài khoản
-                </a>
-              </>
-            )}
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(false)
+                void handleAccountClick()
+              }}
+              disabled={loggingOut}
+              className={`flex items-center justify-center gap-2 rounded-xl border py-2.5 text-sm font-bold transition-colors ${
+                user || isLoginPage
+                  ? 'border-brand-600 bg-brand-50 text-brand-600'
+                  : 'border-gray-200 text-ink-700 hover:border-brand-600 hover:text-brand-600'
+              }`}
+            >
+              <User className="size-4" />
+              {user ? `Đăng xuất (${user.email})` : isLoginPage ? 'Đang ở trang đăng nhập' : 'Đăng nhập'}
+            </button>
+            <a
+              href={isLoginPage ? '/courses' : '/register'}
+              onClick={() => setMenuOpen(false)}
+              className="flex items-center justify-center rounded-xl bg-brand-600 py-2.5 text-sm font-bold text-white transition-colors hover:bg-brand-700"
+            >
+              Đăng ký tài khoản
+            </a>
           </div>
         </nav>
       )}

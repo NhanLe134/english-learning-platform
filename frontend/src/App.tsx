@@ -7,6 +7,7 @@ import { QuanLyBaiTapPage } from './pages/quan_ly_bai_tap'
 import { HomePage } from './pages/home/HomePage'
 import { AboutPage } from './pages/about/AboutPage'
 import { EbooksPage } from './pages/ebooks/EbooksPage'
+import { StudentEbookPage } from './pages/ebooks/StudentEbookPage'
 import { LoginPage } from './pages/auth/LoginPage'
 import { RegisterPage } from './pages/auth/RegisterPage'
 import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage'
@@ -19,6 +20,7 @@ import { StudentCourseDetailPage } from './pages/courses/StudentCourseDetailPage
 import { CheckoutPage } from './pages/checkout/CheckoutPage'
 import { CheckoutSuccessPage } from './pages/checkout/CheckoutSuccessPage'
 import { WorkshopsPage } from './pages/workshops/WorkshopsPage'
+import { StudentWorkshopPage } from './pages/workshops/StudentWorkshopPage'
 import { DailyWordPage } from './pages/daily-word/DailyWordPage'
 // Popup Daily Word KHÔNG render toàn cục nữa — chỉ trong StudentCoursesPage (/my-courses)
 import { ContactPage } from './pages/contact/ContactPage'
@@ -165,7 +167,7 @@ function AppRoutes() {
       break
     case '/courses':
     case '/khoa-hoc':
-      page = user?.role === 'STUDENT' ? <StudentCoursesPage /> : <CourseListPage />
+      page = <CourseListPage />
       break
     case '/student/courses':
     case '/my-courses':
@@ -173,14 +175,18 @@ function AppRoutes() {
     case '/khoa-hoc-cua-toi':
       page = <StudentCoursesPage />
       break
+    case '/student/ebooks':
+    case '/student/ebook':
     case '/ebooks':
     case '/ebook':
     case '/sach-dien-tu':
-      page = <EbooksPage />
+      page = user?.role === 'STUDENT' ? <StudentEbookPage /> : <EbooksPage />
       break
+    case '/student/workshops':
+    case '/student/workshop':
     case '/workshops':
     case '/workshop':
-      page = <WorkshopsPage />
+      page = user?.role === 'STUDENT' ? <StudentWorkshopPage /> : <WorkshopsPage />
       break
     case '/contact':
     case '/lien-he':
@@ -199,6 +205,8 @@ function AppRoutes() {
     case '/thanh-toan':
       page = <CheckoutPage />
       break
+    case '/checkout/payment':
+    case '/thanh-toan/qr':
     case '/checkout/success':
     case '/payment-success':
     case '/thanh-toan/thanh-cong':
@@ -224,9 +232,7 @@ function AppRoutes() {
         const courseRoute = pathname.match(/^\/(?:courses|khoa-hoc)\/([^/]+)$/)
         if (courseRoute && courseRoute[1]) {
           const decodedSlug = decodeURIComponent(courseRoute[1])
-          page = user?.role === 'STUDENT'
-            ? <StudentCourseDetailPage courseSlug={decodedSlug} />
-            : <CourseDetailPage identifier={decodedSlug} />
+          page = <CourseDetailPage identifier={decodedSlug} />
           break
         }
 

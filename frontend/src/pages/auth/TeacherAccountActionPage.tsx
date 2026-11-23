@@ -25,21 +25,21 @@ export function TeacherAccountActionPage({ mode }: { mode: 'activate' | 'reset' 
   }
 
   return <main className="mx-auto flex min-h-screen max-w-lg items-center px-5 py-12">
-    <section className="w-full rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-      <p className="text-sm font-semibold uppercase tracking-wide text-red-600">Your English Voice · Giáo viên</p>
-      <h1 className="mt-3 text-2xl font-bold text-slate-900">{mode === 'activate' ? 'Kích hoạt tài khoản' : 'Đặt lại mật khẩu'}</h1>
+    <section className="w-full rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
+      <p className="text-xs font-bold uppercase tracking-wide text-brand-600">Your English Voice · Giáo viên</p>
+      <h1 className="mt-3 text-2xl font-extrabold text-ink-900">{mode === 'activate' ? 'Kích hoạt tài khoản' : 'Đặt lại mật khẩu'}</h1>
       {done ? <div className="mt-6 space-y-4">
-        <p className="text-slate-700">{mode === 'activate' ? 'Tài khoản đã được kích hoạt.' : 'Mật khẩu đã được cập nhật.'}</p>
-        <a className="inline-flex rounded-lg bg-red-600 px-4 py-2 font-semibold text-white" href="/teacher/login">Đến đăng nhập</a>
-      </div> : !token ? <p className="mt-5 text-red-700">Liên kết thiếu mã xác thực. Hãy yêu cầu quản trị viên gửi liên kết mới.</p> : <form className="mt-6 space-y-4" onSubmit={(event) => void submit(event)}>
-        <label className="block text-sm font-medium text-slate-700">Mật khẩu mới
-          <input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" name="password" type="password" autoComplete="new-password" minLength={8} maxLength={72} required />
+        <p className="text-sm text-ink-700">{mode === 'activate' ? 'Tài khoản đã được kích hoạt.' : 'Mật khẩu đã được cập nhật.'}</p>
+        <a className="inline-flex rounded-xl bg-brand-600 px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-brand-700" href="/teacher/login">Đến đăng nhập</a>
+      </div> : !token ? <p className="mt-5 text-sm font-medium text-brand-700">Liên kết thiếu mã xác thực. Hãy yêu cầu quản trị viên gửi liên kết mới.</p> : <form className="mt-6 space-y-4" onSubmit={(event) => void submit(event)}>
+        <label className="block text-xs font-semibold text-ink-700">Mật khẩu mới
+          <input className="mt-1.5 w-full rounded-lg border border-gray-200 bg-gray-100 px-4 py-2.5 text-sm font-medium text-ink-900 focus:border-brand-600 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-200" name="password" type="password" autoComplete="new-password" minLength={8} maxLength={72} required />
         </label>
-        <label className="block text-sm font-medium text-slate-700">Nhập lại mật khẩu
-          <input className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" name="confirmPassword" type="password" autoComplete="new-password" minLength={8} maxLength={72} required />
+        <label className="block text-xs font-semibold text-ink-700">Nhập lại mật khẩu
+          <input className="mt-1.5 w-full rounded-lg border border-gray-200 bg-gray-100 px-4 py-2.5 text-sm font-medium text-ink-900 focus:border-brand-600 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-200" name="confirmPassword" type="password" autoComplete="new-password" minLength={8} maxLength={72} required />
         </label>
-        {error && <p className="text-sm text-red-700" role="alert">{error}</p>}
-        <button className="w-full rounded-lg bg-red-600 px-4 py-2.5 font-semibold text-white disabled:opacity-60" type="submit" disabled={busy}>{busy ? 'Đang xử lý…' : mode === 'activate' ? 'Kích hoạt tài khoản' : 'Cập nhật mật khẩu'}</button>
+        {error && <p className="text-sm font-medium text-brand-700" role="alert">{error}</p>}
+        <button className="w-full rounded-xl bg-brand-600 px-6 py-3 text-sm font-bold text-white transition-colors hover:bg-brand-700 disabled:opacity-60" type="submit" disabled={busy}>{busy ? 'Đang xử lý…' : mode === 'activate' ? 'Kích hoạt tài khoản' : 'Cập nhật mật khẩu'}</button>
       </form>}
     </section>
   </main>

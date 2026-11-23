@@ -82,7 +82,7 @@ export function LoginPage() {
           window.location.assign(`/checkout/success?orderId=${encodeURIComponent(paymentOrderId)}`)
           return
         }
-        window.location.assign(`/courses/${encodeURIComponent(order.courseDetails.slug)}`)
+        window.location.assign(`/student/courses/${encodeURIComponent(order.courseDetails.slug)}`)
         return
       } catch (error) {
         setErrorMessage(getErrorMessage(error))

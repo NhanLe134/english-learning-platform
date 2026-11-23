@@ -108,7 +108,7 @@ export class PaymentController {
     response: Response,
   ): Promise<void> {
     try {
-      if (env.sepayCheckoutMode !== 'direct_qr') {
+      if (env.sepayCheckoutMode !== 'direct_qr' && !env.sepayBankWebhookSecret) {
         response.status(503).json({ success: false, message: 'Direct bank QR payments are not enabled.' })
         return
       }
@@ -153,6 +153,7 @@ export class PaymentController {
         subAccount: typeof body.subAccount === 'string' ? body.subAccount : undefined,
         code: typeof body.code === 'string' ? body.code : null,
         content: body.content,
+        description: typeof body.description === 'string' ? body.description : undefined,
         transferType: body.transferType,
         transferAmount: body.transferAmount ?? 0,
         referenceCode: typeof body.referenceCode === 'string' ? body.referenceCode : undefined,
@@ -231,6 +232,7 @@ export class PaymentController {
           amount: order.amount,
           paymentMethod: order.provider === 'sepay' ? 'BANK_TRANSFER' : null,
           transferContent: order.transfer_content,
+          paymentInformation: paymentService.getPaymentInformation(order),
           providerTransactionId: order.provider_transaction_id,
           paidAt: order.paid_at,
           expiredAt: order.expired_at,
@@ -279,6 +281,7 @@ export class PaymentController {
           amount: order.amount,
           paymentMethod: order.provider === 'sepay' ? 'BANK_TRANSFER' : null,
           transferContent: order.transfer_content,
+          paymentInformation: paymentService.getPaymentInformation(order),
           providerTransactionId: null,
           paidAt: order.paid_at,
           expiredAt: order.expired_at,

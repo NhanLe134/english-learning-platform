@@ -87,8 +87,14 @@ function setup(
   lookup: 'found' | 'missing' | 'database-error' = 'found',
   confirmationFailure = false,
   emailReleaseFailure = false,
+  options: {
+    orderOverrides?: Partial<PaymentOrder>
+    extraOrders?: PaymentOrder[]
+  } = {},
 ) {
-  let order = createOrder(status)
+  let order: PaymentOrder = { ...createOrder(status), ...options.orderOverrides }
+  const extraOrders = options.extraOrders ?? []
+  const allOrders = () => [order, ...extraOrders]
   let enrollmentAttempts = 0
   let enrollmentCount = 0
   let enrollmentExists = status === 'paid'
@@ -98,7 +104,23 @@ function setup(
   const repository = {
     findOrderByTransferContent: async (transferContent: string) => {
       if (lookup === 'database-error') throw new Error('database unavailable')
-      return lookup === 'missing' || transferContent !== order.transfer_content ? null : order
+      if (lookup === 'missing') return null
+      return allOrders().find((candidate) => candidate.transfer_content === transferContent) ?? null
+    },
+    findOrdersByTransferContent: async (transferContent: string) => {
+      if (lookup === 'database-error') throw new Error('database unavailable')
+      if (lookup === 'missing') return []
+      return allOrders().filter((candidate) => candidate.transfer_content === transferContent)
+    },
+    findOrdersByProviderOrderId: async (providerOrderId: string) => {
+      if (lookup === 'database-error') throw new Error('database unavailable')
+      if (lookup === 'missing') return []
+      return allOrders().filter((candidate) => candidate.provider_order_id === providerOrderId)
+    },
+    findOrdersByProviderTransactionId: async (providerTransactionId: string) => {
+      if (lookup === 'database-error') throw new Error('database unavailable')
+      if (lookup === 'missing') return []
+      return allOrders().filter((candidate) => candidate.provider_transaction_id === providerTransactionId)
     },
     confirmVerifiedPayment: async (_orderId: string, providerOrderId: string | null, transactionId: string, amount: number) => {
       confirmationCalls.push({ orderId: _orderId, providerOrderId, transactionId, amount })
@@ -112,7 +134,7 @@ function setup(
         if (order.provider_transaction_id !== transactionId) throw new Error('A different transaction has already paid this course order.')
       } else {
         if (!['pending', 'expired', 'failed', 'cancelled'].includes(order.status)) throw new Error('Course order is not payable')
-        order = { ...order, status: 'paid', provider_order_id: providerOrderId, provider_transaction_id: transactionId, paid_at: new Date().toISOString() }
+        order = { ...order, status: 'paid', provider_order_id: providerOrderId ?? order.provider_order_id, provider_transaction_id: transactionId, paid_at: new Date().toISOString() }
       }
       enrollmentAttempts += 1
       if (!enrollmentExists) {
@@ -429,6 +451,64 @@ describe('SePay pending order reuse', () => {
     }
   })
 
+  it('returns dynamic VietQR paymentInformation when bank details are configured even in hosted mode', async () => {
+    const original = {
+      mode: env.sepayCheckoutMode,
+      merchantId: env.sepayMerchantId,
+      secretKey: env.sepaySecretKey,
+      bankCode: env.sepayBankCode,
+      bankName: env.sepayBankName,
+      accountNumber: env.sepayAccountNumber,
+      accountName: env.sepayAccountName,
+    }
+    Object.assign(env, {
+      sepayCheckoutMode: 'hosted',
+      sepayMerchantId: 'test-merchant',
+      sepaySecretKey: 'test-secret',
+      sepayBankCode: 'VCB',
+      sepayBankName: 'Vietcombank',
+      sepayAccountNumber: '0123456789',
+      sepayAccountName: 'YOUR VOICE ENGLISH',
+    })
+    const pendingOrder = { ...createOrder('pending'), amount: 75000, expired_at: new Date(Date.now() + 60_000).toISOString() }
+    const repository = {
+      findPublishedCourse: async () => ({
+        id: COURSE_ID,
+        title: 'English course',
+        slug: 'english-course',
+        description: null,
+        thumbnail_url: null,
+        price: 100000,
+        discounted_price: 75000,
+      }),
+      findStudentSummary: async () => ({ id: STUDENT_ID, fullName: 'Student', email: 'student@example.test', phoneNumber: null }),
+      hasActiveEnrollment: async () => false,
+      createOrReusePendingOrder: async () => pendingOrder,
+    }
+    try {
+      const result = await new PaymentService(repository as never).createOrder({ studentId: STUDENT_ID, courseId: COURSE_ID })
+      assert.ok(result.paymentInformation)
+      assert.equal(result.paymentInformation.bankName, 'Vietcombank')
+      assert.equal(result.paymentInformation.accountNumber, '0123456789')
+      assert.equal(result.paymentInformation.accountName, 'YOUR VOICE ENGLISH')
+      assert.equal(result.paymentInformation.amount, 75000)
+      assert.equal(result.paymentInformation.transferContent, pendingOrder.transfer_content)
+      const qrUrl = new URL(result.paymentInformation.qrCodeUrl)
+      assert.equal(qrUrl.searchParams.get('amount'), '75000')
+      assert.equal(qrUrl.searchParams.get('des'), pendingOrder.transfer_content)
+    } finally {
+      Object.assign(env, {
+        sepayCheckoutMode: original.mode,
+        sepayMerchantId: original.merchantId,
+        sepaySecretKey: original.secretKey,
+        sepayBankCode: original.bankCode,
+        sepayBankName: original.bankName,
+        sepayAccountNumber: original.accountNumber,
+        sepayAccountName: original.accountName,
+      })
+    }
+  })
+
   it('rejects guest checkout with 403 when email is not a verified student account', async () => {
     const repository = {
       findVerifiedStudentByEmail: async () => null,
@@ -502,6 +582,288 @@ describe('SePay direct bank QR payment confirmation', () => {
       await assert.rejects(setup('paid').service.handleSePayBankWebhook(createBankEvent()), /payment reference|different transaction/)
     } finally {
       Object.assign(env, { sepayAccountNumber: previousAccount })
+    }
+  })
+
+  it('matches by persisted SePay payment code (provider_order_id) from production webhook payload', async () => {
+    const previousAccount = env.sepayAccountNumber
+    Object.assign(env, { sepayAccountNumber: '0349841217' })
+    try {
+      const test = setup('pending', 'found', false, false, {
+        orderOverrides: {
+          id: 'a9848efa-6fe7-4452-9825-82eed7d608eb',
+          amount: 3000,
+          transfer_content: 'DHa9848efa-6fe7-4452-9825-82eed7d608eb',
+          provider_order_id: 'PAY52286B03B7EAB4A5F',
+          provider_transaction_id: null,
+        },
+      })
+
+      const result = await test.service.handleSePayBankWebhook(createBankEvent({
+        id: 101844333,
+        gateway: 'MBBank',
+        transactionDate: '2026-11-23 10:50:00',
+        accountNumber: '0349841217',
+        code: 'PAY52286B03B7EAB4A5F',
+        content: 'PAY52286B03B7EAB4A5F',
+        description: 'BankAPINotify PAY52286B03B7EAB4A5F',
+        transferType: 'in',
+        transferAmount: 3000,
+        referenceCode: 'FT26327102492509',
+      }))
+
+      assert.equal(result.status, 'paid')
+      assert.equal(result.isNewlyPaid, true)
+      assert.equal(result.orderId, 'a9848efa-6fe7-4452-9825-82eed7d608eb')
+      assert.equal(result.providerTransactionId, 'FT26327102492509')
+      assert.deepEqual(test.getConfirmationCalls()[0], {
+        orderId: 'a9848efa-6fe7-4452-9825-82eed7d608eb',
+        providerOrderId: 'PAY52286B03B7EAB4A5F',
+        transactionId: 'FT26327102492509',
+        amount: 3000,
+      })
+
+      const fromDescriptionTest = setup('pending', 'found', false, false, {
+        orderOverrides: {
+          id: 'a9848efa-6fe7-4452-9825-82eed7d608eb',
+          amount: 3000,
+          transfer_content: 'DHa9848efa-6fe7-4452-9825-82eed7d608eb',
+          provider_order_id: 'PAY52286B03B7EAB4A5F',
+          provider_transaction_id: null,
+        },
+      })
+      const descResult = await fromDescriptionTest.service.handleSePayBankWebhook(createBankEvent({
+        id: 101844334,
+        accountNumber: '0349841217',
+        code: '',
+        content: 'BankAPINotify PAY52286B03B7EAB4A5F',
+        description: 'BankAPINotify PAY52286B03B7EAB4A5F',
+        transferAmount: 3000,
+        referenceCode: 'FT26327102492510',
+      }))
+      assert.equal(descResult.orderId, 'a9848efa-6fe7-4452-9825-82eed7d608eb')
+
+      const wrappedDhTest = setup('pending')
+      const wrappedResult = await wrappedDhTest.service.handleSePayBankWebhook(createBankEvent({
+        accountNumber: '0349841217',
+        content: `MBVCB.12345.DH${ORDER_ID.replace(/-/g, '').toUpperCase()}.CT`,
+      }))
+      assert.equal(wrappedResult.orderId, ORDER_ID)
+    } finally {
+      Object.assign(env, { sepayAccountNumber: previousAccount })
+    }
+  })
+
+  it('rejects unknown SePay payment identifiers with 404', async () => {
+    const previousAccount = env.sepayAccountNumber
+    Object.assign(env, { sepayAccountNumber: '0349841217' })
+    try {
+      const test = setup('pending')
+      await assert.rejects(
+        test.service.handleSePayBankWebhook(createBankEvent({
+          accountNumber: '0349841217',
+          code: 'PAYUNKNOWN123456',
+          content: 'PAYUNKNOWN123456',
+          description: 'BankAPINotify PAYUNKNOWN123456',
+          transferAmount: 50000,
+        })),
+        (error: unknown) => error instanceof Error && 'statusCode' in error && (error as { statusCode: number }).statusCode === 404,
+      )
+      assert.equal(test.getEnrollmentAttempts(), 0)
+    } finally {
+      Object.assign(env, { sepayAccountNumber: previousAccount })
+    }
+  })
+
+  it('handles duplicate delivery after Hosted IPN on an already-paid order idempotently and rejects conflicting transactions', async () => {
+    const previousAccount = env.sepayAccountNumber
+    Object.assign(env, { sepayAccountNumber: '0349841217' })
+    try {
+      const alreadyPaidViaIpn = setup('paid', 'found', false, false, {
+        orderOverrides: {
+          id: 'a9848efa-6fe7-4452-9825-82eed7d608eb',
+          amount: 3000,
+          transfer_content: 'DHa9848efa-6fe7-4452-9825-82eed7d608eb',
+          provider_order_id: 'PAY52286B03B7EAB4A5F',
+          provider_transaction_id: 'FT26327102492509',
+        },
+      })
+      const idempotentResult = await alreadyPaidViaIpn.service.handleSePayBankWebhook(createBankEvent({
+        id: 101844333,
+        accountNumber: '0349841217',
+        code: 'PAY52286B03B7EAB4A5F',
+        content: 'PAY52286B03B7EAB4A5F',
+        description: 'BankAPINotify PAY52286B03B7EAB4A5F',
+        transferAmount: 3000,
+        referenceCode: 'FT26327102492509',
+      }))
+      assert.equal(idempotentResult.status, 'paid')
+      assert.equal(idempotentResult.isNewlyPaid, false)
+      assert.equal(idempotentResult.providerTransactionId, 'FT26327102492509')
+      assert.equal(alreadyPaidViaIpn.getEnrollmentAttempts(), 1)
+      assert.equal(alreadyPaidViaIpn.getEnrollmentCount(), 0)
+
+      await assert.rejects(
+        alreadyPaidViaIpn.service.handleSePayBankWebhook(createBankEvent({
+          id: 999999999,
+          accountNumber: '0349841217',
+          code: 'PAY52286B03B7EAB4A5F',
+          content: 'PAY52286B03B7EAB4A5F',
+          transferAmount: 3000,
+          referenceCode: 'FT_DIFFERENT_TX',
+        })),
+        (error: unknown) => error instanceof Error && 'statusCode' in error && (error as { statusCode: number }).statusCode === 409,
+      )
+    } finally {
+      Object.assign(env, { sepayAccountNumber: previousAccount })
+    }
+  })
+
+  it('rejects multiple matching orders and prevents one bank transaction from paying another order', async () => {
+    const previousAccount = env.sepayAccountNumber
+    Object.assign(env, { sepayAccountNumber: '0349841217' })
+    try {
+      const secondOrder: PaymentOrder = {
+        ...createOrder('pending'),
+        id: '11111111-1111-4111-8111-111111111111',
+        transfer_content: 'DH11111111-1111-4111-8111-111111111111',
+        provider_order_id: 'PAY_SECOND_ORDER',
+      }
+      const duplicateMatchSetup = setup('pending', 'found', false, false, {
+        extraOrders: [{ ...createOrder('pending'), id: '22222222-2222-4222-8222-222222222222' }],
+      })
+      await assert.rejects(
+        duplicateMatchSetup.service.handleSePayBankWebhook(createBankEvent({
+          accountNumber: '0349841217',
+        })),
+        (error: unknown) => error instanceof Error && 'statusCode' in error && (error as { statusCode: number }).statusCode === 409,
+      )
+      assert.equal(duplicateMatchSetup.getEnrollmentAttempts(), 0)
+
+      const crossFieldConflictSetup = setup('pending', 'found', false, false, {
+        extraOrders: [secondOrder],
+      })
+      await assert.rejects(
+        crossFieldConflictSetup.service.handleSePayBankWebhook(createBankEvent({
+          accountNumber: '0349841217',
+          code: 'PAY_SECOND_ORDER',
+          content: `DH${ORDER_ID}`,
+        })),
+        (error: unknown) => error instanceof Error && 'statusCode' in error && (error as { statusCode: number }).statusCode === 409,
+      )
+      assert.equal(crossFieldConflictSetup.getEnrollmentAttempts(), 0)
+
+      const reusedTxSetup = setup('pending', 'found', false, false, {
+        orderOverrides: {
+          id: 'a9848efa-6fe7-4452-9825-82eed7d608eb',
+          amount: 3000,
+          transfer_content: 'DHa9848efa-6fe7-4452-9825-82eed7d608eb',
+          provider_order_id: 'PAY52286B03B7EAB4A5F',
+        },
+        extraOrders: [{
+          ...createOrder('paid'),
+          id: '33333333-3333-4333-8333-333333333333',
+          transfer_content: 'DH33333333-3333-4333-8333-333333333333',
+          provider_order_id: 'PAY_OTHER',
+          provider_transaction_id: 'FT26327102492509',
+        }],
+      })
+      await assert.rejects(
+        reusedTxSetup.service.handleSePayBankWebhook(createBankEvent({
+          id: 101844333,
+          accountNumber: '0349841217',
+          code: 'PAY52286B03B7EAB4A5F',
+          content: 'PAY52286B03B7EAB4A5F',
+          transferAmount: 3000,
+          referenceCode: 'FT26327102492509',
+        })),
+        (error: unknown) => error instanceof Error && 'statusCode' in error && (error as { statusCode: number }).statusCode === 409,
+      )
+      assert.equal(reusedTxSetup.getEnrollmentAttempts(), 0)
+    } finally {
+      Object.assign(env, { sepayAccountNumber: previousAccount })
+    }
+  })
+
+  it('recovers a late payment on an expired order matched by persisted SePay payment code', async () => {
+    const previousAccount = env.sepayAccountNumber
+    Object.assign(env, { sepayAccountNumber: '0349841217' })
+    try {
+      const expiredByPayCode = setup('expired', 'found', false, false, {
+        orderOverrides: {
+          id: 'a9848efa-6fe7-4452-9825-82eed7d608eb',
+          amount: 3000,
+          transfer_content: 'DHa9848efa-6fe7-4452-9825-82eed7d608eb',
+          provider_order_id: 'PAY52286B03B7EAB4A5F',
+          provider_transaction_id: null,
+        },
+      })
+      const result = await expiredByPayCode.service.handleSePayBankWebhook(createBankEvent({
+        id: 101844333,
+        accountNumber: '0349841217',
+        code: 'PAY52286B03B7EAB4A5F',
+        content: 'PAY52286B03B7EAB4A5F',
+        transferAmount: 3000,
+        referenceCode: 'FT26327102492509',
+      }))
+      assert.equal(result.status, 'paid')
+      assert.equal(result.isNewlyPaid, true)
+      assert.equal(expiredByPayCode.getEnrollmentCount(), 1)
+    } finally {
+      Object.assign(env, { sepayAccountNumber: previousAccount })
+    }
+  })
+
+  it('computes paymentInformation only for pending orders when SePay bank config is available', () => {
+    const original = {
+      mode: env.sepayCheckoutMode,
+      bankCode: env.sepayBankCode,
+      bankName: env.sepayBankName,
+      accountNumber: env.sepayAccountNumber,
+      accountName: env.sepayAccountName,
+    }
+    const service = new PaymentService({} as never)
+    try {
+      Object.assign(env, {
+        sepayCheckoutMode: 'hosted',
+        sepayBankCode: '',
+        sepayBankName: '',
+        sepayAccountNumber: '',
+        sepayAccountName: '',
+      })
+      assert.equal(service.getPaymentInformation(createOrder('pending')), null)
+
+      Object.assign(env, {
+        sepayCheckoutMode: 'hosted',
+        sepayBankCode: 'MB',
+        sepayBankName: 'MB Bank',
+        sepayAccountNumber: '0987654321',
+        sepayAccountName: 'NGUYEN VAN A',
+      })
+      const pendingOrder = { ...createOrder('pending'), expired_at: new Date(Date.now() + 60_000).toISOString() }
+      const info = service.getPaymentInformation(pendingOrder)
+      assert.ok(info)
+      assert.equal(info.bankName, 'MB Bank')
+      assert.equal(info.accountNumber, '0987654321')
+      assert.equal(info.accountName, 'NGUYEN VAN A')
+      assert.equal(info.amount, pendingOrder.amount)
+      assert.equal(info.transferContent, pendingOrder.transfer_content)
+      const qrUrl = new URL(info.qrCodeUrl)
+      assert.equal(qrUrl.searchParams.get('acc'), '0987654321')
+      assert.equal(qrUrl.searchParams.get('bank'), 'MB')
+      assert.equal(qrUrl.searchParams.get('amount'), String(pendingOrder.amount))
+      assert.equal(qrUrl.searchParams.get('des'), pendingOrder.transfer_content)
+
+      assert.equal(service.getPaymentInformation(createOrder('paid')), null)
+      assert.equal(service.getPaymentInformation(createOrder('expired')), null)
+    } finally {
+      Object.assign(env, {
+        sepayCheckoutMode: original.mode,
+        sepayBankCode: original.bankCode,
+        sepayBankName: original.bankName,
+        sepayAccountNumber: original.accountNumber,
+        sepayAccountName: original.accountName,
+      })
     }
   })
 })

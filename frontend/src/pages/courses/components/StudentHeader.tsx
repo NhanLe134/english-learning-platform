@@ -3,10 +3,12 @@ import { Layers, Bell, LogOut, Settings } from 'lucide-react'
 import type { StudentProfile } from '../student-courses-data'
 import { useAuth } from '../../auth/auth-context'
 
+export type StudentNavActivePage = 'my-courses' | 'other-courses' | 'ebook' | 'workshop'
+
 interface StudentHeaderProps {
   student?: StudentProfile
   onLogout?: () => void
-  activePage?: 'my-courses' | 'other-courses'
+  activePage?: StudentNavActivePage
 }
 
 export const StudentHeader: React.FC<StudentHeaderProps> = ({ student, onLogout, activePage = 'my-courses' }) => {
@@ -59,8 +61,8 @@ export const StudentHeader: React.FC<StudentHeaderProps> = ({ student, onLogout,
           <a href="/my-courses" className={`student-nav-link${activePage === 'my-courses' ? ' active' : ''}`} aria-current={activePage === 'my-courses' ? 'page' : undefined}>
             {'Kh\u00F3a h\u1ECDc'}
           </a>
-          <a href="/workshops" className="student-nav-link">Workshop</a>
-          <a href="/ebooks" className="student-nav-link">Ebook</a>
+          <a href="/workshops" className={`student-nav-link${activePage === 'workshop' ? ' active' : ''}`} aria-current={activePage === 'workshop' ? 'page' : undefined}>Workshop</a>
+          <a href="/ebooks" className={`student-nav-link${activePage === 'ebook' ? ' active' : ''}`} aria-current={activePage === 'ebook' ? 'page' : undefined}>Ebook</a>
           <a href="/courses" className={`student-nav-link${activePage === 'other-courses' ? ' active' : ''}`} aria-current={activePage === 'other-courses' ? 'page' : undefined}>
             {'C\u00E1c kh\u00F3a h\u1ECDc kh\u00E1c'}
           </a>
@@ -99,7 +101,7 @@ export const StudentHeader: React.FC<StudentHeaderProps> = ({ student, onLogout,
                     <div
                       key={n.id}
                       className={`p-2.5 rounded-xl transition-colors ${
-                        n.unread ? 'bg-rose-50/60' : 'bg-gray-50'
+                        n.unread ? 'bg-brand-50/70' : 'bg-gray-50'
                       }`}
                     >
                       <div className="flex items-center justify-between text-xs font-bold text-ink-900">
@@ -108,7 +110,7 @@ export const StudentHeader: React.FC<StudentHeaderProps> = ({ student, onLogout,
                           {n.time}
                         </span>
                       </div>
-                      <p className="text-[11px] text-ink-600 mt-0.5 leading-snug">
+                      <p className="text-[11px] text-ink-500 mt-0.5 leading-snug">
                         {n.message}
                       </p>
                     </div>
@@ -162,7 +164,7 @@ export const StudentHeader: React.FC<StudentHeaderProps> = ({ student, onLogout,
                 </button>
                 <button
                   type="button"
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                  className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-brand-600 hover:bg-brand-50 rounded-lg transition-colors cursor-pointer"
                   onClick={async () => {
                     setShowProfileMenu(false)
                     if (onLogout) {

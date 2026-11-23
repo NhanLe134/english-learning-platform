@@ -8,7 +8,7 @@ import {
   GENERIC_FORGOT_MESSAGE,
   type TokenPair,
 } from '../src/modules/auth/auth.service.js'
-import type { AuthSession } from '../src/modules/auth/auth.repository.js'
+import type { AuthSession, StudentRegistrationAccountResult } from '../src/modules/auth/auth.repository.js'
 import type {
   RegistrationOtpIssueResult,
   RegistrationOtpVerifyResult,
@@ -105,24 +105,75 @@ class FakeUsers {
     email: string,
     password: string,
     fullName: string,
-    dateOfBirth: string,
+    dateOfBirth: string | null,
     phoneNumber: string,
     selectedCourseIds: string[]
-  ): Promise<UserProfile> {
-    if ([...this.users.values()].some((user) => user.email === email)) {
-      throw new Error('Email is already registered')
-    }
+  ): Promise<StudentRegistrationAccountResult> {
+    const normalizedEmail = email.trim().toLowerCase()
     assert.equal(password.length >= 8, true)
+    const existing = [...this.users.values()].find((user) => user.email.toLowerCase() === normalizedEmail)
+    if (existing) {
+      if ((existing.status === 'active' && existing.is_verified) || existing.status !== 'pending' || existing.role !== 'STUDENT') {
+        throw new Error('Email is already registered')
+      }
+      const existingDetails = this.registrationDetails.get(existing.id)
+      if (existing.is_verified) {
+        const updatedCourseIds = selectedCourseIds.length > 0
+          ? selectedCourseIds
+          : (existingDetails?.selectedCourseIds ?? [])
+        this.registrationDetails.set(existing.id, {
+          fullName: existing.full_name,
+          dateOfBirth: existingDetails?.dateOfBirth ?? dateOfBirth ?? '',
+          phoneNumber: existing.phone_number ?? '',
+          selectedCourseIds: updatedCourseIds,
+        })
+        return {
+          ...existing,
+          reusedExistingAccount: true,
+          registrationDetails: {
+            dateOfBirth: existingDetails?.dateOfBirth || null,
+            selectedCourseIds: updatedCourseIds,
+          },
+        }
+      }
+      existing.full_name = fullName || existing.full_name
+      existing.phone_number = phoneNumber || existing.phone_number
+      const nextCourseIds = selectedCourseIds.length > 0
+        ? selectedCourseIds
+        : (existingDetails?.selectedCourseIds ?? [])
+      const nextDob = dateOfBirth ?? existingDetails?.dateOfBirth ?? ''
+      this.createdRegistrationDetails = {
+        fullName: existing.full_name,
+        dateOfBirth: nextDob,
+        phoneNumber: existing.phone_number ?? '',
+        selectedCourseIds: nextCourseIds,
+      }
+      this.registrationDetails.set(existing.id, this.createdRegistrationDetails)
+      this.passwords.set(existing.id, password)
+      return {
+        ...existing,
+        reusedExistingAccount: true,
+        registrationDetails: {
+          dateOfBirth: nextDob || null,
+          selectedCourseIds: nextCourseIds,
+        },
+      }
+    }
     const user = {
       ...sampleUser,
       id: randomUUID(),
-      email,
+      email: normalizedEmail,
       full_name: fullName,
       phone_number: phoneNumber,
       status: 'pending' as const,
       is_verified: false,
     }
-    this.createdRegistrationDetails = { fullName, dateOfBirth, phoneNumber, selectedCourseIds }
+    this.createdRegistrationDetails = {
+      fullName,
+      dateOfBirth: dateOfBirth ?? '',
+      phoneNumber,
+      selectedCourseIds,
+    }
     this.registrationDetails.set(user.id, this.createdRegistrationDetails)
     this.createdRole = user.role
     this.users.set(user.id, user)
@@ -1013,14 +1064,13 @@ describe('authentication service', () => {
     assert.match(error.message, /20261025003000_database_url_auth\.sql/)
   })
 
-  it('allows only one concurrent registration for the same normalized email', async () => {
+  it('creates at most one student account for concurrent registrations using the same normalized email', async () => {
     const { service, store, users } = setup()
     const outcomes = await Promise.allSettled([
       register(service, 'concurrent@example.test', 'A-long-password-123'),
       register(service, 'CONCURRENT@example.test', 'Another-long-password-456'),
     ])
-    assert.equal(outcomes.filter((outcome) => outcome.status === 'fulfilled').length, 1)
-    assert.equal(outcomes.filter((outcome) => outcome.status === 'rejected').length, 1)
+    assert.equal(outcomes.every((outcome) => outcome.status === 'fulfilled'), true)
     assert.equal(store.sessions.size, 0)
     assert.equal([...users.users.values()].filter((user) => user.email === 'concurrent@example.test').length, 1)
   })
@@ -1593,5 +1643,113 @@ describe('authentication service', () => {
     assert.equal(session.user.email, email)
     assert.equal(session.user.status, 'active')
     assert.equal(session.user.is_verified, true)
+  })
+
+  it('reuses an unverified pending account, updates selected courses, and refreshes expired OTP', async () => {
+    let lastSentOtp = ''
+    const { users, store, service } = setup(
+      async () => undefined,
+      undefined,
+      async (mail) => {
+        const match = mail.html.match(/\b(\d{6})\b/)
+        if (match?.[1]) lastSentOtp = match[1]
+      }
+    )
+    const courseA = 'c0a80101-0000-4000-8000-000000000001'
+    const courseB = 'c0a80101-0000-4000-8000-000000000002'
+    const email = 'reuse.pending@example.test'
+
+    const first = await register(service, email, 'InitialPassword123!', undefined, {
+      fullName: 'First Student',
+      dateOfBirth: '2001-04-05',
+      phoneNumber: '0911111111',
+      selectedCourseIds: [courseA],
+    })
+    assert.equal(first.verificationRequired, true)
+    assert.deepEqual(first.selectedCourseIds, [courseA])
+    const originalUser = [...users.users.values()].find((item) => item.email === email)
+    assert.ok(originalUser)
+    const originalId = originalUser.id
+
+    // Issue and expire an initial OTP before leaving
+    await service.requestRegistrationOtp(email)
+    const initialOtp = store.registrationOtps.get(originalId)
+    assert.ok(initialOtp)
+    initialOtp.expiresAt = new Date(Date.now() - 60_000).toISOString()
+    initialOtp.lastSentAt = Date.now() - REGISTRATION_OTP_RESEND_COOLDOWN_MS - 1_000
+
+    // Re-register with a different course using the same email
+    const reused = await register(service, email, 'UpdatedPassword123!', undefined, {
+      fullName: 'First Student',
+      dateOfBirth: '2001-04-05',
+      phoneNumber: '0911111111',
+      selectedCourseIds: [courseB],
+    })
+    assert.equal(reused.verificationRequired, true)
+    assert.equal(reused.reusedExistingAccount, true)
+    assert.deepEqual(reused.selectedCourseIds, [courseB])
+    assert.deepEqual(reused.savedRegistration, {
+      fullName: 'First Student',
+      dateOfBirth: '2001-04-05',
+      phoneNumber: '0911111111',
+      selectedCourseIds: [courseB],
+    })
+    assert.equal([...users.users.values()].filter((item) => item.email === email).length, 1)
+    assert.equal(users.registrationDetails.get(originalId)?.selectedCourseIds[0], courseB)
+
+    // Resend fresh OTP and verify successfully
+    const resendResult = await service.requestRegistrationOtp(email)
+    assert.equal(resendResult.status, 'sent')
+    assert.ok(lastSentOtp)
+    await service.verifyRegistrationOtp(email, lastSentOtp)
+    assert.equal(originalUser.is_verified, true)
+    assert.equal(originalUser.status, 'pending')
+  })
+
+  it('skips OTP and preserves verified pending account details when re-registering before payment', async () => {
+    const { users, service } = setup()
+    const courseA = 'c0a80101-0000-4000-8000-000000000001'
+    const courseB = 'c0a80101-0000-4000-8000-000000000002'
+    const email = 'verified.pending@example.test'
+
+    await register(service, email, 'VerifiedPassword123!', undefined, {
+      fullName: 'Verified Student',
+      dateOfBirth: '2000-08-12',
+      phoneNumber: '0922222222',
+      selectedCourseIds: [courseA],
+    })
+    const user = [...users.users.values()].find((item) => item.email === email)
+    assert.ok(user)
+    user.is_verified = true
+    const originalId = user.id
+
+    const result = await register(service, email, 'AttemptedOverwrite123!', undefined, {
+      fullName: 'Changed Name Should Not Overwrite',
+      dateOfBirth: '1999-01-01',
+      phoneNumber: '0999999999',
+      selectedCourseIds: [courseB],
+    })
+    assert.equal(result.verificationRequired, false)
+    assert.equal(result.reusedExistingAccount, true)
+    assert.deepEqual(result.selectedCourseIds, [courseB])
+    assert.equal(user.id, originalId)
+    assert.equal(user.full_name, 'Verified Student')
+    assert.equal(user.is_verified, true)
+    assert.equal(user.status, 'pending')
+    assert.equal(users.passwords.get(originalId), 'VerifiedPassword123!')
+    assert.equal([...users.users.values()].filter((item) => item.email === email).length, 1)
+  })
+
+  it('blocks registration with 409 for active verified accounts without downgrading status', async () => {
+    const { users, service } = setup()
+    await expectAuthError(
+      () => register(service, sampleUser.email, 'A-long-password-123'),
+      409
+    )
+    const activeUser = users.users.get(sampleUser.id)
+    assert.ok(activeUser)
+    assert.equal(activeUser.status, 'active')
+    assert.equal(activeUser.is_verified, true)
+    assert.equal([...users.users.values()].filter((item) => item.email === sampleUser.email).length, 1)
   })
 })

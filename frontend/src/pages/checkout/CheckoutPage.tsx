@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import {
   ArrowRight,
   BadgeCheck,
   BookOpen,
   ChevronRight,
-  Clock3,
   CreditCard,
   Headset,
   Landmark,
@@ -20,8 +19,7 @@ import { SiteFooter, SiteHeader } from '../auth/AuthShared'
 import { readCheckoutCourse, type CourseReference } from '../courses/course-data'
 import { courseCatalogApi } from '../courses/services/courseCatalogApi'
 import { paymentSupportPhone, savePaymentInstructions } from './payment-config'
-import { sepayApi, type CreateOrderResponse } from './sepayApi'
-import SePayVietQR from './SePayVietQR'
+import { sepayApi } from './sepayApi'
 import './checkout-page.css'
 
 interface StudentDetails {
@@ -36,39 +34,6 @@ const formatCurrency = (amount: number) =>
     currency: 'VND',
     maximumFractionDigits: 0,
   }).format(amount)
-
-function formatTime(seconds: number): string {
-  const minutes = Math.floor(seconds / 60).toString().padStart(2, '0')
-  const remainder = (seconds % 60).toString().padStart(2, '0')
-  return `${minutes}:${remainder}`
-}
-
-function OrderHoldTimer({ onExpire, expiresAt }: { onExpire: () => void; expiresAt: string }) {
-  const [remainingSeconds, setRemainingSeconds] = useState(() =>
-    Math.max(0, Math.ceil((Date.parse(expiresAt) - Date.now()) / 1000)),
-  )
-
-  useEffect(() => {
-    if (remainingSeconds === 0) {
-      onExpire()
-      return
-    }
-
-    const timer = setTimeout(() => {
-      setRemainingSeconds(Math.max(0, Math.ceil((Date.parse(expiresAt) - Date.now()) / 1000)))
-    }, 1000)
-    return () => clearTimeout(timer)
-  }, [expiresAt, onExpire, remainingSeconds])
-
-  return (
-    <div className={`checkout-hold-timer${remainingSeconds === 0 ? ' expired' : ''}`} role="timer">
-      <Clock3 size={14} />
-      {remainingSeconds === 0
-        ? 'Thời gian giữ chỗ đã hết'
-        : <>Đơn hàng được giữ chỗ trong: <strong>{formatTime(remainingSeconds)}</strong></>}
-    </div>
-  )
-}
 
 function initialStudentDetails(): StudentDetails {
   try {
@@ -204,36 +169,20 @@ export function CheckoutPage() {
   )
   const [returnOrderStatus, setReturnOrderStatus] = useState<string>('')
   const [student, setStudent] = useState(initialStudentDetails)
-  const [expired, setExpired] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
   const [paymentError, setPaymentError] = useState('')
-  const [showQr, setShowQr] = useState(false)
-  const [paymentOrder, setPaymentOrder] = useState<CreateOrderResponse | null>(null)
-  const paymentOrderRef = useRef<CreateOrderResponse | null>(null)
 
   const paymentReturn = initialUrl.paymentReturnParam
   const returnOrderId = initialUrl.orderIdParam
   const showPaymentReturnNotice = paymentReturn === 'cancel' || paymentReturn === 'error'
 
-  const summaryCourse = paymentOrder
-    ? {
-        ...course,
-        id: paymentOrder.course.id,
-        title: paymentOrder.course.title,
-        slug: paymentOrder.course.slug,
-        details: paymentOrder.course.description ?? course.details,
-        thumbnailUrl: paymentOrder.course.thumbnailUrl ?? course.thumbnailUrl,
-        price: paymentOrder.course.price,
-        originalPrice: paymentOrder.course.originalPrice,
-      }
-    : course
-
+  const summaryCourse = course
   const discount = Math.max(0, summaryCourse.originalPrice - summaryCourse.price)
   const currentStudent = {
-    fullName: paymentOrder?.customer.fullName || student.fullName || user?.fullName || '',
-    email: paymentOrder?.customer.email || student.email || user?.email || '',
-    phone: paymentOrder?.customer.phoneNumber || student.phone || user?.phoneNumber || '',
+    fullName: student.fullName || user?.fullName || '',
+    email: student.email || user?.email || '',
+    phone: student.phone || user?.phoneNumber || '',
   }
 
   useEffect(() => {
@@ -299,35 +248,8 @@ export function CheckoutPage() {
     }
   }, [accessToken, initialUrl.orderIdParam, initialUrl.targetIdentifier])
 
-  const expireOrder = useCallback(() => setExpired(true), [])
-
-  const handleQrPaymentError = useCallback((message: string) => {
-    paymentOrderRef.current = null
-    setPaymentError(message)
-    setProcessing(false)
-    setShowQr(false)
-  }, [])
-
-  const handleQrOrderReady = useCallback((order: CreateOrderResponse) => {
-    paymentOrderRef.current = order
-    setPaymentOrder(order)
-    savePaymentInstructions(order.orderId, order.paymentInformation)
-    setProcessing(false)
-  }, [])
-
-  const handleQrOrderStatusChange = useCallback((status: string) => {
-    if (status === 'paid') {
-      const orderId = paymentOrderRef.current?.orderId
-      if (orderId) {
-        window.location.assign(`/checkout/success?orderId=${encodeURIComponent(orderId)}`)
-      }
-      return
-    }
-    setExpired(['expired', 'failed', 'cancelled'].includes(status))
-  }, [])
-
-  function handlePayment() {
-    if (processing || expired || courseLoading || courseLoadError) return
+  async function handlePayment() {
+    if (processing || courseLoading || courseLoadError) return
     if (!accessToken) {
       const email = currentStudent.email.trim()
       if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -336,19 +258,19 @@ export function CheckoutPage() {
         return
       }
     }
-    paymentOrderRef.current = null
     setPaymentError('')
-    setPaymentOrder(null)
     setProcessing(true)
-    setShowQr(true)
-  }
-
-  function startReplacementOrder() {
-    paymentOrderRef.current = null
-    setPaymentOrder(null)
-    setExpired(false)
-    setPaymentError('')
-    setShowQr(false)
+    try {
+      const createdOrder = await sepayApi.createOrder(
+        { courseId: course.id, email: currentStudent.email },
+        accessToken,
+      )
+      savePaymentInstructions(createdOrder.orderId, createdOrder.paymentInformation)
+      window.location.assign(`/checkout/payment?orderId=${encodeURIComponent(createdOrder.orderId)}`)
+    } catch (cause: unknown) {
+      setPaymentError(cause instanceof Error ? cause.message : 'Không thể tạo đơn thanh toán.')
+      setProcessing(false)
+    }
   }
 
   return (
@@ -364,9 +286,6 @@ export function CheckoutPage() {
             <ChevronRight size={13} />
             <span>Thanh toán an toàn</span>
           </nav>
-          {paymentOrder?.checkoutMode === 'hosted' && paymentOrder.expiredAt && (
-            <OrderHoldTimer onExpire={expireOrder} expiresAt={paymentOrder.expiredAt} />
-          )}
         </div>
 
         {showPaymentReturnNotice && (
@@ -384,14 +303,14 @@ export function CheckoutPage() {
               </p>
             </div>
             {returnOrderId && (
-              <a href={`/checkout/success?orderId=${encodeURIComponent(returnOrderId)}`}>
-                Kiểm tra trạng thái đơn hàng <ChevronRight size={15} />
+              <a href={`/checkout/payment?orderId=${encodeURIComponent(returnOrderId)}`}>
+                Tiếp tục thanh toán đơn hàng <ChevronRight size={15} />
               </a>
             )}
           </section>
         )}
 
-        <div className={`checkout-layout${paymentOrder?.checkoutMode === 'direct_qr' ? ' is-direct-qr' : ''}`}>
+        <div className="checkout-layout">
           <div className="checkout-main-column">
             <section className="checkout-card checkout-student-card" aria-labelledby="student-info-title">
               <header className="checkout-section-heading">
@@ -435,16 +354,6 @@ export function CheckoutPage() {
                 <QrCode size={50} className="checkout-method-icon" />
               </div>
             </section>
-
-            {showQr && (!expired || paymentOrder?.checkoutMode === 'direct_qr') && (
-              <SePayVietQR
-                courseId={course.id}
-                studentEmail={currentStudent.email}
-                onPaymentError={handleQrPaymentError}
-                onOrderReady={handleQrOrderReady}
-                onOrderStatusChange={handleQrOrderStatusChange}
-              />
-            )}
           </div>
 
           <aside className="checkout-sidebar" aria-label="Tóm tắt đơn hàng">
@@ -494,25 +403,16 @@ export function CheckoutPage() {
               {courseLoading && <p role="status">Đang tải thông tin khóa học…</p>}
               {courseLoadError && <p className="checkout-inline-error" role="alert">{courseLoadError}</p>}
               {paymentError && <p className="checkout-inline-error" role="alert">{paymentError}</p>}
-              {expired && showQr && (
-                <button type="button" className="checkout-secondary-button" onClick={startReplacementOrder}>
-                  Tạo đơn thanh toán mới
-                </button>
-              )}
-              {!showQr && (
-                <button
-                  type="button"
-                  className="checkout-primary-button checkout-pay-button"
-                  onClick={handlePayment}
-                  disabled={processing || expired || showQr || courseLoading || Boolean(courseLoadError)}
-                >
-                  {processing
-                    ? <><span className="checkout-spinner" aria-hidden="true" /> ĐANG TẠO ĐƠN…</>
-                    : expired
-                      ? 'ĐƠN HÀNG ĐÃ HẾT HẠN'
-                      : <>Tạo đơn &amp; tiếp tục thanh toán ({formatCurrency(summaryCourse.price)}) <ArrowRight size={17} /></>}
-                </button>
-              )}
+              <button
+                type="button"
+                className="checkout-primary-button checkout-pay-button"
+                onClick={() => void handlePayment()}
+                disabled={processing || courseLoading || Boolean(courseLoadError)}
+              >
+                {processing
+                  ? <><span className="checkout-spinner" aria-hidden="true" /> ĐANG TẠO ĐƠN…</>
+                  : <>Tạo đơn &amp; tiếp tục thanh toán ({formatCurrency(summaryCourse.price)}) <ArrowRight size={17} /></>}
+              </button>
 
               <ul className="checkout-guarantees">
                 <li><LockKeyhole size={18} /> Thông tin thanh toán được xử lý bảo mật qua SePay.</li>
@@ -539,12 +439,8 @@ export function CheckoutPage() {
           requireEmailOnly={!accessToken}
           onClose={() => setEditOpen(false)}
           onSave={(details) => {
-            const emailChanged = details.email.trim().toLowerCase() !== currentStudent.email.trim().toLowerCase()
             setStudent(details)
             setEditOpen(false)
-            if (emailChanged && showQr) {
-              startReplacementOrder()
-            }
           }}
         />
       )}

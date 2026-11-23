@@ -8,6 +8,7 @@ import {
   authRepository,
   type RegistrationOtpIssueResult,
   type RegistrationOtpVerifyResult,
+  type StudentRegistrationAccountResult,
 } from './auth.repository.js'
 import type { AuthSession } from './auth.repository.js'
 import { CourseRequestError, courseService } from '../courses/course.service.js'
@@ -44,7 +45,7 @@ interface UserService {
     phoneNumber: string,
     selectedCourseIds: string[],
     googleDetails?: { phoneNumber: string | null; dateOfBirth: string | null; avatarUrl: string | null; googleId: string }
-  ): Promise<UserProfile>
+  ): Promise<StudentRegistrationAccountResult>
   resolveGoogleIdentity(
     email: string,
     googleSubject: string,
@@ -116,10 +117,19 @@ export interface RegistrationInput {
   googleAccessToken?: string
 }
 
+export interface SavedRegistrationDetails {
+  fullName: string
+  dateOfBirth: string | null
+  phoneNumber: string | null
+  selectedCourseIds: string[]
+}
+
 export interface RegistrationResult {
-  verificationRequired: true
+  verificationRequired: boolean
   email: string
   selectedCourseIds: string[]
+  reusedExistingAccount?: boolean
+  savedRegistration?: SavedRegistrationDetails
 }
 
 export interface RegistrationOtpRequestResult {
@@ -317,6 +327,29 @@ export class AuthService {
           googleId: googleDetails.googleId,
         } : undefined
       )
+      const effectiveSelectedCourseIds = user.registrationDetails?.selectedCourseIds ?? selectedCourseIds
+      if (user.status === 'pending' && user.is_verified === true) {
+        return {
+          verificationRequired: false,
+          email: user.email,
+          selectedCourseIds: effectiveSelectedCourseIds,
+          reusedExistingAccount: true,
+        }
+      }
+      if (user.reusedExistingAccount) {
+        return {
+          verificationRequired: true,
+          email: user.email,
+          selectedCourseIds: effectiveSelectedCourseIds,
+          reusedExistingAccount: true,
+          savedRegistration: {
+            fullName: user.full_name,
+            dateOfBirth: user.registrationDetails?.dateOfBirth ?? dateOfBirth ?? googleDetails?.dateOfBirth ?? null,
+            phoneNumber: user.phone_number ?? (phoneNumber || googleDetails?.phoneNumber || null),
+            selectedCourseIds: effectiveSelectedCourseIds,
+          },
+        }
+      }
       return {
         verificationRequired: true,
         email: user.email,
