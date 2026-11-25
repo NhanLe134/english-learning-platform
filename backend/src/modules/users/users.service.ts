@@ -130,7 +130,9 @@ export class UsersService {
       if (phone && phone.length > 32) throw new Error('Số điện thoại tối đa 32 ký tự')
       clean.phone_number = phone
     }
-    if (payload.avatar_url != null) {
+    if (payload.avatar_url === null) {
+      clean.avatar_url = null
+    } else if (typeof payload.avatar_url === 'string') {
       const avatarUrl = payload.avatar_url.trim()
       if (avatarUrl) {
         try {
@@ -139,8 +141,8 @@ export class UsersService {
         } catch {
           throw new Error('Avatar URL phải là liên kết http/https hợp lệ')
         }
+        clean.avatar_url = avatarUrl
       }
-      clean.avatar_url = avatarUrl
     }
     return usersRepository.updateProfile(id, clean)
   }

@@ -1,3 +1,5 @@
+import { translateErrorMessageToVietnamese } from './vietnamese-messages'
+
 const API_BASE_URL = (
   import.meta.env.VITE_API_URL ||
   import.meta.env.VITE_API_BASE_URL ||
@@ -115,11 +117,15 @@ async function requestApi<T>(
   }
 
   if (!response.ok) {
-    const message =
+    const rawMessage =
       result && typeof result === 'object' && 'message' in result &&
       typeof result.message === 'string'
         ? result.message
-        : `Yêu cầu thất bại (HTTP ${response.status}).`
+        : ''
+    const message = translateErrorMessageToVietnamese(
+      rawMessage,
+      `Yêu cầu thất bại (HTTP ${response.status}).`
+    )
     const code = result && typeof result === 'object' && 'code' in result && typeof result.code === 'string'
       ? result.code
       : undefined
@@ -168,7 +174,7 @@ function tokenSession(result: unknown): AuthSession {
     const claims = JSON.parse(atob(normalized + '='.repeat((4 - normalized.length % 4) % 4))) as { sub?: unknown }
     if (claims.sub !== user.id) throw new Error('Token subject does not match profile id')
   } catch {
-    throw new AuthApiError('User profile does not match the authenticated account.', 502)
+    throw new AuthApiError('Thông tin tài khoản không khớp với phiên đăng nhập.', 502)
   }
 
   return {
@@ -179,7 +185,9 @@ function tokenSession(result: unknown): AuthSession {
       fullName: user.full_name,
       nickname: user.nickname,
       phoneNumber: user.phone_number,
-      avatarUrl: 'avatar_url' in user && typeof user.avatar_url === 'string' ? user.avatar_url : null,
+      avatarUrl: 'avatar_url' in user && typeof user.avatar_url === 'string' && user.avatar_url.trim()
+        ? user.avatar_url.trim()
+        : null,
       role: user.role,
       status: user.status,
       isVerified: user.is_verified,
@@ -336,7 +344,7 @@ export const authApi = {
       !('data' in result) || !result.data || typeof result.data !== 'object' ||
       !('verified' in result.data) || result.data.verified !== true
     ) {
-      throw new AuthApiError('Registration verification response is invalid.', 502)
+      throw new AuthApiError('Phản hồi xác minh đăng ký không hợp lệ.', 502)
     }
   },
 
@@ -356,7 +364,9 @@ export const authApi = {
       fullName: String(user.full_name),
       nickname: user.nickname ? String(user.nickname) : null,
       phoneNumber: user.phone_number ? String(user.phone_number) : null,
-      avatarUrl: user.avatar_url ? String(user.avatar_url) : null,
+      avatarUrl: typeof user.avatar_url === 'string' && user.avatar_url.trim()
+        ? user.avatar_url.trim()
+        : null,
       role: user.role as AuthUser['role'],
       status: user.status as AuthUser['status'],
       isVerified: Boolean(user.is_verified),
@@ -379,7 +389,12 @@ export const authApi = {
     ) {
       throw new AuthApiError('Phản hồi khôi phục mật khẩu không đúng định dạng.', 502)
     }
-    return { message: result.message }
+    return {
+      message: translateErrorMessageToVietnamese(
+        result.message,
+        'Nếu tài khoản đã được đăng ký, hướng dẫn khôi phục đã được gửi đến email.'
+      ),
+    }
   },
 
   async activateTeacher(token: string, password: string): Promise<void> {
@@ -396,7 +411,9 @@ export const authApi = {
 }
 
 export function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Đã xảy ra lỗi không xác định.'
+  return error instanceof Error
+    ? translateErrorMessageToVietnamese(error.message, 'Đã xảy ra lỗi không xác định.')
+    : 'Đã xảy ra lỗi không xác định.'
 }
 
 export function getAuthApiErrorStatus(error: unknown): number | undefined {

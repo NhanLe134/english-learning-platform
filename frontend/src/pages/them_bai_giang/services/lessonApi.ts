@@ -455,6 +455,23 @@ export const lessonApi = {
     )
   },
 
+  /**
+   * Xin signed stream token ngắn hạn để phát video Google Drive qua backend proxy (HTML5 <video> hỗ trợ Range)
+   */
+  async createVideoStreamUrl(
+    lessonId: string,
+    accessToken: string | null,
+    refreshAccessToken: () => Promise<string>
+  ): Promise<string> {
+    const data = await authenticatedRequest<{ token: string; expires_in_seconds: number }>(
+      `/lessons/${encodeURIComponent(lessonId)}/video-stream-token`,
+      { method: 'POST' },
+      accessToken,
+      refreshAccessToken
+    )
+    return `${API_BASE_URL}/lessons/lessons/${encodeURIComponent(lessonId)}/video-stream?token=${encodeURIComponent(data.token)}`
+  },
+
   /** Cập nhật tiến độ xem video bài học */
   async updateProgress(
     lessonId: string,

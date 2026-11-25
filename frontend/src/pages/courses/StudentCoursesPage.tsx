@@ -16,6 +16,11 @@ import {
 } from './services/courseCatalogApi'
 import type { CourseReference } from './course-data'
 import { buildCheckoutPageUrl, savePaymentReturnPath } from '../checkout/payment-navigation'
+import {
+  formatCourseLevelVietnamese,
+  formatUserRoleVietnamese,
+  translateErrorMessageToVietnamese,
+} from '../auth/vietnamese-messages'
 import './student-courses.css'
 
 function mapCatalogToOtherCourse(course: CourseReference): OtherCourse {
@@ -28,15 +33,8 @@ function mapCatalogToOtherCourse(course: CourseReference): OtherCourse {
     id: course.id,
     title: course.title,
     slug: course.slug,
-    tagBadge: (course.category || 'General').toUpperCase(),
-    levelBadge:
-      course.level === 'beginner'
-        ? 'CƠ BẢN'
-        : course.level === 'intermediate'
-        ? 'TRUNG CẤP'
-        : course.level === 'advanced'
-        ? 'NÂNG CAO'
-        : (course.level || '').toUpperCase(),
+    tagBadge: (course.category || 'Tổng quát').toUpperCase(),
+    levelBadge: formatCourseLevelVietnamese(course.level, true),
     levelBadgeColor:
       course.level === 'beginner'
         ? 'blue'
@@ -61,14 +59,7 @@ function mapBackendEnrolledCourse(item: BackendEnrolledCourse): MyCourse {
     id: item.id || item.course_id,
     title: item.title,
     slug: item.slug,
-    levelBadge:
-      item.level === 'beginner'
-        ? 'Cơ bản'
-        : item.level === 'intermediate'
-        ? 'Trung cấp'
-        : item.level === 'advanced'
-        ? 'Nâng cao'
-        : item.level || '',
+    levelBadge: formatCourseLevelVietnamese(item.level),
     instructor: item.teacher?.full_name || '',
     thumbnailUrl: item.thumbnail_url || '',
     status: isCompleted ? 'completed' : 'in_progress',
@@ -114,7 +105,12 @@ export const StudentCoursesPage: React.FC = () => {
       })
       .catch((err: unknown) => {
         if (!active) return
-        setCatalogError(err instanceof Error ? err.message : 'Không thể tải danh sách khóa học.')
+        setCatalogError(
+          translateErrorMessageToVietnamese(
+            err instanceof Error ? err.message : '',
+            'Không thể tải danh sách khóa học.',
+          ),
+        )
       })
       .finally(() => {
         if (active) setCatalogLoading(false)
@@ -182,7 +178,7 @@ export const StudentCoursesPage: React.FC = () => {
     () => ({
       name: user?.fullName || 'Học viên',
       email: user?.email || '',
-      role: user?.role === 'STUDENT' ? 'Học viên' : user?.role || 'Học viên',
+      role: formatUserRoleVietnamese(user?.role),
       avatarUrl: user?.avatarUrl ?? null,
       streakDays: 0,
       weeklyGoalPercent: 0,
@@ -317,7 +313,8 @@ export const StudentCoursesPage: React.FC = () => {
                     role="tab"
                     aria-selected={statusFilter === 'all'}
                   >
-                    Tất Cả ({totalCount})
+                    <span className="filter-tab-label">Tất Cả</span>
+                    <span className="filter-tab-count">({totalCount})</span>
                   </button>
                   <button
                     type="button"
@@ -326,7 +323,8 @@ export const StudentCoursesPage: React.FC = () => {
                     role="tab"
                     aria-selected={statusFilter === 'in_progress'}
                   >
-                    Đang Học ({inProgressCount})
+                    <span className="filter-tab-label">Đang Học</span>
+                    <span className="filter-tab-count">({inProgressCount})</span>
                   </button>
                   <button
                     type="button"
@@ -335,7 +333,8 @@ export const StudentCoursesPage: React.FC = () => {
                     role="tab"
                     aria-selected={statusFilter === 'completed'}
                   >
-                    Đã Hoàn Thành ({completedCount})
+                    <span className="filter-tab-label">Đã Hoàn Thành</span>
+                    <span className="filter-tab-count">({completedCount})</span>
                   </button>
                 </div>
 

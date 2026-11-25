@@ -1,5 +1,6 @@
 import type { CourseReference } from '../courses/course-data'
 import { mapCourseCatalogRecord, type CourseCatalogRecord } from '../courses/services/courseCatalogApi'
+import { translateErrorMessageToVietnamese } from '../auth/vietnamese-messages'
 
 const API_BASE_URL = (
   import.meta.env.VITE_API_URL ||
@@ -84,11 +85,16 @@ async function request<T>(
   const headers = new Headers(init.headers)
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
 
-  const response = await fetch(`${API_BASE_URL}/payment${path}`, {
-    ...init,
-    headers,
-    credentials: 'include',
-  })
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE_URL}/payment${path}`, {
+      ...init,
+      headers,
+      credentials: 'include',
+    })
+  } catch {
+    throw new Error('Không thể kết nối máy chủ thanh toán. Vui lòng kiểm tra kết nối mạng và thử lại.')
+  }
 
   let result: ApiResponse<T>
   try {
@@ -98,7 +104,12 @@ async function request<T>(
   }
 
   if (!response.ok || !result.success) {
-    throw new Error(result.message || `Yêu cầu thanh toán thất bại (HTTP ${response.status}).`)
+    throw new Error(
+      translateErrorMessageToVietnamese(
+        result.message,
+        `Yêu cầu thanh toán thất bại (HTTP ${response.status}).`,
+      ),
+    )
   }
   return result
 }

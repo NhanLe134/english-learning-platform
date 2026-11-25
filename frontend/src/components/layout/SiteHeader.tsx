@@ -69,9 +69,12 @@ export function SiteHeader({ activeTab: explicitActiveTab, brandName = 'Your Eng
   const [menuOpen, setMenuOpen] = useState(false)
   const [detectedTab, setDetectedTab] = useState<NavTabId | null>(detectActiveTab)
   const [loggingOut, setLoggingOut] = useState(false)
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null)
 
   const auth = useContext(AuthContext)
   const user = auth?.user ?? null
+  const userAvatarUrl = user?.avatarUrl?.trim() || null
+  const showUserAvatarImage = Boolean(userAvatarUrl && failedAvatarUrl !== userAvatarUrl)
   const homeHref = getRoleHomePath(user?.role)
   const isLoginPage = typeof window !== 'undefined' && window.location.pathname.toLowerCase() === '/login'
 
@@ -156,9 +159,19 @@ export function SiteHeader({ activeTab: explicitActiveTab, brandName = 'Your Eng
                 className="hidden items-center gap-2 rounded-full border border-gray-200 bg-white py-1 pl-1 pr-3 sm:flex"
                 title={user.email}
               >
-                <span className="flex size-7 items-center justify-center rounded-full bg-brand-600 text-xs font-bold text-white">
-                  {(user.fullName || user.email || '?').charAt(0).toUpperCase()}
-                </span>
+                {showUserAvatarImage && userAvatarUrl ? (
+                  <img
+                    src={userAvatarUrl}
+                    alt={user.fullName || user.email}
+                    className="size-7 rounded-full object-cover"
+                    referrerPolicy="no-referrer"
+                    onError={() => setFailedAvatarUrl(userAvatarUrl)}
+                  />
+                ) : (
+                  <span className="flex size-7 items-center justify-center rounded-full bg-brand-600 text-xs font-bold text-white">
+                    {(user.fullName || user.email || '?').charAt(0).toUpperCase()}
+                  </span>
+                )}
                 <span className="flex flex-col leading-tight">
                   <span className="text-xs font-bold text-ink-900">
                     {user.fullName || user.email}

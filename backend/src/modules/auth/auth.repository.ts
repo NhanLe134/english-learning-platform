@@ -59,7 +59,7 @@ function mapUser(row: Record<string, unknown>): UserProfile {
     nickname: typeof row.nickname === 'string' ? row.nickname : null,
     phone_number: typeof row.phone_number === 'string' ? row.phone_number : null,
     role: String(row.role ?? 'STUDENT').toUpperCase() as UserProfile['role'],
-    avatar_url: typeof row.avatar_url === 'string' ? row.avatar_url : null,
+    avatar_url: typeof row.avatar_url === 'string' && row.avatar_url.trim() ? row.avatar_url.trim() : null,
     status: String(row.status ?? 'active').toLowerCase() as UserProfile['status'],
     is_verified: Boolean(row.is_verified || ['TEACHER', 'ADMIN'].includes(String(row.role ?? '').toUpperCase())),
     created_at: isoDate(row.created_at),
@@ -68,6 +68,12 @@ function mapUser(row: Record<string, unknown>): UserProfile {
 }
 
 export class AuthRepository {
+  private readonly getPool: typeof getDatabasePool
+
+  constructor(getPool: typeof getDatabasePool = getDatabasePool) {
+    this.getPool = getPool
+  }
+
   private async finishTransaction(client: PoolClient): Promise<void> {
     await client.query('COMMIT')
   }
@@ -79,7 +85,7 @@ export class AuthRepository {
     sentAt: string,
     cooldownMs: number
   ): Promise<RegistrationOtpIssueResult> {
-    const client = await getDatabasePool().connect()
+    const client = await this.getPool().connect()
     try {
       await client.query('BEGIN')
       const { rows } = await client.query(
@@ -169,7 +175,7 @@ export class AuthRepository {
     now: string,
     maxAttempts = REGISTRATION_OTP_MAX_ATTEMPTS
   ): Promise<RegistrationOtpVerifyResult> {
-    const client = await getDatabasePool().connect()
+    const client = await this.getPool().connect()
     try {
       await client.query('BEGIN')
       const { rows } = await client.query(
@@ -208,7 +214,8 @@ export class AuthRepository {
         await this.finishTransaction(client)
         return { status: 'invalid' }
       }
-      if (otpRow.attempt_count >= maxAttempts) {
+      const currentAttempts = Number(otpRow.attempt_count)
+      if (!Number.isFinite(currentAttempts) || currentAttempts >= maxAttempts) {
         await this.finishTransaction(client)
         return { status: 'attempts_exhausted' }
       }
@@ -218,27 +225,37 @@ export class AuthRepository {
       }
       if (new Date(otpRow.expires_at).getTime() <= new Date(now).getTime()) {
         await client.query(
-          `UPDATE public.registration_email_otps SET consumed_at = $2 WHERE user_id = $1`,
+          `UPDATE public.registration_email_otps SET consumed_at = $2::timestamptz WHERE user_id = $1`,
           [profile.id, now]
         )
         await this.finishTransaction(client)
         return { status: 'expired' }
       }
       if (!registrationOtpMatches(String(profile.id), otp, otpRow.otp_hash)) {
-        const attempts = otpRow.attempt_count + 1
-        await client.query(
-          `UPDATE public.registration_email_otps
-           SET attempt_count = $2,
-               consumed_at = CASE WHEN $2 >= $3 THEN $4 ELSE consumed_at END
-           WHERE user_id = $1`,
-          [profile.id, attempts, maxAttempts, now]
-        )
+        const attempts = currentAttempts + 1
+        const exhausted = attempts >= maxAttempts
+        if (exhausted) {
+          await client.query(
+            `UPDATE public.registration_email_otps
+             SET attempt_count = $2::smallint,
+                 consumed_at = $3::timestamptz
+             WHERE user_id = $1`,
+            [profile.id, attempts, now]
+          )
+        } else {
+          await client.query(
+            `UPDATE public.registration_email_otps
+             SET attempt_count = $2::smallint
+             WHERE user_id = $1`,
+            [profile.id, attempts]
+          )
+        }
         await this.finishTransaction(client)
-        return { status: attempts >= maxAttempts ? 'attempts_exhausted' : 'invalid' }
+        return { status: exhausted ? 'attempts_exhausted' : 'invalid' }
       }
 
       await client.query(
-        `UPDATE public.registration_email_otps SET consumed_at = $2 WHERE user_id = $1`,
+        `UPDATE public.registration_email_otps SET consumed_at = $2::timestamptz WHERE user_id = $1`,
         [profile.id, now]
       )
       const { rows: verifiedRows } = await client.query(
@@ -297,9 +314,6 @@ export class AuthRepository {
       const existingRow = existing.rows[0] as Record<string, unknown> | undefined
       if (existingRow) {
         const existingUser = mapUser(existingRow)
-        const existingCourseIds = Array.isArray(existingRow.registration_selected_course_ids)
-          ? existingRow.registration_selected_course_ids.map(String)
-          : []
         if (
           (existingUser.status === 'active' && existingUser.is_verified) ||
           existingUser.status !== 'pending' ||
@@ -311,49 +325,21 @@ export class AuthRepository {
         }
 
         if (existingUser.is_verified) {
-          const { rows: detailRows } = await client.query(
-            `INSERT INTO public.auth_registration_details
-              (user_id, date_of_birth, selected_course_ids, google_id)
-             VALUES ($1, $2, $3::UUID[], $4)
-             ON CONFLICT (user_id) DO UPDATE
-             SET selected_course_ids = CASE
-                   WHEN cardinality(EXCLUDED.selected_course_ids) > 0 THEN EXCLUDED.selected_course_ids
-                   ELSE auth_registration_details.selected_course_ids
-                 END
-             RETURNING to_char(date_of_birth, 'YYYY-MM-DD') AS date_of_birth, selected_course_ids`,
-            [
-              existingUser.id,
-              dateOfBirth ?? googleDetails?.dateOfBirth ?? null,
-              selectedCourseIds,
-              googleDetails?.googleId ?? null,
-            ]
+          await client.query(
+            `DELETE FROM public.registration_email_otps
+             WHERE user_id = $1 AND consumed_at IS NOT NULL`,
+            [existingUser.id]
           )
-          const detailsRow = detailRows[0] as Record<string, unknown> | undefined
-          await client.query('COMMIT')
-          txFinished = true
-          return {
-            ...existingUser,
-            reusedExistingAccount: true,
-            registrationDetails: {
-              dateOfBirth: typeof detailsRow?.date_of_birth === 'string'
-                ? detailsRow.date_of_birth
-                : (typeof existingRow.registration_date_of_birth === 'string'
-                  ? existingRow.registration_date_of_birth
-                  : null),
-              selectedCourseIds: Array.isArray(detailsRow?.selected_course_ids)
-                ? detailsRow.selected_course_ids.map(String)
-                : existingCourseIds,
-            },
-          }
         }
 
         const { rows: updatedRows } = await client.query(
           `UPDATE public.profiles
            SET full_name = COALESCE(NULLIF($2, ''), full_name),
                phone_number = COALESCE(NULLIF($3, ''), phone_number),
-               avatar_url = COALESCE(avatar_url, $4),
+               avatar_url = COALESCE(NULLIF(btrim(avatar_url), ''), $4),
+               is_verified = false,
                updated_at = now()
-           WHERE id = $1 AND status = 'pending' AND is_verified = false
+           WHERE id = $1 AND status = 'pending'
            RETURNING ${USER_COLUMNS}`,
           [
             existingUser.id,

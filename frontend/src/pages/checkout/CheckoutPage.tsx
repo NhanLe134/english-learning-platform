@@ -21,6 +21,10 @@ import { courseCatalogApi } from '../courses/services/courseCatalogApi'
 import { paymentSupportPhone, savePaymentInstructions } from './payment-config'
 import { buildPaymentPageUrl, readPaymentReturnPath, resolvePaymentBackHref, savePaymentReturnPath, validatePaymentReturnPath } from './payment-navigation'
 import { sepayApi } from './sepayApi'
+import {
+  formatOrderStatusVietnamese,
+  translateErrorMessageToVietnamese,
+} from '../auth/vietnamese-messages'
 import './checkout-page.css'
 
 interface StudentDetails {
@@ -154,7 +158,12 @@ export function CheckoutPage() {
         } catch (cause: unknown) {
           if (!active) return
           if (!resolvedCourseIdentifier) {
-            setCourseLoadError(cause instanceof Error ? cause.message : 'Không thể tải thông tin đơn hàng.')
+            setCourseLoadError(
+              translateErrorMessageToVietnamese(
+                cause instanceof Error ? cause.message : '',
+                'Không thể tải thông tin đơn hàng.',
+              ),
+            )
             setCourseLoading(false)
             return
           }
@@ -178,7 +187,12 @@ export function CheckoutPage() {
         setCourseLoadError('')
       } catch (cause: unknown) {
         if (!active) return
-        setCourseLoadError(cause instanceof Error ? cause.message : 'Không thể tải thông tin khóa học.')
+        setCourseLoadError(
+          translateErrorMessageToVietnamese(
+            cause instanceof Error ? cause.message : '',
+            'Không thể tải thông tin khóa học.',
+          ),
+        )
       } finally {
         if (active) setCourseLoading(false)
       }
@@ -216,7 +230,12 @@ export function CheckoutPage() {
       savePaymentReturnPath(createdOrder.orderId, originToCarry)
       window.location.assign(buildPaymentPageUrl(createdOrder.orderId, originToCarry))
     } catch (cause: unknown) {
-      setPaymentError(cause instanceof Error ? cause.message : 'Không thể tạo đơn thanh toán.')
+      setPaymentError(
+        translateErrorMessageToVietnamese(
+          cause instanceof Error ? cause.message : '',
+          'Không thể tạo đơn thanh toán.',
+        ),
+      )
       setProcessing(false)
     }
   }
@@ -256,7 +275,7 @@ export function CheckoutPage() {
               </strong>
               <p>
                 {returnOrderStatus
-                  ? `Trạng thái đơn hàng hiện tại là "${returnOrderStatus}". Tài khoản và khóa học chỉ được kích hoạt sau khi hệ thống xác thực thông báo từ SePay.`
+                  ? `Trạng thái đơn hàng hiện tại là "${formatOrderStatusVietnamese(returnOrderStatus)}". Tài khoản và khóa học chỉ được kích hoạt sau khi hệ thống xác thực thông báo từ SePay.`
                   : 'Trạng thái thanh toán chỉ được xác nhận sau khi hệ thống nhận và kiểm tra thông báo từ SePay.'}
               </p>
             </div>

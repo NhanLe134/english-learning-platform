@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   BookOpen,
   CheckCircle2,
@@ -21,6 +21,18 @@ import { EmailOtpVerification } from './EmailOtpVerification'
 import { authApi, getErrorMessage } from './auth-api'
 import { readCheckoutCourse } from '../courses/course-data'
 import { initiateGoogleRegistration } from './google-auth'
+import {
+  clearPendingCheckoutStudent,
+  clearTemporaryRegistrationSecrets,
+  hasTemporaryRegistrationSecretsExpired,
+  navigateGuestFlow,
+  PENDING_CHECKOUT_STUDENT_KEY,
+  readPendingRegistrationDraft,
+  readTemporaryRegistrationSecrets,
+  REGISTRATION_SESSION_MAX_AGE_MS,
+  savePendingRegistrationDraft,
+  saveTemporaryRegistrationSecrets,
+} from './registration-draft'
 import './login-page.css'
 import './register-page.css'
 
@@ -28,52 +40,20 @@ type RegistrationStage = 'details' | 'verification'
 
 const MAX_BIRTH_DATE = new Date().toISOString().slice(0, 10)
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const PENDING_REGISTRATION_DRAFT_KEY = 'your-voice-pending-registration-draft'
 const OTP_VALIDITY_MS = 10 * 60 * 1000
 const OTP_RESEND_COOLDOWN_MS = 60 * 1000
+const INVALID_PHONE_NUMBER_MESSAGE = 'Please enter a valid phone number.'
+const PHONE_NUMBER_PATTERN = /^\+?[\d\s().-]+$/
 
-interface PendingRegistrationDraft {
-  fullName: string
-  dateOfBirth: string
-  email: string
-  phoneNumber: string
-  selectedCourseIds: string[]
-  courseSearch: string
-  otpPending: boolean
-  otpSentAt: string | null
-  otpExpiresAt: string | null
-}
-
-function readPendingRegistrationDraft(): PendingRegistrationDraft | null {
-  try {
-    const raw = sessionStorage.getItem(PENDING_REGISTRATION_DRAFT_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as Partial<PendingRegistrationDraft>
-    return {
-      fullName: typeof parsed.fullName === 'string' ? parsed.fullName : '',
-      dateOfBirth: typeof parsed.dateOfBirth === 'string' ? parsed.dateOfBirth : '',
-      email: typeof parsed.email === 'string' ? parsed.email : '',
-      phoneNumber: typeof parsed.phoneNumber === 'string' ? parsed.phoneNumber : '',
-      selectedCourseIds: Array.isArray(parsed.selectedCourseIds)
-        ? parsed.selectedCourseIds.filter((id): id is string => typeof id === 'string')
-        : [],
-      courseSearch: typeof parsed.courseSearch === 'string' ? parsed.courseSearch : '',
-      otpPending: parsed.otpPending === true,
-      otpSentAt: typeof parsed.otpSentAt === 'string' ? parsed.otpSentAt : null,
-      otpExpiresAt: typeof parsed.otpExpiresAt === 'string' ? parsed.otpExpiresAt : null,
-    }
-  } catch {
-    return null
-  }
-}
-
-function savePendingRegistrationDraft(draft: PendingRegistrationDraft): void {
-  try {
-    // Store only non-sensitive registration progress; never store passwords in browser storage.
-    sessionStorage.setItem(PENDING_REGISTRATION_DRAFT_KEY, JSON.stringify(draft))
-  } catch {
-    // Storage may be unavailable; registration still works from form state and backend DB.
-  }
+function isValidRegistrationPhoneNumber(value: string): boolean {
+  const trimmed = value.trim()
+  const phoneDigits = trimmed.replace(/\D/g, '').length
+  return (
+    trimmed.length > 0 &&
+    trimmed.length <= 32 &&
+    PHONE_NUMBER_PATTERN.test(trimmed) &&
+    (phoneDigits === 10 || phoneDigits === 11)
+  )
 }
 
 function secondsUntil(isoTimestamp: string | null): number | undefined {
@@ -87,9 +67,10 @@ function formatCurrency(amount: number): string {
   return `${amount.toLocaleString('vi-VN')}đ`
 }
 
-export function RegisterPage() {
-  const [urlSearch] = useState(() => window.location.search)
+export function RegisterPage({ search }: { search?: string } = {}) {
+  const urlSearch = search ?? window.location.search
   const [savedDraft] = useState(() => readPendingRegistrationDraft())
+  const [initialSecrets] = useState(() => readTemporaryRegistrationSecrets())
   const urlCourse = readCheckoutCourse(urlSearch)
   const hasUrlCourse = Boolean(urlCourse.id && UUID_REGEX.test(urlCourse.id))
   const course = hasUrlCourse
@@ -106,17 +87,19 @@ export function RegisterPage() {
   const [stage, setStage] = useState<RegistrationStage>('details')
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
-  const [acceptedTerms, setAcceptedTerms] = useState(false)
+  const [acceptedTerms, setAcceptedTerms] = useState(() => initialSecrets.acceptedTerms)
   const [fullName, setFullName] = useState(() => savedDraft?.fullName ?? '')
   const [googleAccessToken, setGoogleAccessToken] = useState('')
   const [dateOfBirth, setDateOfBirth] = useState(() => savedDraft?.dateOfBirth ?? '')
   const [phoneNumber, setPhoneNumber] = useState(() => savedDraft?.phoneNumber ?? '')
   const [email, setEmail] = useState(() => savedDraft?.email ?? '')
+  const [password, setPassword] = useState(() => initialSecrets.password)
+  const [confirmPassword, setConfirmPassword] = useState(() => initialSecrets.confirmPassword)
   const [otpPending, setOtpPending] = useState(() => savedDraft?.otpPending ?? false)
   const [otpSentAt, setOtpSentAt] = useState<string | null>(() => savedDraft?.otpSentAt ?? null)
   const [otpExpiresAt, setOtpExpiresAt] = useState<string | null>(() => savedDraft?.otpExpiresAt ?? null)
   const [savedDraftEmail, setSavedDraftEmail] = useState(() => savedDraft?.email ?? '')
-  const [savedDraftCourseIds, setSavedDraftCourseIds] = useState<string[]>(() => savedDraft?.selectedCourseIds ?? [])
+  const normalizedDraftEmail = savedDraftEmail.trim().toLowerCase()
   const [verified, setVerified] = useState(false)
   const [otpDeliveryFailed, setOtpDeliveryFailed] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
@@ -126,22 +109,99 @@ export function RegisterPage() {
   const [googleLoading, setGoogleLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
+  const verifiedRef = useRef(verified)
+  const stageRef = useRef(stage)
+  const draftSavedAtRef = useRef<number>(savedDraft?.savedAt ?? 0)
+
   useEffect(() => {
-    const resetStaleLoadingState = (event: PageTransitionEvent) => {
+    verifiedRef.current = verified
+  }, [verified])
+
+  useEffect(() => {
+    stageRef.current = stage
+  }, [stage])
+
+  useEffect(() => {
+    if (draftSavedAtRef.current === 0) {
+      draftSavedAtRef.current = Date.now()
+    }
+    const resetExpiredSessionState = () => {
+      if (hasTemporaryRegistrationSecretsExpired()) {
+        clearTemporaryRegistrationSecrets()
+        setPassword('')
+        setConfirmPassword('')
+      }
+      if (Date.now() - draftSavedAtRef.current >= REGISTRATION_SESSION_MAX_AGE_MS) {
+        draftSavedAtRef.current = Date.now()
+        setOtpPending(false)
+        setOtpSentAt(null)
+        setOtpExpiresAt(null)
+        setVerified(false)
+        setStage('details')
+        clearPendingCheckoutStudent()
+      }
+    }
+
+    const handlePageShow = (event: PageTransitionEvent) => {
       if (event.persisted) {
         setGoogleLoading(false)
         setSubmitting(false)
+        if (verifiedRef.current) {
+          setStage('details')
+          setVerified(false)
+          setOtpPending(false)
+          setOtpSentAt(null)
+          setOtpExpiresAt(null)
+          setOtpDeliveryFailed(false)
+          setDevelopmentOtp('')
+          setErrorMessage('')
+          setSuccessMessage('')
+          setInfoMessage('')
+        }
+      }
+      resetExpiredSessionState()
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        resetExpiredSessionState()
       }
     }
-    window.addEventListener('pageshow', resetStaleLoadingState)
+
+    const handlePopState = () => {
+      if (window.location.pathname !== '/register') return
+      const historyStage =
+        window.history.state && typeof window.history.state === 'object'
+          ? (window.history.state as { registerStage?: unknown }).registerStage
+          : undefined
+      if (stageRef.current === 'verification' && historyStage !== 'verification') {
+        setStage('details')
+        setErrorMessage('')
+        setInfoMessage('')
+        setSuccessMessage('')
+        setOtpDeliveryFailed(false)
+        setDevelopmentOtp('')
+      }
+    }
+
+    window.addEventListener('pageshow', handlePageShow)
+    window.addEventListener('popstate', handlePopState)
+    window.addEventListener('focus', resetExpiredSessionState)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => {
-      window.removeEventListener('pageshow', resetStaleLoadingState)
+      window.removeEventListener('pageshow', handlePageShow)
+      window.removeEventListener('popstate', handlePopState)
+      window.removeEventListener('focus', resetExpiredSessionState)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [])
 
   useEffect(() => {
     if (!fullName && !dateOfBirth && !email && !phoneNumber && currentSelectedCourseIds.length === 0) {
       return
+    }
+    if (draftSavedAtRef.current === 0) {
+      draftSavedAtRef.current = Date.now()
     }
     savePendingRegistrationDraft({
       fullName,
@@ -153,29 +213,10 @@ export function RegisterPage() {
       otpPending,
       otpSentAt,
       otpExpiresAt,
+      savedAt: draftSavedAtRef.current,
     })
   }, [checkoutSearch, currentSelectedCourseIds, dateOfBirth, email, fullName, otpExpiresAt, otpPending, otpSentAt, phoneNumber])
 
-  const normalizedDraftEmail = savedDraftEmail.trim().toLowerCase()
-  const courseMatchesDraft = !hasUrlCourse || savedDraftCourseIds.length === 0 || savedDraftCourseIds[0] === urlCourse.id
-  const canResumeOtp = Boolean(
-    otpPending &&
-    email.trim() &&
-    email.trim().toLowerCase() === normalizedDraftEmail &&
-    courseMatchesDraft
-  )
-
-  function handleResumeOtpVerification() {
-    setErrorMessage('')
-    setSuccessMessage('')
-    const otpExpired = Boolean(otpExpiresAt && Date.parse(otpExpiresAt) <= Date.now())
-    setInfoMessage(
-      otpExpired
-        ? 'Mã OTP trước đó đã hết hạn. Vui lòng bấm "Gửi lại mã xác minh" để nhận mã mới.'
-        : 'Vui lòng nhập mã OTP đã gửi đến email của bạn hoặc bấm gửi lại nếu chưa nhận được.'
-    )
-    setStage('verification')
-  }
 
 
   async function handleGoogleLogin() {
@@ -184,6 +225,7 @@ export function RegisterPage() {
     setInfoMessage('')
     await initiateGoogleRegistration({
       onSuccess: (profile) => {
+        draftSavedAtRef.current = Date.now()
         setEmail(profile.email)
         setFullName(profile.fullName)
         setGoogleAccessToken(profile.accessToken)
@@ -201,9 +243,25 @@ export function RegisterPage() {
     setErrorMessage('')
     setSuccessMessage('')
     setInfoMessage('')
-    const formData = new FormData(event.currentTarget)
-    const password = String(formData.get('password') ?? '')
-    const confirmPassword = String(formData.get('confirmPassword') ?? '')
+    if (hasTemporaryRegistrationSecretsExpired()) {
+      clearTemporaryRegistrationSecrets()
+      setPassword('')
+      setConfirmPassword('')
+      setOtpPending(false)
+      setOtpSentAt(null)
+      setOtpExpiresAt(null)
+      clearPendingCheckoutStudent()
+      setErrorMessage('Phiên tạm thời đã hết hạn. Vui lòng nhập lại mật khẩu để tiếp tục đăng ký.')
+      return
+    }
+    const normalizedPhoneNumber = phoneNumber.trim()
+    if (
+      (!normalizedPhoneNumber && !googleAccessToken) ||
+      (normalizedPhoneNumber && !isValidRegistrationPhoneNumber(normalizedPhoneNumber))
+    ) {
+      setErrorMessage(INVALID_PHONE_NUMBER_MESSAGE)
+      return
+    }
     if (password.length < 8) {
       setErrorMessage('Mật khẩu phải chứa ít nhất 8 ký tự.')
       return
@@ -222,11 +280,14 @@ export function RegisterPage() {
     }
 
     setSubmitting(true)
-    const normalizedFullName = String(formData.get('fullName') ?? '').trim()
-    const normalizedDateOfBirth = String(formData.get('dateOfBirth') ?? '')
-    const normalizedEmail = String(formData.get('email') ?? '').trim()
-    const normalizedPhoneNumber = String(formData.get('phoneNumber') ?? '').trim()
+    clearPendingCheckoutStudent()
+    const normalizedFullName = fullName.trim()
+    const normalizedDateOfBirth = dateOfBirth
+    const normalizedEmail = email.trim()
     const validCourseId = currentSelectedCourseIds
+    const nowMs = Date.now()
+    draftSavedAtRef.current = nowMs
+    saveTemporaryRegistrationSecrets({ password, confirmPassword, acceptedTerms }, nowMs)
     try {
       const registration = await authApi.register(
         normalizedFullName,
@@ -247,48 +308,20 @@ export function RegisterPage() {
       setPhoneNumber(resolvedPhoneNumber)
       setEmail(registration.email)
       setSavedDraftEmail(registration.email)
-      setSavedDraftCourseIds(resolvedCourseIds)
-
-      if (!registration.verificationRequired) {
-        setOtpPending(false)
-        setOtpSentAt(null)
-        setOtpExpiresAt(null)
-        savePendingRegistrationDraft({
-          fullName: resolvedFullName,
-          dateOfBirth: resolvedDateOfBirth,
-          email: registration.email,
-          phoneNumber: resolvedPhoneNumber,
-          selectedCourseIds: resolvedCourseIds,
-          courseSearch: checkoutSearch,
-          otpPending: false,
-          otpSentAt: null,
-          otpExpiresAt: null,
-        })
-        try {
-          sessionStorage.setItem('your-voice-pending-checkout-student', JSON.stringify({
-            fullName: resolvedFullName,
-            email: registration.email,
-            phone: resolvedPhoneNumber,
-          }))
-        } catch {
-          // Checkout can still collect the required student details if storage is unavailable.
-        }
-        setSuccessMessage('Email đã được xác minh. Đang chuyển đến thanh toán.')
-        window.location.assign(`/checkout${checkoutSearch}`)
-        return
-      }
+      setVerified(false)
 
       try {
         const result = await authApi.requestRegistrationOtp(registration.email)
-        const nowMs = Date.now()
-        const cooldownElapsed = !otpSentAt || (nowMs - Date.parse(otpSentAt)) >= OTP_RESEND_COOLDOWN_MS
-        const previousExpired = !otpExpiresAt || Date.parse(otpExpiresAt) <= nowMs
+        const otpNowMs = Date.now()
+        const cooldownElapsed = !otpSentAt || (otpNowMs - Date.parse(otpSentAt)) >= OTP_RESEND_COOLDOWN_MS
+        const previousExpired = !otpExpiresAt || Date.parse(otpExpiresAt) <= otpNowMs
         const nextSentAt = (cooldownElapsed || previousExpired || registration.email !== normalizedDraftEmail)
-          ? new Date(nowMs).toISOString()
+          ? new Date(otpNowMs).toISOString()
           : otpSentAt
         const nextExpiresAt = (cooldownElapsed || previousExpired || registration.email !== normalizedDraftEmail)
-          ? new Date(nowMs + OTP_VALIDITY_MS).toISOString()
+          ? new Date(otpNowMs + OTP_VALIDITY_MS).toISOString()
           : otpExpiresAt
+        draftSavedAtRef.current = otpNowMs
         setOtpPending(true)
         setOtpSentAt(nextSentAt)
         setOtpExpiresAt(nextExpiresAt)
@@ -302,6 +335,7 @@ export function RegisterPage() {
           otpPending: true,
           otpSentAt: nextSentAt,
           otpExpiresAt: nextExpiresAt,
+          savedAt: otpNowMs,
         })
         setOtpDeliveryFailed(false)
         setDevelopmentOtp(result.developmentOtp ?? '')
@@ -311,6 +345,8 @@ export function RegisterPage() {
             ? 'Mã OTP dùng cho kiểm thử phát triển được hiển thị bên dưới. Bạn cũng có thể kiểm tra email.'
             : 'Vui lòng kiểm tra hộp thư đến và mục thư rác để tìm mã xác minh.')
       } catch (error) {
+        const failedAtMs = Date.now()
+        draftSavedAtRef.current = failedAtMs
         setOtpPending(true)
         savePendingRegistrationDraft({
           fullName: resolvedFullName,
@@ -322,10 +358,22 @@ export function RegisterPage() {
           otpPending: true,
           otpSentAt,
           otpExpiresAt,
+          savedAt: failedAtMs,
         })
         setOtpDeliveryFailed(true)
         setDevelopmentOtp('')
         setErrorMessage(getErrorMessage(error))
+      }
+      const currentState =
+        window.history.state && typeof window.history.state === 'object'
+          ? (window.history.state as Record<string, unknown>)
+          : {}
+      if (currentState.registerStage !== 'verification') {
+        window.history.pushState(
+          { ...currentState, registerStage: 'verification' },
+          '',
+          `${window.location.pathname}${window.location.search}${window.location.hash}`
+        )
       }
       setStage('verification')
     } catch (error) {
@@ -342,10 +390,13 @@ export function RegisterPage() {
     setSubmitting(true)
     try {
       await authApi.verifyRegistrationOtp(email, otp)
+      const verifiedAtMs = Date.now()
+      draftSavedAtRef.current = verifiedAtMs
       setVerified(true)
       setOtpPending(false)
       setOtpSentAt(null)
       setOtpExpiresAt(null)
+      saveTemporaryRegistrationSecrets({ password, confirmPassword, acceptedTerms }, verifiedAtMs)
       savePendingRegistrationDraft({
         fullName,
         dateOfBirth,
@@ -356,9 +407,10 @@ export function RegisterPage() {
         otpPending: false,
         otpSentAt: null,
         otpExpiresAt: null,
+        savedAt: verifiedAtMs,
       })
       try {
-        sessionStorage.setItem('your-voice-pending-checkout-student', JSON.stringify({
+        sessionStorage.setItem(PENDING_CHECKOUT_STUDENT_KEY, JSON.stringify({
           fullName,
           email,
           phone: phoneNumber,
@@ -367,7 +419,7 @@ export function RegisterPage() {
         // Checkout can still collect the required student details if storage is unavailable.
       }
       setSuccessMessage('Xác minh thành công. Đang chuyển đến thanh toán.')
-      window.location.assign(`/checkout${checkoutSearch}`)
+      navigateGuestFlow(`/checkout${checkoutSearch}`)
     } catch (error) {
       setErrorMessage(getErrorMessage(error))
     } finally {
@@ -382,6 +434,7 @@ export function RegisterPage() {
     try {
       const result = await authApi.requestRegistrationOtp(email)
       const nowMs = Date.now()
+      draftSavedAtRef.current = nowMs
       const nextSentAt = new Date(nowMs).toISOString()
       const nextExpiresAt = new Date(nowMs + OTP_VALIDITY_MS).toISOString()
       setOtpPending(true)
@@ -397,6 +450,7 @@ export function RegisterPage() {
         otpPending: true,
         otpSentAt: nextSentAt,
         otpExpiresAt: nextExpiresAt,
+        savedAt: nowMs,
       })
       setOtpDeliveryFailed(false)
       setDevelopmentOtp(result.developmentOtp ?? '')
@@ -455,7 +509,10 @@ export function RegisterPage() {
                         maxLength={120}
                         placeholder="Nguyễn Văn An"
                         value={fullName}
-                        onChange={(event) => setFullName(event.target.value)}
+                        onChange={(event) => {
+                          draftSavedAtRef.current = Date.now()
+                          setFullName(event.target.value)
+                        }}
                         required
                       />
                     </div>
@@ -472,7 +529,10 @@ export function RegisterPage() {
                         autoComplete="bday"
                         max={MAX_BIRTH_DATE}
                         value={dateOfBirth}
-                        onChange={(event) => setDateOfBirth(event.target.value)}
+                        onChange={(event) => {
+                          draftSavedAtRef.current = Date.now()
+                          setDateOfBirth(event.target.value)
+                        }}
                         required={!googleAccessToken}
                       />
                     </div>
@@ -491,7 +551,10 @@ export function RegisterPage() {
                         placeholder="hocvien@yourenglishvoice.vn"
                         value={email}
                         required
-                        onChange={(event) => setEmail(event.target.value.trim())}
+                        onChange={(event) => {
+                          draftSavedAtRef.current = Date.now()
+                          setEmail(event.target.value.trim())
+                        }}
                       />
                     </div>
                   </div>
@@ -508,7 +571,10 @@ export function RegisterPage() {
                         maxLength={32}
                         placeholder="0912 345 678"
                         value={phoneNumber}
-                        onChange={(event) => setPhoneNumber(event.target.value)}
+                        onChange={(event) => {
+                          draftSavedAtRef.current = Date.now()
+                          setPhoneNumber(event.target.value)
+                        }}
                         required={!googleAccessToken}
                       />
                     </div>
@@ -526,6 +592,16 @@ export function RegisterPage() {
                         minLength={8}
                         maxLength={72}
                         placeholder="Tối thiểu 8 ký tự"
+                        value={password}
+                        onChange={(event) => {
+                          const nextPassword = event.target.value
+                          setPassword(nextPassword)
+                          saveTemporaryRegistrationSecrets({
+                            password: nextPassword,
+                            confirmPassword,
+                            acceptedTerms,
+                          })
+                        }}
                         required
                       />
                       <button
@@ -551,6 +627,16 @@ export function RegisterPage() {
                         minLength={8}
                         maxLength={72}
                         placeholder="Nhập lại mật khẩu"
+                        value={confirmPassword}
+                        onChange={(event) => {
+                          const nextConfirmPassword = event.target.value
+                          setConfirmPassword(nextConfirmPassword)
+                          saveTemporaryRegistrationSecrets({
+                            password,
+                            confirmPassword: nextConfirmPassword,
+                            acceptedTerms,
+                          })
+                        }}
                         required
                       />
                       <button
@@ -570,7 +656,15 @@ export function RegisterPage() {
                     id="accept-terms"
                     type="checkbox"
                     checked={acceptedTerms}
-                    onChange={(event) => setAcceptedTerms(event.target.checked)}
+                    onChange={(event) => {
+                      const checked = event.target.checked
+                      setAcceptedTerms(checked)
+                      saveTemporaryRegistrationSecrets({
+                        password,
+                        confirmPassword,
+                        acceptedTerms: checked,
+                      })
+                    }}
                     required
                   />
                   <span className="custom-checkbox"><Check size={11} strokeWidth={3} /></span>
@@ -583,19 +677,7 @@ export function RegisterPage() {
                 {errorMessage && <p className="auth-feedback auth-feedback-error" role="alert">{errorMessage}</p>}
                 {successMessage && <p className="auth-feedback auth-feedback-success" role="status">{successMessage}</p>}
                 {infoMessage && <p className="auth-feedback auth-feedback-success" role="status">{infoMessage}</p>}
-                {canResumeOtp && (
-                  <div className="auth-feedback auth-feedback-info" role="status">
-                    Đã lưu thông tin đăng ký trước đó cho <strong>{email}</strong>.
-                    <button
-                      type="button"
-                      className="resend-otp-button"
-                      onClick={handleResumeOtpVerification}
-                      disabled={submitting}
-                    >
-                      Tiếp tục xác minh OTP
-                    </button>
-                  </div>
-                )}
+                
 
                 <button type="submit" className="submit-button" disabled={submitting}>
                   {submitting ? 'ĐANG TẠO TÀI KHOẢN…' : 'XÁC THỰC NGAY'}
@@ -625,6 +707,14 @@ export function RegisterPage() {
               onVerify={(otp) => void handleVerify(otp)}
               onResend={handleResend}
               onChangeEmail={() => {
+                const historyStage =
+                  window.history.state && typeof window.history.state === 'object'
+                    ? (window.history.state as { registerStage?: unknown }).registerStage
+                    : undefined
+                if (historyStage === 'verification') {
+                  window.history.back()
+                  return
+                }
                 setStage('details')
                 setErrorMessage('')
                 setInfoMessage('')

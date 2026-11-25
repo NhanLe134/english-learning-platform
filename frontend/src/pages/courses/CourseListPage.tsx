@@ -16,6 +16,7 @@ import { SiteHeader } from '../../components/layout/SiteHeader'
 import { SiteFooter } from '../../components/layout/SiteFooter'
 import { courseCatalogApi } from './services/courseCatalogApi'
 import { type CourseReference } from './course-data'
+import { translateErrorMessageToVietnamese } from '../auth/vietnamese-messages'
 import './course-list-page.css'
 
 function getCourseTheme(course: CourseReference): string {
@@ -124,7 +125,12 @@ export function CourseListPage() {
       setCourses(data)
       setError('')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không thể tải danh sách khóa học.')
+      setError(
+        translateErrorMessageToVietnamese(
+          err instanceof Error ? err.message : '',
+          'Không thể tải danh sách khóa học.',
+        ),
+      )
     } finally {
       setLoading(false)
     }

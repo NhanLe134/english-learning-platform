@@ -249,6 +249,46 @@ export const openApiDocument = {
         },
       },
     },
+    '/api/lessons/lessons/{lessonId}/video-stream-token': {
+      post: {
+        tags: ['Lessons'],
+        summary: 'Issue a short-lived signed stream token for a Google Drive lesson video',
+        description:
+          'Verifies authentication and course access (enrollment for STUDENT, assignment for TEACHER, or ADMIN), then issues a short-lived HMAC-signed token for HTML5 video Range streaming.',
+        operationId: 'createLessonVideoStreamToken',
+        security: adminSecurity,
+        parameters: [
+          { in: 'path', name: 'lessonId', required: true, schema: { type: 'string', format: 'uuid' } },
+        ],
+        responses: {
+          '200': jsonResponse('Signed stream token issued'),
+          '400': jsonResponse('Invalid lesson ID or lesson is not a Google Drive video', { $ref: '#/components/schemas/ErrorResponse' }),
+          '401': jsonResponse('Authentication required', { $ref: '#/components/schemas/ErrorResponse' }),
+          '403': jsonResponse('Not enrolled or not assigned to course', { $ref: '#/components/schemas/ErrorResponse' }),
+          '404': jsonResponse('Lesson not found', { $ref: '#/components/schemas/ErrorResponse' }),
+        },
+      },
+    },
+    '/api/lessons/lessons/{lessonId}/video-stream': {
+      get: {
+        tags: ['Lessons'],
+        summary: 'Stream a Google Drive lesson video with HTTP Range support',
+        description:
+          'Authenticates via the short-lived signed query token and proxies byte ranges (200/206 Partial Content) from Google Drive so HTML5 <video> can enforce watch tracking and anti-seek controls.',
+        operationId: 'streamLessonGoogleDriveVideo',
+        parameters: [
+          { in: 'path', name: 'lessonId', required: true, schema: { type: 'string', format: 'uuid' } },
+          { in: 'query', name: 'token', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': { description: 'Full video stream' },
+          '206': { description: 'Partial video byte range' },
+          '401': jsonResponse('Invalid or expired stream token', { $ref: '#/components/schemas/ErrorResponse' }),
+          '404': jsonResponse('Lesson or Google Drive source not found', { $ref: '#/components/schemas/ErrorResponse' }),
+          '502': jsonResponse('Google Drive rejected direct video streaming (private, quota exceeded, or non-video)', { $ref: '#/components/schemas/ErrorResponse' }),
+        },
+      },
+    },
     '/api/lessons/courses/{courseId}/topics': {
       get: {
         tags: ['Lessons'],
@@ -555,14 +595,11 @@ export const openApiDocument = {
         tags: ['Authentication'],
         summary: 'Register a student account',
         description:
-          'Creates a pending, unverified PostgreSQL student profile (is_verified = false, status = pending) or reuses an existing pending student profile with the same email (updating selectedCourseIds for pending accounts, returning 202 with savedRegistration when unverified, or returning 200 with verificationRequired = false to skip OTP and proceed directly to checkout when already verified). Rejects registration with 409 when an active verified or non-reusable account already exists. Stores bcrypt password hashes in auth_credentials. The role is always assigned server-side as STUDENT; a client-supplied role is ignored.',
+          'Creates a pending, unverified PostgreSQL student profile (is_verified = false, status = pending) or reuses an existing pending student profile with the same email (updating profile details, selectedCourseIds, and password, resetting is_verified = false even if previously verified before payment, and returning 202 with verificationRequired = true and savedRegistration so fresh email OTP verification is required). Rejects registration with 409 when an active verified or non-reusable account already exists. Stores bcrypt password hashes in auth_credentials. The role is always assigned server-side as STUDENT; a client-supplied role is ignored.',
         operationId: 'register',
         requestBody: jsonBody('RegisterRequest'),
         responses: {
-          '200': jsonResponse('Existing verified pending account reused; skip OTP and proceed to checkout', {
-            $ref: '#/components/schemas/RegistrationPendingResponse',
-          }),
-          '202': jsonResponse('Account created or pending unverified account reused and awaiting email verification', {
+          '202': jsonResponse('Account created or pending account reused and awaiting email verification', {
             $ref: '#/components/schemas/RegistrationPendingResponse',
           }),
           '409': jsonResponse('Email is already registered', {
@@ -653,7 +690,10 @@ export const openApiDocument = {
           'Exchanges the authorization code, verifies the Google identity, creates a student profile if needed, issues the login session, and sets HttpOnly session cookies. A short-lived, one-time handoff lets the frontend retrieve the already-issued access token after redirect.',
         operationId: 'completeGoogleOAuth',
         responses: {
-          '302': { description: 'Redirect to the frontend with the authenticated session established' },
+          '302': {
+            description:
+              'Redirect to the frontend after establishing the authenticated session, or back to /login?google_oauth_error=access_denied when Google authorization is cancelled or denied',
+          },
           ...errorResponses,
         },
       },
@@ -1068,7 +1108,7 @@ export const openApiDocument = {
             type: 'string',
             maxLength: 32,
             pattern: '^\\+?[0-9\\s().-]+$',
-            description: 'Phone number containing 7–15 digits.',
+            description: 'Phone number containing 10 or 11 digits.',
             example: '+84 912 345 678',
           },
           googleAccessToken: {
@@ -1413,7 +1453,7 @@ export const openApiDocument = {
         required: ['success', 'message'],
         properties: {
           success: { type: 'boolean', example: true },
-          message: { type: 'string', example: 'If an account exists for that address, a temporary password will be sent.' },
+          message: { type: 'string', example: 'If the account is registered, password recovery instructions have been sent to the email.' },
         },
       },
       ErrorResponse: {

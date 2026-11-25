@@ -26,7 +26,7 @@ export const ImprovementAreasWidget: React.FC<ImprovementAreasWidgetProps> = ({
           </div>
         </div>
 
-        <span className="widget-badge-ai">● AI INSIGHT</span>
+        <span className="widget-badge-ai">● PHÂN TÍCH AI</span>
       </div>
 
       {/* Alert Warning Box */}

@@ -97,15 +97,19 @@ export const UserTable: React.FC<UserTableProps> = ({ users, loading, onActionCl
                         <div className="avatar-wrapper">
                           <img
                             src={
-                              user.avatar_url ||
+                              user.avatar_url?.trim() ||
                               `https://ui-avatars.com/api/?name=${encodeURIComponent(
                                 user.full_name
                               )}&background=F60005&color=fff&size=100`
                             }
                             alt={user.full_name}
                             className={`user-avatar ${isLocked ? 'avatar-muted' : ''}`}
+                            referrerPolicy="no-referrer"
                             onError={(e) => {
-                              ;(e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                              const img = e.currentTarget
+                              if (img.dataset.fallbackApplied === '1') return
+                              img.dataset.fallbackApplied = '1'
+                              img.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(
                                 user.full_name
                               )}&background=F60005&color=fff&size=100`
                             }}

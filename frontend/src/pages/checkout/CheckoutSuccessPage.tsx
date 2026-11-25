@@ -22,6 +22,10 @@ import { paymentConfirmationTimeoutMs, paymentPollingIntervalMs, paymentSupportP
 import { buildCheckoutPageUrl, resolvePaymentBackHref, savePaymentReturnPath, validatePaymentReturnPath } from './payment-navigation'
 import type { CreateOrderResponse } from './sepayApi'
 import { SePayQrPaymentCard } from './SePayVietQR'
+import {
+  formatPaymentMethodVietnamese,
+  translateErrorMessageToVietnamese,
+} from '../auth/vietnamese-messages'
 import './checkout-page.css'
 import './checkout-success-page.css'
 
@@ -137,7 +141,12 @@ function CheckoutSuccessView({ initialOrder }: { initialOrder?: CreateOrderRespo
         setTimedOut(current.status === 'pending' && maxWaitElapsed())
       } catch (cause) {
         if (!active) return
-        setError(cause instanceof Error ? cause.message : 'Không thể kiểm tra trạng thái đơn hàng.')
+        setError(
+          translateErrorMessageToVietnamese(
+            cause instanceof Error ? cause.message : '',
+            'Không thể kiểm tra trạng thái đơn hàng.',
+          ),
+        )
         setLoading(false)
       } finally {
         inFlight.current = false
@@ -198,7 +207,12 @@ function CheckoutSuccessView({ initialOrder }: { initialOrder?: CreateOrderRespo
       setError('')
       setTimedOut(false)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Không thể kiểm tra trạng thái đơn hàng.')
+      setError(
+        translateErrorMessageToVietnamese(
+          cause instanceof Error ? cause.message : '',
+          'Không thể kiểm tra trạng thái đơn hàng.',
+        ),
+      )
     } finally {
       inFlight.current = false
     }
@@ -309,7 +323,7 @@ function CheckoutSuccessView({ initialOrder }: { initialOrder?: CreateOrderRespo
                 <div><dt>Trạng thái</dt><dd className={paid ? 'paid' : ''}>{statusLabel}</dd></div>
                 <div><dt>{paid ? 'Thời gian thanh toán' : 'Ngày tạo đơn'}</dt><dd>{formatDateTime(paid && order.paidAt ? order.paidAt : order.createdAt)}</dd></div>
                 <div><dt>Tổng tiền</dt><dd className="amount">{formatCurrency(order.amount)}</dd></div>
-                <div><dt>Phương thức</dt><dd>{order.paymentMethod === 'BANK_TRANSFER' ? 'Chuyển khoản ngân hàng qua SePay' : order.paymentMethod ?? 'Không có thông tin'}</dd></div>
+                <div><dt>Phương thức</dt><dd>{formatPaymentMethodVietnamese(order.paymentMethod)}</dd></div>
                 <div className="payment-success-reference"><dt>Nội dung chuyển khoản</dt><dd><code>{order.transferContent}</code>
                   <button type="button" onClick={() => void copyPaymentDetails(order.transferContent)} aria-label="Sao chép nội dung chuyển khoản">
                     {copied ? <Check size={15} /> : <FileCheck2 size={15} />}{copied ? 'Đã sao chép' : 'Sao chép'}

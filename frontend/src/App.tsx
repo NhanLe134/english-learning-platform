@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { QuanLyNguoiDungPage } from './pages/quan_ly_nguoi_dung'
 import { QuanLyThanhToanPage } from './pages/quan_ly_thanh_toan'
 import ThemBaiGiangPage from './pages/them_bai_giang'
@@ -28,10 +28,19 @@ import { TeacherDashboardPage } from './pages/courses/TeacherDashboardPage'
 import { TeacherAccountActionPage } from './pages/auth/TeacherAccountActionPage'
 import { AuthProvider } from './pages/auth/AuthContext'
 import { useAuth } from './pages/auth/auth-context'
+import {
+  GUEST_NAVIGATE_EVENT,
+  isGuestRegistrationFlowPath,
+  navigateGuestFlow,
+} from './pages/auth/registration-draft'
 
 function AppRoutes() {
   const { initializationError, isInitializing, user } = useAuth()
-  const pathname = window.location.pathname
+  const [location, setLocation] = useState(() => ({
+    pathname: window.location.pathname,
+    search: window.location.search,
+  }))
+  const pathname = location.pathname
   const isAdminRoute = pathname.startsWith('/admin')
   const isTeacherArea = pathname.startsWith('/teacher')
   const isTeacherPublicRoute = ['/teacher/login', '/teacher/activate', '/teacher/reset-password', '/teacher/forgot-password'].includes(pathname)
@@ -44,6 +53,58 @@ function AppRoutes() {
     pathname.startsWith('/checkout') ||
     pathname.startsWith('/thanh-toan')
   const isLegacyCourseListRoute = pathname === '/khoa-hoc' || pathname === '/courses'
+
+  useEffect(() => {
+    const syncLocation = () => {
+      setLocation({
+        pathname: window.location.pathname,
+        search: window.location.search,
+      })
+    }
+    window.addEventListener('popstate', syncLocation)
+    window.addEventListener(GUEST_NAVIGATE_EVENT, syncLocation)
+    return () => {
+      window.removeEventListener('popstate', syncLocation)
+      window.removeEventListener(GUEST_NAVIGATE_EVENT, syncLocation)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (user || !isGuestRegistrationFlowPath(pathname)) return
+    const handleGuestFlowLinkClick = (event: MouseEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return
+      }
+      const target = event.target
+      if (!(target instanceof Element)) return
+      const anchor = target.closest('a[href]')
+      if (!(anchor instanceof HTMLAnchorElement)) return
+      if (anchor.target && anchor.target !== '_self') return
+      if (anchor.hasAttribute('download')) return
+      const rawHref = anchor.getAttribute('href')
+      if (!rawHref || rawHref.startsWith('#')) return
+      try {
+        const url = new URL(anchor.href, window.location.origin)
+        if (url.origin === window.location.origin && isGuestRegistrationFlowPath(url.pathname)) {
+          event.preventDefault()
+          navigateGuestFlow(`${url.pathname}${url.search}${url.hash}`)
+        }
+      } catch {
+        // Ignore malformed links.
+      }
+    }
+    document.addEventListener('click', handleGuestFlowLinkClick)
+    return () => {
+      document.removeEventListener('click', handleGuestFlowLinkClick)
+    }
+  }, [pathname, user])
 
   useEffect(() => {
     if (isInitializing || isAuthCallback) return
@@ -59,8 +120,8 @@ function AppRoutes() {
         window.location.replace('/teacher/dashboard')
       }
     } else if (user?.role === 'STUDENT') {
-      // Học viên đã đăng nhập: không vào được admin và không mở lại trang login/register
-      if (isAdminRoute) {
+      // Học viên đã đăng nhập: không vào được admin, teacher và không mở lại trang login/register
+      if (isAdminRoute || isTeacherArea) {
         window.location.replace('/login')
       } else if (isAuthPage) {
         // Redirect to role-appropriate default page – never blindly redirect to /checkout.
@@ -70,13 +131,13 @@ function AppRoutes() {
         window.location.replace(`/course${window.location.search}${window.location.hash}`)
       }
     } else {
-      // Chưa đăng nhập mà truy cập route admin
+      // Chưa đăng nhập mà truy cập route admin, student hoặc teacher được bảo vệ
       if (isAdminRoute) {
         window.location.replace('/login')
       } else if (isStudentArea) {
         window.location.replace('/login')
       } else if (isTeacherArea && !isTeacherPublicRoute) {
-        window.location.replace('/teacher/login')
+        window.location.replace('/login')
       } else if (isLegacyCourseListRoute) {
         window.location.replace(`/course${window.location.search}${window.location.hash}`)
       }
@@ -112,7 +173,11 @@ function AppRoutes() {
       )
     }
     if (isTeacherArea && !isTeacherPublicRoute && (isInitializing || user?.role !== 'TEACHER')) {
-      return <main className="auth-route-status" role="status">{isInitializing ? 'Đang xác minh phiên đăng nhập…' : 'Đang chuyển đến đăng nhập giáo viên…'}</main>
+      return (
+        <main className="auth-route-status" role="status">
+          {isInitializing ? 'Đang xác minh phiên đăng nhập…' : 'Đang chuyển đến trang đăng nhập…'}
+        </main>
+      )
     }
     if (isStudentArea && (isInitializing || user?.role !== 'STUDENT')) {
       return <main className="auth-route-status" role="status">Đang chuyển đến khu vực phù hợp…</main>
@@ -136,7 +201,7 @@ function AppRoutes() {
   }
 
   let page
-  switch (window.location.pathname) {
+  switch (pathname) {
     case '/teacher/login':
       page = <LoginPage />
       break
@@ -210,7 +275,7 @@ function AppRoutes() {
       page = <ContactPage />
       break
     case '/register':
-      page = <RegisterPage />
+      page = <RegisterPage search={location.search} />
       break
     case '/forgot-password':
       page = <ForgotPasswordPage />
@@ -220,7 +285,7 @@ function AppRoutes() {
       break
     case '/checkout':
     case '/thanh-toan':
-      page = <CheckoutPage />
+      page = <CheckoutPage key={location.search} />
       break
     case '/checkout/payment':
     case '/thanh-toan/qr':
@@ -249,7 +314,7 @@ function AppRoutes() {
         const courseRoute = pathname.match(/^\/courses?\/([^/]+)$/)
         if (courseRoute && courseRoute[1]) {
           const decodedSlug = decodeURIComponent(courseRoute[1])
-          page = <CourseDetailPage identifier={decodedSlug} />
+          page = <CourseDetailPage key={decodedSlug} identifier={decodedSlug} />
           break
         }
 

@@ -128,7 +128,11 @@ export class UsersController {
         full_name: typeof req.body?.full_name === 'string' ? req.body.full_name : undefined,
         nickname: typeof req.body?.nickname === 'string' ? req.body.nickname : undefined,
         phone_number: typeof req.body?.phone_number === 'string' ? req.body.phone_number : undefined,
-        avatar_url: typeof req.body?.avatar_url === 'string' ? req.body.avatar_url : undefined,
+        avatar_url: req.body?.avatar_url === null
+          ? null
+          : typeof req.body?.avatar_url === 'string'
+            ? req.body.avatar_url
+            : undefined,
       })
       res.status(200).json({ success: true, message: 'Cập nhật hồ sơ thành công', data: updated })
     } catch (error) {

@@ -1,9 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
-import { authApi, startGoogleOAuth, type AuthSession } from './auth-api'
+import { authApi, getErrorMessage, startGoogleOAuth, type AuthSession } from './auth-api'
+import { translateErrorMessageToVietnamese } from './vietnamese-messages'
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || ''
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+const GOOGLE_POPUP_TIMEOUT_MS = 2 * 60 * 1000
 
 declare global {
   interface Window {
@@ -31,6 +33,10 @@ declare global {
               error?: string
               error_description?: string
             }) => void
+            error_callback?: (error: {
+              type?: 'popup_closed' | 'popup_failed_to_open' | 'unknown' | string
+              message?: string
+            }) => void
             prompt?: string
           }) => {
             requestAccessToken: () => void
@@ -52,7 +58,7 @@ function loadGoogleScript(): Promise<void> {
     const existing = document.querySelector('script[src="https://accounts.google.com/gsi/client"]')
     if (existing) {
       existing.addEventListener('load', () => resolve())
-      existing.addEventListener('error', () => reject(new Error('Không thể tải Google Identity Services.')))
+      existing.addEventListener('error', () => reject(new Error('Không thể tải dịch vụ đăng nhập Google.')))
       return
     }
 
@@ -63,7 +69,7 @@ function loadGoogleScript(): Promise<void> {
     script.onload = () => resolve()
     script.onerror = () => {
       scriptLoadPromise = null
-      reject(new Error('Không thể tải thư viện Google Identity Services. Vui lòng kiểm tra kết nối mạng.'))
+      reject(new Error('Không thể tải dịch vụ đăng nhập Google. Vui lòng kiểm tra kết nối mạng.'))
     }
     document.head.appendChild(script)
   })
@@ -107,18 +113,55 @@ export async function initiateGoogleRegistration({
     try {
       await loadGoogleScript()
       if (!window.google?.accounts?.oauth2) {
-        throw new Error('Google Identity Services chưa sẵn sàng.')
+        throw new Error('Dịch vụ đăng nhập Google chưa sẵn sàng.')
+      }
+
+      let settled = false
+      const timeoutId = window.setTimeout(() => {
+        if (settled) return
+        settled = true
+        onLoading?.(false)
+      }, GOOGLE_POPUP_TIMEOUT_MS)
+
+      const finishPendingPopup = () => {
+        if (settled) return false
+        settled = true
+        window.clearTimeout(timeoutId)
+        return true
       }
 
       const client = window.google.accounts.oauth2.initTokenClient({
         client_id: GOOGLE_CLIENT_ID,
         scope: 'openid email profile https://www.googleapis.com/auth/user.phonenumbers.read https://www.googleapis.com/auth/user.birthday.read',
         prompt: 'select_account',
+        error_callback: (error) => {
+          if (!finishPendingPopup()) return
+          onLoading?.(false)
+          if (error.type === 'popup_closed') {
+            return
+          }
+          if (error.type === 'popup_failed_to_open') {
+            onError('Trình duyệt đã chặn cửa sổ đăng nhập Google. Vui lòng cho phép cửa sổ bật lên và thử lại.')
+            return
+          }
+          onError(
+            translateErrorMessageToVietnamese(
+              error.message,
+              'Đăng nhập Google không thành công.'
+            )
+          )
+        },
         callback: async (response) => {
+          if (!finishPendingPopup()) return
           if (response.error || !response.access_token) {
             onLoading?.(false)
-            if (response.error !== 'popup_closed_by_user') {
-              onError(response.error_description || 'Đăng nhập Google không thành công.')
+            if (response.error !== 'popup_closed_by_user' && response.error !== 'access_denied') {
+              onError(
+                translateErrorMessageToVietnamese(
+                  response.error_description,
+                  'Đăng nhập Google không thành công.'
+                )
+              )
             }
             return
           }
@@ -129,18 +172,25 @@ export async function initiateGoogleRegistration({
             })
             onSuccess({ ...profile, accessToken: response.access_token })
           } catch (error) {
-            onError(error instanceof Error ? error.message : 'Không thể xác thực tài khoản Google.')
+            onError(getErrorMessage(error))
           } finally {
             onLoading?.(false)
           }
         },
       })
 
-      client.requestAccessToken()
+      try {
+        client.requestAccessToken()
+      } catch (requestError) {
+        if (finishPendingPopup()) {
+          onLoading?.(false)
+        }
+        throw requestError
+      }
       return
     } catch (error) {
       onLoading?.(false)
-      onError(error instanceof Error ? error.message : 'Không thể khởi động đăng nhập Google.')
+      onError(getErrorMessage(error))
       return
     }
   }
@@ -169,7 +219,7 @@ export async function initiateGoogleRegistration({
       throw new Error('Không thể bắt đầu đăng ký bằng Google.')
     } catch (error) {
       onLoading?.(false)
-      onError(error instanceof Error ? error.message : 'Không thể khởi động đăng ký Google.')
+      onError(getErrorMessage(error))
       return
     }
   }
@@ -187,12 +237,12 @@ export async function initiateGoogleRegistration({
       const profile = await authApi.googleIdentity({
         developmentDemoUser: {
           email,
-          name: email.split('@')[0] || 'Google Learner',
+          name: email.split('@')[0] || 'Học viên Google',
         },
       })
       onSuccess({ ...profile, accessToken: '', phoneNumber: null, dateOfBirth: null })
     } catch (error) {
-      onError(error instanceof Error ? error.message : 'Không thể xác thực tài khoản Google.')
+      onError(getErrorMessage(error))
     } finally {
       onLoading?.(false)
     }
@@ -200,7 +250,7 @@ export async function initiateGoogleRegistration({
   }
 
   onError(
-    'Chưa cấu hình Google Client ID. Vui lòng thêm VITE_GOOGLE_CLIENT_ID vào frontend/.env hoặc bật Google Provider trong Supabase Dashboard.'
+    'Đăng nhập bằng Google hiện chưa được cấu hình. Vui lòng liên hệ quản trị viên.'
   )
 }
 
@@ -213,6 +263,6 @@ export async function initiateGoogleSignIn({
     startGoogleOAuth()
   } catch (error) {
     onLoading?.(false)
-    onError(error instanceof Error ? error.message : 'Không thể khởi động đăng nhập Google.')
+    onError(getErrorMessage(error))
   }
 }

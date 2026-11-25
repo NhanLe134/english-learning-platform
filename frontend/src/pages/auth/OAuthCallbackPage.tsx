@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
-import { authApi } from './auth-api'
+import { authApi, getErrorMessage } from './auth-api'
 import { useAuth } from './auth-context'
 import { sepayApi } from '../checkout/sepayApi'
+import { translateErrorMessageToVietnamese } from './vietnamese-messages'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || ''
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
@@ -63,14 +64,19 @@ export function OAuthCallbackPage() {
         }
 
         if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-          throw new Error('Supabase chưa được cấu hình cho OAuth callback.')
+          throw new Error('Hệ thống đăng nhập Google hiện chưa được cấu hình.')
         }
 
         const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
         const { data, error: sessionError } = await supabase.auth.getSession()
 
         if (sessionError || !data.session?.access_token) {
-          throw new Error(sessionError?.message || 'Không tìm thấy phiên xác thực Google từ Supabase.')
+          throw new Error(
+            translateErrorMessageToVietnamese(
+              sessionError?.message,
+              'Không tìm thấy phiên xác thực Google.'
+            )
+          )
         }
 
         if (isRegistration) {
@@ -102,7 +108,7 @@ export function OAuthCallbackPage() {
         }
       } catch (err) {
         if (!active) return
-        setError(err instanceof Error ? err.message : 'Xác thực Google thất bại.')
+        setError(getErrorMessage(err))
       }
     }
 

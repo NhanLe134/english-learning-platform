@@ -19,6 +19,8 @@ import { StudentHeader } from './components/StudentHeader'
 import { createRegistrationUrl, type CourseReference } from './course-data'
 import { courseCatalogApi } from './services/courseCatalogApi'
 import { buildCheckoutPageUrl, savePaymentReturnPath } from '../checkout/payment-navigation'
+import { navigateGuestFlow } from '../auth/registration-draft'
+import { translateErrorMessageToVietnamese } from '../auth/vietnamese-messages'
 import './course-detail-page.css'
 
 const formatCurrency = (amount: number) => `${amount.toLocaleString('vi-VN')}đ`
@@ -39,7 +41,12 @@ export function CourseDetailPage({ identifier }: { identifier: string }) {
       .catch((loadError: unknown) => {
         if (!active) return
         setCourse(null)
-        setError(loadError instanceof Error ? loadError.message : 'Không thể tải thông tin khóa học.')
+        setError(
+          translateErrorMessageToVietnamese(
+            loadError instanceof Error ? loadError.message : '',
+            'Không thể tải thông tin khóa học.',
+          ),
+        )
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -61,7 +68,7 @@ export function CourseDetailPage({ identifier }: { identifier: string }) {
       window.location.assign(buildCheckoutPageUrl(course.id, course.slug, returnTo))
       return
     }
-    window.location.assign(createRegistrationUrl(course))
+    navigateGuestFlow(createRegistrationUrl(course))
   }
 
   const isAuthenticatedStudent = user?.role === 'STUDENT'
@@ -85,11 +92,11 @@ export function CourseDetailPage({ identifier }: { identifier: string }) {
           <span>›</span><span>{course?.title ?? 'Chi Tiết Khóa Học'}</span>
         </nav>
 
-        {error && <div className="course-detail-error" role="alert">{error}</div>}
         {loading && <div className="course-detail-loading" role="status">Đang tải thông tin khóa học…</div>}
         {!loading && !course && (
           <div className="course-detail-error" role="alert">
-            Không tìm thấy khóa học hoặc khóa học không còn mở đăng ký. <a href="/course">Quay lại danh sách khóa học</a>
+            {error || 'Không tìm thấy khóa học hoặc khóa học không còn mở đăng ký.'}{' '}
+            <a href="/course">Quay lại danh sách khóa học</a>
           </div>
         )}
 
@@ -208,7 +215,7 @@ export function CourseDetailPage({ identifier }: { identifier: string }) {
           <aside className="course-purchase-card" aria-label="Thông tin đăng ký khóa học">
             <div className="course-preview-art" aria-label={`Khóa học ${course.title}`}>
               {course.thumbnailUrl && <img src={course.thumbnailUrl} alt="" />}
-              <div className="course-preview-board"><BookOpen size={42} /><span>{course.category}<br />COURSE</span></div>
+              <div className="course-preview-board"><BookOpen size={42} /><span>{course.category}<br />KHÓA HỌC</span></div>
               <span className="course-preview-play"><Play size={21} fill="currentColor" /></span>
             </div>
             <div className="course-purchase-prices">
@@ -220,9 +227,9 @@ export function CourseDetailPage({ identifier }: { identifier: string }) {
             <button type="button" className="course-register-button" onClick={register}>
               <UserRound size={14} /> Đăng Ký Khóa Ngay
             </button>
-            <button type="button" className="course-free-consultation" onClick={() => window.location.assign('mailto:hello@yourenglishvoice.vn')}>
+            <a href="/contact" className="course-free-consultation">
               <Headphones size={14} /> Nhận Tư Vấn Lộ Trình Miễn Phí
-            </button>
+            </a>
             <p className="course-purchase-guarantee">
               Đội ngũ hỗ trợ đồng hành trong suốt quá trình học tập
             </p>

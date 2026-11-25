@@ -40,6 +40,7 @@ import {
   type StudentLessonItem,
 } from './studentLessonHelpers'
 import { VideoWatchTracker, type TrackerSnapshot } from './videoWatchTracker'
+import { formatCourseLevelVietnamese, translateErrorMessageToVietnamese } from '../auth/vietnamese-messages'
 import './student-course-detail.css'
 
 declare global {
@@ -120,7 +121,7 @@ function loadYouTubeIframeApi(): Promise<void> {
     tag.src = 'https://www.youtube.com/iframe_api'
     tag.async = true
     tag.onerror = () => {
-      finishReject('Không thể tải YouTube Player API. Vui lòng kiểm tra kết nối mạng hoặc tắt trình chặn quảng cáo.')
+      finishReject('Không thể tải trình phát YouTube. Vui lòng kiểm tra kết nối mạng hoặc tắt trình chặn quảng cáo.')
     }
     const target = document.head || document.body
     if (target) {
@@ -134,7 +135,7 @@ function loadYouTubeIframeApi(): Promise<void> {
       if (window.YT && window.YT.Player) {
         finishResolve()
       } else {
-        finishReject('YouTube Player API quá thời gian phản hồi. Vui lòng kiểm tra mạng hoặc bấm thử lại.')
+        finishReject('Trình phát YouTube phản hồi quá thời gian. Vui lòng kiểm tra mạng hoặc bấm thử lại.')
       }
     }, 20000)
 
@@ -790,7 +791,7 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
         showToastRef.current(
           alreadyCompleted
             ? 'Video đã kết thúc! Bạn có thể làm lại bài kiểm tra ôn tập.'
-            : '🎉 Bạn đã xem hết video! Hãy hoàn thành bài kiểm tra để đạt 100%.'
+            : 'Bạn đã xem hết video! Hãy hoàn thành bài kiểm tra để đạt 100%.'
         )
       } else if (quizStatusRef.current === 'loading') {
         setIsExerciseOpen(true)
@@ -819,7 +820,61 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
   const driveEmbedUrl = !currentYouTubeId
     ? extractGoogleDriveEmbedUrl(currentLessonItem?.videoUrl)
     : null
-  const isHtml5Video = Boolean(currentLessonItem?.videoUrl && !currentYouTubeId && !driveEmbedUrl)
+  const isGoogleDriveVideo = Boolean(driveEmbedUrl && currentLessonItem?.videoUrl)
+  const isHtml5Video = Boolean(currentLessonItem?.videoUrl && !currentYouTubeId)
+  const [driveStreamUrl, setDriveStreamUrl] = useState<string | null>(null)
+  const [driveStreamLoading, setDriveStreamLoading] = useState(false)
+
+  // Fetch signed backend Range-streaming URL for Google Drive lessons so they run inside HTML5 <video> + VideoWatchTracker
+  useEffect(() => {
+    if (!activeLessonId || !isGoogleDriveVideo) {
+      setDriveStreamUrl(null)
+      setDriveStreamLoading(false)
+      return
+    }
+    let cancelled = false
+    setDriveStreamUrl(null)
+    setDriveStreamLoading(true)
+    setPlayerError(null)
+
+    void lessonApi
+      .createVideoStreamUrl(
+        activeLessonId,
+        accessToken,
+        async () => (await refreshSession()).accessToken
+      )
+      .then((streamUrl) => {
+        if (!cancelled) {
+          setDriveStreamUrl(streamUrl)
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setDriveStreamUrl(null)
+          setPlayerError(
+            translateErrorMessageToVietnamese(
+              err instanceof Error ? err.message : '',
+              'Không thể khởi tạo luồng phát video Google Drive. Vui lòng thử lại.'
+            )
+          )
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setDriveStreamLoading(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeLessonId, isGoogleDriveVideo, playerRetryKey, accessToken, refreshSession])
+
+  const html5VideoSrc = isGoogleDriveVideo
+    ? driveStreamUrl
+    : isHtml5Video
+    ? currentLessonItem?.videoUrl ?? null
+    : null
 
   // Bài chưa hoàn thành nhưng nộp quiz trượt lần trước → phải xem lại video từ đầu
   const isRetryRequired = Boolean(
@@ -871,7 +926,7 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                   id: match.course_id,
                   slug: match.slug,
                   title: match.title,
-                  details: `${match.total_lessons} bài học · ${match.category} · ${match.level}`,
+                  details: `${match.total_lessons} bài học · ${match.category} · ${formatCourseLevelVietnamese(match.level)}`,
                   thumbnailUrl: match.thumbnail_url,
                   instructor: match.teacher?.full_name || 'Giảng viên',
                   instructorAvatarUrl: match.teacher?.avatar_url ?? null,
@@ -879,7 +934,7 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                   originalPrice: 0,
                   description: '',
                   category: match.category,
-                  level: match.level,
+                  level: formatCourseLevelVietnamese(match.level),
                   targetAudience: '',
                   totalLessons: match.total_lessons,
                   modules: [],
@@ -1026,7 +1081,12 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
         }
       } catch (err) {
         if (cancelled || requestId !== latestRequest.current) return
-        setError(err instanceof Error ? err.message : 'Không thể tải thông tin bài học.')
+        setError(
+          translateErrorMessageToVietnamese(
+            err instanceof Error ? err.message : '',
+            'Không thể tải thông tin bài học.',
+          ),
+        )
       } finally {
         if (!cancelled && requestId === latestRequest.current) {
           setLoading(false)
@@ -1602,7 +1662,7 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
         }
         vid.playbackRate = 1
         void vid.play().catch(() => {
-          showToastRef.current('Trình duyệt không thể tự phát video. Vui lòng thử nhấn Play lại.')
+          showToastRef.current('Trình duyệt không thể tự phát video. Vui lòng nhấn nút Phát để thử lại.')
         })
       } else {
         vid.pause()
@@ -1911,7 +1971,12 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
       .catch((err) => {
         if (!cancelled) {
           setQuizStatus('error')
-          setQuizErrorMessage(err instanceof Error ? err.message : 'Không thể tải bài kiểm tra.')
+          setQuizErrorMessage(
+            translateErrorMessageToVietnamese(
+              err instanceof Error ? err.message : '',
+              'Không thể tải bài kiểm tra.',
+            ),
+          )
         }
       })
     return () => {
@@ -2194,7 +2259,7 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
       <main className="student-detail-content">
         {/* Breadcrumb & Back Link Row */}
         <div className="student-breadcrumb-row">
-          <nav aria-label="Breadcrumb" className="student-breadcrumbs">
+          <nav aria-label="Điều hướng đường dẫn" className="student-breadcrumbs">
             <a href="/student/courses" className="student-breadcrumb-link">
               🎓 Khóa Học Của Tôi
             </a>
@@ -2315,20 +2380,16 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                     </div>
                   ) : currentYouTubeId ? (
                     <div ref={ytHostRef} className="h-full w-full" />
-                  ) : driveEmbedUrl && currentLessonItem?.videoUrl ? (
-                    <iframe
-                      key={`drive-${currentLessonItem.id}`}
-                      src={driveEmbedUrl}
-                      title={currentLessonItem.title || 'Video bài giảng'}
-                      allow="autoplay; fullscreen"
-                      allowFullScreen
-                      className="h-full w-full rounded-2xl border-0"
-                    />
-                  ) : isHtml5Video && currentLessonItem?.videoUrl ? (
+                  ) : isGoogleDriveVideo && (driveStreamLoading || !html5VideoSrc) ? (
+                    <div className="h-full w-full rounded-2xl bg-slate-900 flex flex-col items-center justify-center p-6 text-center text-white">
+                      <LoaderCircle size={28} className="animate-spin text-brand-500 mb-3" />
+                      <p className="text-xs text-slate-300">Đang kết nối luồng video bài giảng…</p>
+                    </div>
+                  ) : isHtml5Video && html5VideoSrc && currentLessonItem ? (
                     <video
-                      key={currentLessonItem.id}
+                      key={`${currentLessonItem.id}-${playerRetryKey}`}
                       ref={videoRef}
-                      src={currentLessonItem.videoUrl}
+                      src={html5VideoSrc}
                       controls={false}
                       controlsList="nodownload noplaybackrate"
                       disablePictureInPicture
@@ -2478,7 +2539,11 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                       }}
                       onError={() => {
                         setIsPlaying(false)
-                        setPlayerError('Không thể phát tệp video bài giảng này.')
+                        setPlayerError(
+                          isGoogleDriveVideo
+                            ? 'Không thể phát trực tiếp tệp video Google Drive này (tệp có thể đang ở chế độ riêng tư, vượt giới hạn tải xuống của Google Drive, hoặc định dạng video không được trình duyệt hỗ trợ).'
+                            : 'Không thể phát tệp video bài giảng này.'
+                        )
                       }}
                     />
                   ) : (
@@ -2557,7 +2622,7 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                           className="flex items-center gap-1 rounded-full bg-amber-500/90 hover:bg-amber-600 px-2.5 py-1 text-xs font-semibold text-white shadow-sm cursor-pointer transition-colors"
                           title="Mở bài tập để làm tiếp"
                         >
-                          📝 Làm bài tập{lessonQuiz ? ` (${lessonQuiz.questions.length} câu)` : ''}
+                          Làm bài tập{lessonQuiz ? ` (${lessonQuiz.questions.length} câu)` : ''}
                         </button>
                       ) : (
                         <span
@@ -2767,7 +2832,7 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                           dur > 0 ? dur : undefined,
                           false,
                         )
-                        showToast('🎉 Chính xác! Bạn đã hoàn thành bài học.')
+                        showToast('Chính xác! Bạn đã hoàn thành bài học.')
                       }
                     }}
                     onFailed={(message) => handleRetryVideo(message)}
@@ -2797,7 +2862,7 @@ export const StudentCourseDetailPage: React.FC<StudentCourseDetailPageProps> = (
                   role="tab"
                   aria-selected={activeTab === 'attachments'}
                 >
-                  <span>Tài Liệu Đính Kèm (PDF, Audio MP3)</span>
+                  <span>Tài Liệu Đính Kèm (PDF, Âm thanh MP3)</span>
                   <span className="tab-count-badge">
                     {currentLessonItem?.materials?.length || 0}
                   </span>

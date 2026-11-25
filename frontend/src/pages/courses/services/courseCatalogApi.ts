@@ -1,6 +1,7 @@
 import { type CourseReference, type CourseLessonItem } from '../course-data'
 import { extractYouTubeVideoId } from '../../them_bai_giang/services/lessonApi'
 import { formatPlaybackTime } from '../studentLessonHelpers'
+import { formatCourseLevelVietnamese, translateErrorMessageToVietnamese } from '../../auth/vietnamese-messages'
 
 const API_BASE_URL = (
   import.meta.env.VITE_API_URL ||
@@ -79,11 +80,12 @@ export function mapCourseCatalogRecord(course: CourseCatalogRecord): CourseRefer
     }),
   }))
 
+  const localizedLevel = formatCourseLevelVietnamese(course.level)
   const highlights: string[] = [
     `Thời lượng: ${course.total_lessons ?? 0} bài học`,
   ]
-  if (course.level) {
-    highlights.push(`Trình độ: ${course.level}`)
+  if (localizedLevel) {
+    highlights.push(`Trình độ: ${localizedLevel}`)
   }
   if (course.target_audience) {
     highlights.push(`Dành cho: ${course.target_audience}`)
@@ -92,7 +94,7 @@ export function mapCourseCatalogRecord(course: CourseCatalogRecord): CourseRefer
   const detailsParts = [
     course.total_lessons ? `${course.total_lessons} bài học` : '',
     course.category,
-    course.level,
+    localizedLevel,
   ].filter(Boolean)
 
   return {
@@ -107,7 +109,7 @@ export function mapCourseCatalogRecord(course: CourseCatalogRecord): CourseRefer
     originalPrice,
     description: course.description ?? '',
     category: course.category || '',
-    level: course.level || '',
+    level: localizedLevel,
     targetAudience: course.target_audience ?? '',
     totalLessons: course.total_lessons || 0,
     modules,
@@ -139,7 +141,12 @@ async function requestCourseData<T>(path: string, accessToken?: string): Promise
   }
 
   if (!response.ok || !result.success || result.data === undefined) {
-    throw new Error(result.message || `Không thể tải dữ liệu (HTTP ${response.status}).`)
+    throw new Error(
+      translateErrorMessageToVietnamese(
+        result.message,
+        `Không thể tải dữ liệu khóa học (HTTP ${response.status}).`,
+      ),
+    )
   }
   return result.data
 }
@@ -181,17 +188,22 @@ export const courseCatalogApi = {
         },
       })
     } catch {
-      throw new Error('Could not connect to the server to load your courses. Please try again.')
+      throw new Error('Không thể kết nối máy chủ để tải khóa học của bạn. Vui lòng thử lại.')
     }
 
     let result: ApiResponse<BackendEnrolledCourse[]>
     try {
       result = await response.json() as ApiResponse<BackendEnrolledCourse[]>
     } catch {
-      throw new Error('The server returned an invalid response while loading your courses.')
+      throw new Error('Máy chủ trả về dữ liệu không hợp lệ khi tải khóa học của bạn.')
     }
     if (response.ok && result.success && Array.isArray(result.data)) return result.data
-    throw new Error(result.message || `Could not load your courses (HTTP ${response.status}).`)
+    throw new Error(
+      translateErrorMessageToVietnamese(
+        result.message,
+        `Không thể tải danh sách khóa học của bạn (HTTP ${response.status}).`,
+      ),
+    )
   },
 
   async get(identifier: string, accessToken?: string): Promise<CourseReference> {

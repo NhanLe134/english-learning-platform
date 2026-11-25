@@ -2,7 +2,6 @@ import {
   AudioLines,
   Check,
   Flame,
-  GraduationCap,
   Layers3,
   Play,
   Zap,
@@ -51,11 +50,7 @@ export function LoginVisual() {
   return (
     <section className="login-visual" aria-label="Your English Voice">
       <div className="visual-brand">
-        <span className="visual-brand-icon"><GraduationCap size={21} strokeWidth={2.2} /></span>
-        <span>
-          <strong>Your English Voice</strong>
-        </span>
-      </div>
+    </div>
 
       <div className="visual-content">
         <div className="visual-program-tag">

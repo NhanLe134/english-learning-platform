@@ -1,3 +1,5 @@
+import { createHmac, timingSafeEqual } from 'node:crypto'
+import { env } from '../../config/env.js'
 import { LessonRequestError } from './lessons.errors.js'
 import { LessonsRepository, UUID_PATTERN } from './lessons.repository.js'
 import type {
@@ -15,6 +17,15 @@ export interface VideoCheckResult {
 }
 
 const FETCH_TIMEOUT_MS = 8000
+const STREAM_TOKEN_TTL_SECONDS = 15 * 60
+const DRIVE_FILE_ID_PATTERN = /^[a-zA-Z0-9_-]{10,120}$/
+
+interface VideoStreamTokenPayload {
+  lessonId: string
+  userId: string
+  role: AuthenticatedUser['role']
+  exp: number
+}
 
 /** Lấy YouTube video ID từ các dạng link phổ biến, null nếu không parse được */
 function extractYouTubeId(url: URL): string | null {
@@ -27,10 +38,29 @@ function extractYouTubeId(url: URL): string | null {
 
 /** Lấy Drive file ID từ link chia sẻ, null nếu không parse được */
 function extractDriveId(url: URL): string | null {
+  const host = url.hostname.toLowerCase()
+  if (
+    host !== 'drive.google.com' &&
+    !host.endsWith('.drive.google.com') &&
+    host !== 'drive.usercontent.google.com'
+  ) {
+    return null
+  }
   const fileMatch = url.pathname.match(/\/file\/d\/([^/]+)/)
-  if (fileMatch?.[1]) return fileMatch[1]
-  if (url.searchParams.get('id')) return url.searchParams.get('id')
-  return null
+  const rawId = fileMatch?.[1] ?? url.searchParams.get('id') ?? null
+  return rawId && DRIVE_FILE_ID_PATTERN.test(rawId) ? rawId : null
+}
+
+export function extractGoogleDriveFileId(rawUrl: string | null | undefined): string | null {
+  if (!rawUrl || typeof rawUrl !== 'string') return null
+  const trimmed = rawUrl.trim()
+  if (!trimmed) return null
+  try {
+    const parsed = new URL(trimmed.startsWith('http://') || trimmed.startsWith('https://') ? trimmed : `https://${trimmed}`)
+    return extractDriveId(parsed)
+  } catch {
+    return null
+  }
 }
 
 const TOPIC_TITLE_MAX = 200
@@ -696,6 +726,131 @@ export class LessonsService {
         provider: 'other',
         message: 'Không kết nối được liên kết video (lỗi mạng hoặc link sai).',
       }
+    }
+  }
+  private signVideoStreamToken(payload: VideoStreamTokenPayload): string {
+    if (!env.authJwtSecret || Buffer.byteLength(env.authJwtSecret, 'utf8') < 32) {
+      throw new LessonRequestError('Video stream signing is not configured.', 503)
+    }
+    const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url')
+    const signature = createHmac('sha256', env.authJwtSecret)
+      .update(`lesson-video-stream:${encoded}`)
+      .digest('base64url')
+    return `${encoded}.${signature}`
+  }
+
+  private verifyVideoStreamToken(token: string, expectedLessonId: string): VideoStreamTokenPayload {
+    if (!env.authJwtSecret || Buffer.byteLength(env.authJwtSecret, 'utf8') < 32) {
+      throw new LessonRequestError('Video stream signing is not configured.', 503)
+    }
+    const trimmed = token.trim()
+    const parts = trimmed.split('.')
+    if (parts.length !== 2 || !parts[0] || !parts[1]) {
+      throw new LessonRequestError('Invalid or missing video stream token.', 401)
+    }
+    const [encoded, providedSig] = parts
+    const expectedSig = createHmac('sha256', env.authJwtSecret)
+      .update(`lesson-video-stream:${encoded}`)
+      .digest('base64url')
+
+    const providedBuf = Buffer.from(providedSig, 'utf8')
+    const expectedBuf = Buffer.from(expectedSig, 'utf8')
+    if (providedBuf.length !== expectedBuf.length || !timingSafeEqual(providedBuf, expectedBuf)) {
+      throw new LessonRequestError('Invalid or expired video stream token.', 401)
+    }
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'))
+    } catch {
+      throw new LessonRequestError('Invalid video stream token payload.', 401)
+    }
+
+    if (!parsed || typeof parsed !== 'object') {
+      throw new LessonRequestError('Invalid video stream token payload.', 401)
+    }
+    const payload = parsed as Partial<VideoStreamTokenPayload>
+    const nowSeconds = Math.floor(Date.now() / 1000)
+    if (
+      typeof payload.lessonId !== 'string' ||
+      payload.lessonId !== expectedLessonId ||
+      typeof payload.userId !== 'string' ||
+      !payload.userId ||
+      (payload.role !== 'ADMIN' && payload.role !== 'TEACHER' && payload.role !== 'STUDENT') ||
+      typeof payload.exp !== 'number' ||
+      !Number.isFinite(payload.exp) ||
+      payload.exp <= nowSeconds
+    ) {
+      throw new LessonRequestError('Invalid or expired video stream token.', 401)
+    }
+
+    return {
+      lessonId: payload.lessonId,
+      userId: payload.userId,
+      role: payload.role,
+      exp: payload.exp,
+    }
+  }
+
+  /** Cấp signed stream token ngắn hạn để phát video Google Drive qua HTML5 <video> */
+  async createGoogleDriveStreamToken(
+    lessonId: string,
+    user: AuthenticatedUser
+  ): Promise<{ token: string; expiresInSeconds: number }> {
+    if (!UUID_PATTERN.test(lessonId)) {
+      throw new LessonRequestError('Lesson ID must be a valid UUID.', 400)
+    }
+    const result = await this.repo.findLessonWithCourse(lessonId)
+    if (!result) {
+      throw new LessonRequestError('Lesson not found.', 404)
+    }
+    await this.assertCourseAccess(result.courseId, user)
+    if (user.role === 'STUDENT' && result.lesson.status !== 'published') {
+      throw new LessonRequestError('Lesson not found.', 404)
+    }
+
+    const driveFileId = extractGoogleDriveFileId(result.lesson.video_url)
+    if (!driveFileId) {
+      throw new LessonRequestError('Bài giảng này không sử dụng liên kết video Google Drive.', 400)
+    }
+
+    const exp = Math.floor(Date.now() / 1000) + STREAM_TOKEN_TTL_SECONDS
+    const token = this.signVideoStreamToken({
+      lessonId,
+      userId: user.id,
+      role: user.role,
+      exp,
+    })
+
+    return { token, expiresInSeconds: STREAM_TOKEN_TTL_SECONDS }
+  }
+
+  /** Xác thực stream token và trả về URL tải trực tiếp Google Drive để backend proxy Range */
+  async resolveGoogleDriveStream(
+    lessonId: string,
+    token: string
+  ): Promise<{ driveFileId: string; downloadUrl: string }> {
+    if (!UUID_PATTERN.test(lessonId)) {
+      throw new LessonRequestError('Lesson ID must be a valid UUID.', 400)
+    }
+    const verified = this.verifyVideoStreamToken(token, lessonId)
+
+    const result = await this.repo.findLessonWithCourse(lessonId)
+    if (!result) {
+      throw new LessonRequestError('Lesson not found.', 404)
+    }
+    if (verified.role === 'STUDENT' && result.lesson.status !== 'published') {
+      throw new LessonRequestError('Lesson not found.', 404)
+    }
+
+    const driveFileId = extractGoogleDriveFileId(result.lesson.video_url)
+    if (!driveFileId) {
+      throw new LessonRequestError('Google Drive video source not found for this lesson.', 404)
+    }
+
+    return {
+      driveFileId,
+      downloadUrl: `https://drive.usercontent.google.com/download?id=${encodeURIComponent(driveFileId)}&export=download&confirm=t`,
     }
   }
 }

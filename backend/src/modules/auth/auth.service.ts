@@ -140,7 +140,7 @@ export interface RegistrationOtpRequestResult {
 }
 
 export const GENERIC_FORGOT_MESSAGE =
-  'If an account exists for that address, a temporary password will be sent.'
+  'If the account is registered, password recovery instructions have been sent to the email.'
 
 export interface ForgotPasswordResult {
   message: string
@@ -285,8 +285,7 @@ export class AuthService {
     if (phoneNumber && (
       phoneNumber.length > 32 ||
       !/^\+?[\d\s().-]+$/.test(phoneNumber) ||
-      phoneDigits < 7 ||
-      phoneDigits > 15
+      (phoneDigits !== 10 && phoneDigits !== 11)
     )) {
       throw new AuthError('Please enter a valid phone number.', 400)
     }
@@ -328,14 +327,6 @@ export class AuthService {
         } : undefined
       )
       const effectiveSelectedCourseIds = user.registrationDetails?.selectedCourseIds ?? selectedCourseIds
-      if (user.status === 'pending' && user.is_verified === true) {
-        return {
-          verificationRequired: false,
-          email: user.email,
-          selectedCourseIds: effectiveSelectedCourseIds,
-          reusedExistingAccount: true,
-        }
-      }
       if (user.reusedExistingAccount) {
         return {
           verificationRequired: true,
@@ -844,7 +835,9 @@ export class AuthService {
     if (storedUser?.role === 'ADMIN' && adminLookupError) {
       throw new AuthError('Admin authentication provider is unavailable.', 503, adminLookupError)
     }
-    if (!user || user.status !== 'active') return { message: GENERIC_FORGOT_MESSAGE }
+    if (!user || user.status === 'pending' || user.status !== 'active') {
+      return { message: GENERIC_FORGOT_MESSAGE }
+    }
 
     const temporaryPassword = generateTemporaryPassword()
     try {

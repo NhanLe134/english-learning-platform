@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import type { LessonQuizQuestion, QuizSubmitResult } from '../../them_bai_giang/services/lessonApi'
+import { translateErrorMessageToVietnamese } from '../../auth/vietnamese-messages'
 
 const OPTION_LABELS = ['A', 'B', 'C', 'D', 'E', 'F']
 
@@ -65,7 +66,12 @@ export function StudentQuizOverlay({
         setTimeout(() => onPassed(), 1200)
       }
     } catch (err) {
-      onFailed(err instanceof Error ? err.message : 'Không thể nộp bài. Vui lòng thử lại.')
+      onFailed(
+        translateErrorMessageToVietnamese(
+          err instanceof Error ? err.message : '',
+          'Không thể nộp bài. Vui lòng thử lại.',
+        ),
+      )
     } finally {
       setSubmitting(false)
     }
@@ -116,7 +122,7 @@ export function StudentQuizOverlay({
       className="absolute left-1/2 top-1/2 z-50 w-[min(88%,440px)] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200"
       role="dialog"
       aria-modal="true"
-      aria-label={`Quiz trắc nghiệm bài ${lessonTitle}`}
+      aria-label={`Bài kiểm tra trắc nghiệm bài ${lessonTitle}`}
     >
       {/* Header gọn: câu hiện tại / tổng + nút đóng */}
       <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
@@ -127,7 +133,7 @@ export function StudentQuizOverlay({
           type="button"
           onClick={onClose}
           className="flex size-6 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-ink-900 cursor-pointer"
-          aria-label="Đóng quiz"
+          aria-label="Đóng bài kiểm tra"
         >
           <X size={15} />
         </button>

@@ -238,9 +238,9 @@ export function EmailOtpVerification({
           <PencilLine size={15} aria-hidden="true" />
           Quay lại chỉnh sửa thông tin
         </button>
-        <a href="tel:19008888">
+        <a href="tel:0397 714 129">
           <Headset size={16} aria-hidden="true" />
-          Hỗ trợ: 1900 8888
+          Hỗ trợ: 0397 714 129
         </a>
       </div>
 

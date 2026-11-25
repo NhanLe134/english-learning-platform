@@ -1,3 +1,5 @@
+import { formatCourseLevelVietnamese } from '../auth/vietnamese-messages'
+
 export interface CourseReference {
   id: string
   slug: string
@@ -115,7 +117,7 @@ export function readCheckoutCourse(search: string): CourseReference {
     originalPrice: Math.max(price, requestedOriginalPrice),
     description: params.get('description')?.trim() || PLACEHOLDER.description,
     category: params.get('category')?.trim() || PLACEHOLDER.category,
-    level: params.get('level')?.trim() || PLACEHOLDER.level,
+    level: formatCourseLevelVietnamese(params.get('level')?.trim() || PLACEHOLDER.level),
     targetAudience: params.get('targetAudience')?.trim() || PLACEHOLDER.targetAudience,
     totalLessons: readPositiveAmount(params.get('totalLessons'), PLACEHOLDER.totalLessons),
     modules: [],

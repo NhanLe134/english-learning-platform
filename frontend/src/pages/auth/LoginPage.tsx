@@ -17,10 +17,17 @@ import { sepayApi } from '../checkout/sepayApi'
 import './login-page.css'
 
 const LOGOUT_HISTORY_LOCK_KEY = 'your-voice-logout-history-lock'
+const GOOGLE_OAUTH_ERROR_PARAM = 'google_oauth_error'
+const GOOGLE_OAUTH_ACCESS_DENIED = 'access_denied'
+const GOOGLE_OAUTH_CANCELLED_MESSAGE = 'Đăng nhập Google đã bị hủy hoặc bị từ chối.'
 
 export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
-  const [errorMessage, setErrorMessage] = useState('')
+  const [errorMessage, setErrorMessage] = useState(() =>
+    new URLSearchParams(window.location.search).get(GOOGLE_OAUTH_ERROR_PARAM) === GOOGLE_OAUTH_ACCESS_DENIED
+      ? GOOGLE_OAUTH_CANCELLED_MESSAGE
+      : ''
+  )
   const [successMessage, setSuccessMessage] = useState(() =>
     new URLSearchParams(window.location.search).get('passwordReset') === 'sent'
       ? (window.location.pathname.startsWith('/teacher')
@@ -31,6 +38,19 @@ export function LoginPage() {
   const [googleLoading, setGoogleLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const { setSession } = useAuth()
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get(GOOGLE_OAUTH_ERROR_PARAM) !== GOOGLE_OAUTH_ACCESS_DENIED) return
+    params.delete(GOOGLE_OAUTH_ERROR_PARAM)
+    const remainingSearch = params.toString()
+    const cleanUrl = `${window.location.pathname}${remainingSearch ? `?${remainingSearch}` : ''}${window.location.hash}`
+    try {
+      window.history.replaceState(window.history.state, '', cleanUrl)
+    } catch {
+      // History state replacement is optional; the error message is already displayed.
+    }
+  }, [])
 
   useEffect(() => {
     const resetStaleLoadingState = (event: PageTransitionEvent) => {
@@ -179,7 +199,7 @@ export function LoginPage() {
                   type="email"
                   autoComplete="email"
                   maxLength={254}
-                  placeholder="name@example.com"
+                  placeholder="hocvien@yourenglishvoice.vn"
                   required
                 />
               </div>

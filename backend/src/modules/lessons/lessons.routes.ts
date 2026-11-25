@@ -5,8 +5,20 @@ import { lessonsController } from './lessons.controller.js'
 
 export const lessonsRouter = Router()
 
+// Stream video Google Drive qua backend proxy (thẻ HTML5 <video> xác thực bằng signed stream token ngắn hạn)
+lessonsRouter.get('/lessons/:lessonId/video-stream', (req, res, next) =>
+  lessonsController.streamGoogleDriveVideo(req, res, next)
+)
+
 // Mọi endpoint bài giảng đều yêu cầu đăng nhập (ADMIN hoặc TEACHER được phân công)
 lessonsRouter.use(authenticate)
+
+// Cấp signed stream token ngắn hạn cho bài học Google Drive (kiểm tra quyền ghi danh khóa học)
+lessonsRouter.post(
+  '/lessons/:lessonId/video-stream-token',
+  authorize('ADMIN', 'TEACHER', 'STUDENT'),
+  (req, res, next) => lessonsController.createVideoStreamToken(req, res, next)
+)
 
 // Danh sách chủ đề + bài giảng của một khóa học
 lessonsRouter.get(

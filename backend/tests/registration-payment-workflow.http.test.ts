@@ -196,19 +196,12 @@ describe('End-to-end registration, OTP verification, SePay payment, and login wo
           throw new Error('Email is already registered')
         }
         if (existing.is_verified) {
-          const nextCourseIds = selectedCourseIds.length > 0
-            ? selectedCourseIds
-            : (existing.registration_course_ids ?? [])
-          existing.registration_course_ids = nextCourseIds
-          return {
-            ...existing,
-            reusedExistingAccount: true,
-            registrationDetails: {
-              dateOfBirth: existing.date_of_birth ?? null,
-              selectedCourseIds: nextCourseIds,
-            },
-          }
+          existing.otp_hash = null
+          existing.otp_expires_at = null
+          existing.otp_attempts = 0
+          existing.otp_sent_at = null
         }
+        existing.is_verified = false
         existing.full_name = fullName || existing.full_name
         existing.phone_number = phoneNumber || existing.phone_number
         existing.date_of_birth = dateOfBirth ?? existing.date_of_birth ?? null
@@ -935,7 +928,7 @@ describe('End-to-end registration, OTP verification, SePay payment, and login wo
     }
   })
 
-  it('handles pending unverified reuse, verified pending OTP skip, and active account 409 blocking over HTTP', async () => {
+  it('handles pending unverified reuse, verified pending OTP re-verification (immediate and next-day), and active account 409 blocking over HTTP', async () => {
     const email = 'pending.reuse.http@example.test'
     const password = 'StrongPendingPassword123!'
 
@@ -1009,33 +1002,97 @@ describe('End-to-end registration, OTP verification, SePay payment, and login wo
     assert.equal(student.is_verified, true)
     assert.equal(student.status, 'pending')
 
-    // 3. Verified pending student registers again with COURSE_ID -> skips OTP (200) and redirects to checkout
+    // 3. Verified pending student clicks Back and re-registers with COURSE_ID -> must reset is_verified & require OTP (202)
     const verifiedRes = await fetch(`${baseUrl}/api/auth/register`, {
       method: 'POST',
       headers: { Origin: frontendOrigin, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        fullName: 'Overwrite Attempt',
-        dateOfBirth: '1998-01-01',
+        fullName: 'Pending Reuse Student',
+        dateOfBirth: '2001-03-15',
         email,
-        phoneNumber: '0988888888',
-        password: 'AnotherPassword123!',
-        confirmPassword: 'AnotherPassword123!',
+        phoneNumber: '0912345670',
+        password,
+        confirmPassword: password,
         selectedCourseIds: [COURSE_ID],
       }),
     })
-    assert.equal(verifiedRes.status, 200)
+    assert.equal(verifiedRes.status, 202)
     const verifiedBody = (await verifiedRes.json()) as {
       data: { verificationRequired: boolean; reusedExistingAccount?: boolean; selectedCourseIds: string[] }
     }
-    assert.equal(verifiedBody.data.verificationRequired, false)
+    assert.equal(verifiedBody.data.verificationRequired, true)
     assert.equal(verifiedBody.data.reusedExistingAccount, true)
     assert.deepEqual(verifiedBody.data.selectedCourseIds, [COURSE_ID])
-    assert.equal(student.full_name, 'Pending Reuse Student')
-    assert.equal(student.password, password)
-    assert.equal(student.is_verified, true)
+    assert.equal(student.is_verified, false)
     assert.equal(student.status, 'pending')
 
-    // Verified pending student can proceed directly to guest order creation
+    // Guest order creation MUST be blocked until new OTP verification completes
+    const blockedGuestOrderRes = await fetch(`${baseUrl}/api/payment/orders/guest`, {
+      method: 'POST',
+      headers: { Origin: frontendOrigin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ courseId: COURSE_ID, email }),
+    })
+    assert.equal(blockedGuestOrderRes.status, 403)
+
+    // Re-send & verify fresh OTP immediately after going back
+    const emailCountBeforeReverify = sentEmails.length
+    const reverifyResendRes = await fetch(`${baseUrl}/api/auth/register/verification/resend`, {
+      method: 'POST',
+      headers: { Origin: frontendOrigin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    })
+    assert.equal(reverifyResendRes.status, 202)
+    assert.equal(sentEmails.length, emailCountBeforeReverify + 1)
+    const secondOtpMail = sentEmails.findLast((item) => item.to === email)
+    const secondOtp = secondOtpMail?.html.match(/\b(\d{6})\b/)?.[1]
+    assert.ok(secondOtp)
+    const reverifyRes = await fetch(`${baseUrl}/api/auth/register/verification/verify`, {
+      method: 'POST',
+      headers: { Origin: frontendOrigin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, otp: secondOtp }),
+    })
+    assert.equal(reverifyRes.status, 200)
+    assert.equal(student.is_verified, true)
+
+    // 3b. Simulate returning after ~1 day (25 hours later) and re-registering -> requires OTP again
+    const oneDayAgo = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString()
+    student.updated_at = oneDayAgo
+    student.otp_sent_at = oneDayAgo
+    const nextDayRes = await fetch(`${baseUrl}/api/auth/register`, {
+      method: 'POST',
+      headers: { Origin: frontendOrigin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fullName: 'Pending Reuse Student',
+        dateOfBirth: '2001-03-15',
+        email,
+        phoneNumber: '0912345670',
+        password,
+        confirmPassword: password,
+        selectedCourseIds: [COURSE_ID],
+      }),
+    })
+    assert.equal(nextDayRes.status, 202)
+    const nextDayBody = (await nextDayRes.json()) as { data: { verificationRequired: boolean } }
+    assert.equal(nextDayBody.data.verificationRequired, true)
+    assert.equal(student.is_verified, false)
+
+    const nextDayResend = await fetch(`${baseUrl}/api/auth/register/verification/resend`, {
+      method: 'POST',
+      headers: { Origin: frontendOrigin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    })
+    assert.equal(nextDayResend.status, 202)
+    const thirdOtp = sentEmails.findLast((item) => item.to === email)?.html.match(/\b(\d{6})\b/)?.[1]
+    assert.ok(thirdOtp)
+    const thirdVerify = await fetch(`${baseUrl}/api/auth/register/verification/verify`, {
+      method: 'POST',
+      headers: { Origin: frontendOrigin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, otp: thirdOtp }),
+    })
+    assert.equal(thirdVerify.status, 200)
+    assert.equal(student.is_verified, true)
+
+    // Re-verified pending student can now proceed directly to guest order creation
     const guestOrderRes = await fetch(`${baseUrl}/api/payment/orders/guest`, {
       method: 'POST',
       headers: { Origin: frontendOrigin, 'Content-Type': 'application/json' },

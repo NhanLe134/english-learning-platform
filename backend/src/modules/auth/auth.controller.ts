@@ -46,16 +46,18 @@ function clearGoogleAccessHandoffCookie(response: Response): void {
   )
 }
 
-function googleStateCookie(request: Request): string | undefined {
+function googleStateCookies(request: Request): string[] {
   const cookieHeader = request.get('cookie')
-  if (!cookieHeader) return undefined
+  if (!cookieHeader) return []
 
+  const values: string[] = []
   for (const cookie of cookieHeader.split(';')) {
     const separator = cookie.indexOf('=')
     if (separator < 0 || cookie.slice(0, separator).trim() !== GOOGLE_STATE_COOKIE) continue
-    return cookie.slice(separator + 1).trim() || undefined
+    const value = cookie.slice(separator + 1).trim()
+    if (value) values.push(value)
   }
-  return undefined
+  return values
 }
 
 function googleAccessHandoffCookie(request: Request): string | undefined {
@@ -80,6 +82,47 @@ function matchesGoogleState(expected: string | undefined, actual: unknown): bool
   const expectedBytes = Buffer.from(expected)
   const actualBytes = Buffer.from(actual)
   return expectedBytes.length === actualBytes.length && timingSafeEqual(expectedBytes, actualBytes)
+}
+
+function hasMatchingGoogleState(candidates: readonly string[], actual: unknown): boolean {
+  if (candidates.length === 0 || typeof actual !== 'string') return false
+  return candidates.some((expected) => matchesGoogleState(expected, actual))
+}
+
+function isLikelyOAuthState(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{16,128}$/.test(value)
+}
+
+function isTopLevelHtmlNavigation(request: Request): boolean {
+  const fetchDest = request.get('sec-fetch-dest')
+  if (fetchDest && fetchDest !== 'document' && fetchDest !== 'empty') {
+    return false
+  }
+  const fetchMode = request.get('sec-fetch-mode')
+  if (fetchMode && fetchMode !== 'cors') {
+    return fetchMode === 'navigate'
+  }
+  const accept = request.get('accept') ?? ''
+  return accept.includes('text/html')
+}
+
+function buildSameSiteRetryHtml(request: Request): string {
+  const retryUrl = new URL('/api/auth/google/callback', env.apiOrigin)
+  for (const [key, rawValue] of Object.entries(request.query)) {
+    if (key === 'sameSiteRetry') continue
+    if (typeof rawValue === 'string') {
+      retryUrl.searchParams.set(key, rawValue)
+    }
+  }
+  retryUrl.searchParams.set('sameSiteRetry', '1')
+  const relativeTarget = `${retryUrl.pathname}${retryUrl.search}`
+  const htmlEscapedTarget = relativeTarget
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+  const safeJsonTarget = JSON.stringify(relativeTarget).replace(/</g, '\\u003c')
+  return `<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${htmlEscapedTarget}"><title>Đang chuyển hướng…</title></head><body><script>window.location.replace(${safeJsonTarget})</script></body></html>`
 }
 
 function setRefreshCookie(response: Response, token: string, rememberMe = true): void {
@@ -170,13 +213,39 @@ export class AuthController {
   }
 
   async googleCallback(request: Request, response: Response, next: NextFunction): Promise<void> {
+    const stateCookies = googleStateCookies(request)
+    const stateMatched = hasMatchingGoogleState(stateCookies, request.query.state)
+
+    // Chromium withholds SameSite=Lax cookies when Google's consent Cancel button
+    // submits a cross-site POST followed by a 302 redirect. A single same-origin
+    // top-level HTML retry lets the browser attach its existing state cookie so full
+    // CSRF state verification still runs without weakening SameSite=Lax.
+    if (
+      !stateMatched &&
+      stateCookies.length === 0 &&
+      isLikelyOAuthState(request.query.state) &&
+      request.query.sameSiteRetry !== '1' &&
+      isTopLevelHtmlNavigation(request)
+    ) {
+      response.setHeader('Cache-Control', 'no-store')
+      response.status(200).type('html').send(buildSameSiteRetryHtml(request))
+      return
+    }
+
     clearGoogleStateCookie(response)
     try {
+      if (!stateMatched) {
+        throw new AuthError('Trạng thái OAuth không hợp lệ hoặc đã hết hạn.', 401)
+      }
+      const oauthError = typeof request.query.error === 'string' ? request.query.error : undefined
+      if (oauthError === 'access_denied') {
+        const redirectUrl = new URL('/login', env.frontendUrl)
+        redirectUrl.searchParams.set('google_oauth_error', 'access_denied')
+        response.redirect(302, redirectUrl.toString())
+        return
+      }
       if (request.query.error) {
         throw new AuthError('Đăng nhập Google đã bị hủy hoặc bị từ chối.', 401)
-      }
-      if (!matchesGoogleState(googleStateCookie(request), request.query.state)) {
-        throw new AuthError('Trạng thái OAuth không hợp lệ hoặc đã hết hạn.', 401)
       }
       const code = request.query.code
       if (typeof code !== 'string' || !code) {

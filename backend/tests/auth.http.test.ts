@@ -197,6 +197,113 @@ describe('authentication HTTP endpoints', () => {
     assert.match(response.headers.get('set-cookie') ?? '', /english_learning_platform_google_state=/)
   })
 
+  it('redirects Google OAuth access_denied cancellation to /login with a safe error code when state is valid', async () => {
+    const state = 'valid-oauth-csrf-state-123'
+    const response = await fetch(
+      `${baseUrl}/api/auth/google/callback?error=access_denied&state=${encodeURIComponent(state)}`,
+      {
+        headers: {
+          Cookie: `english_learning_platform_google_state=${state}`,
+        },
+        redirect: 'manual',
+      }
+    )
+
+    assert.equal(response.status, 302)
+    const locationHeader = response.headers.get('location')
+    assert.ok(locationHeader)
+    const expectedRedirect = new URL('/login', env.frontendUrl)
+    expectedRedirect.searchParams.set('google_oauth_error', 'access_denied')
+    assert.equal(locationHeader, expectedRedirect.toString())
+
+    const parsedLocation = new URL(locationHeader)
+    assert.deepEqual([...parsedLocation.searchParams.keys()], ['google_oauth_error'])
+
+    const setCookieHeader = response.headers.get('set-cookie') ?? ''
+    assert.match(setCookieHeader, /english_learning_platform_google_state=;/)
+    assert.equal(setCookieHeader.includes('english_learning_platform_refresh='), false)
+    assert.equal(setCookieHeader.includes('english_learning_platform_google_access_handoff='), false)
+  })
+
+  it('rejects Google OAuth access_denied callback when state is invalid or missing', async () => {
+    const invalidStateResponse = await fetch(
+      `${baseUrl}/api/auth/google/callback?error=access_denied&state=invalid-state`,
+      {
+        headers: {
+          Cookie: 'english_learning_platform_google_state=expected-state',
+        },
+        redirect: 'manual',
+      }
+    )
+    assert.equal(invalidStateResponse.status, 401)
+    assert.equal(invalidStateResponse.headers.get('location'), null)
+
+    const missingStateResponse = await fetch(
+      `${baseUrl}/api/auth/google/callback?error=access_denied`,
+      {
+        headers: {
+          Cookie: 'english_learning_platform_google_state=expected-state',
+        },
+        redirect: 'manual',
+      }
+    )
+    assert.equal(missingStateResponse.status, 401)
+    assert.equal(missingStateResponse.headers.get('location'), null)
+  })
+
+  it('recovers SameSite=Lax state cookie via one same-origin top-level bounce on cross-site POST-redirect cancellation while still rejecting forged state', async () => {
+    const validState = 'tGysh4_ekerdjsx5H1MFUSZO1rMWJmZoRtNmk_6tJkQ'
+
+    // Hop 1: Chromium cross-site POST -> 302 redirect from Google consent Cancel withholds SameSite=Lax cookie
+    const hop1 = await fetch(
+      `${baseUrl}/api/auth/google/callback?error=access_denied&state=${encodeURIComponent(validState)}`,
+      {
+        headers: {
+          Accept: 'text/html,application/xhtml+xml',
+          'Sec-Fetch-Mode': 'navigate',
+        },
+        redirect: 'manual',
+      }
+    )
+    assert.equal(hop1.status, 200)
+    assert.match(hop1.headers.get('content-type') ?? '', /text\/html/)
+    assert.equal(hop1.headers.get('set-cookie'), null)
+    const hop1Html = await hop1.text()
+    assert.match(hop1Html, /sameSiteRetry=1/)
+
+    // Hop 2 (legitimate browser): same-origin GET attaches stored state cookie (even alongside a stale state cookie) -> 302 to /login
+    const hop2Valid = await fetch(
+      `${baseUrl}/api/auth/google/callback?error=access_denied&state=${encodeURIComponent(validState)}&sameSiteRetry=1`,
+      {
+        headers: {
+          Accept: 'text/html,application/xhtml+xml',
+          'Sec-Fetch-Mode': 'navigate',
+          Cookie: `english_learning_platform_google_state=stale-old-state; english_learning_platform_google_state=${validState}`,
+        },
+        redirect: 'manual',
+      }
+    )
+    assert.equal(hop2Valid.status, 302)
+    const expectedRedirect = new URL('/login', env.frontendUrl)
+    expectedRedirect.searchParams.set('google_oauth_error', 'access_denied')
+    assert.equal(hop2Valid.headers.get('location'), expectedRedirect.toString())
+    assert.match(hop2Valid.headers.get('set-cookie') ?? '', /english_learning_platform_google_state=;/)
+
+    // Hop 2 (forged request with no matching state cookie): rejected with 401
+    const hop2Forged = await fetch(
+      `${baseUrl}/api/auth/google/callback?error=access_denied&state=${encodeURIComponent(validState)}&sameSiteRetry=1`,
+      {
+        headers: {
+          Accept: 'text/html,application/xhtml+xml',
+          'Sec-Fetch-Mode': 'navigate',
+        },
+        redirect: 'manual',
+      }
+    )
+    assert.equal(hop2Forged.status, 401)
+    assert.equal(hop2Forged.headers.get('location'), null)
+  })
+
   it('redirects to Google with a CSRF state cookie when OAuth is configured', async () => {
     const previousClientId = env.googleClientId
     const previousClientSecret = env.googleClientSecret
@@ -722,23 +829,25 @@ describe('authentication HTTP endpoints', () => {
 
   it('returns a generic temporary-password response without exposing credentials', async () => {
     const originalForgotPassword = authService.forgotPassword
+    const genericMessage = 'If the account is registered, password recovery instructions have been sent to the email.'
     authService.forgotPassword = async () => ({
-      message: 'If an account exists for that address, a temporary password will be sent.',
+      message: genericMessage,
     })
 
     try {
-      const response = await fetch(`${baseUrl}/api/auth/forgot-password`, {
-        method: 'POST',
-        headers: {
-          Origin: frontendOrigin,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email: 'learner@example.test' }),
-      })
-      assert.equal(response.status, 200)
-      const result = await response.json() as Record<string, unknown>
-      assert.deepEqual(Object.keys(result).sort(), ['message', 'success'])
-      assert.equal(typeof result.message, 'string')
+      for (const email of ['unregistered@example.test', 'pending-payment@example.test', 'learner@example.test']) {
+        const response = await fetch(`${baseUrl}/api/auth/forgot-password`, {
+          method: 'POST',
+          headers: {
+            Origin: frontendOrigin,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email }),
+        })
+        assert.equal(response.status, 200)
+        const result = await response.json() as Record<string, unknown>
+        assert.deepEqual(result, { success: true, message: genericMessage })
+      }
 
       const removedRoute = await fetch(`${baseUrl}/api/auth/reset-password`, {
         method: 'POST',

@@ -645,6 +645,8 @@
   border: 1px solid #E5E7EB;
   background: #F9FAFB;
   color: var(--color-ink-900, #17181C);
+  text-decoration: none;
+  box-sizing: border-box;
 }
 
 .course-free-consultation:hover {

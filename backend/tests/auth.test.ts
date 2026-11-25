@@ -8,10 +8,12 @@ import {
   GENERIC_FORGOT_MESSAGE,
   type TokenPair,
 } from '../src/modules/auth/auth.service.js'
-import type { AuthSession, StudentRegistrationAccountResult } from '../src/modules/auth/auth.repository.js'
-import type {
-  RegistrationOtpIssueResult,
-  RegistrationOtpVerifyResult,
+import {
+  AuthRepository,
+  type AuthSession,
+  type RegistrationOtpIssueResult,
+  type RegistrationOtpVerifyResult,
+  type StudentRegistrationAccountResult,
 } from '../src/modules/auth/auth.repository.js'
 import {
   generateRegistrationOtp,
@@ -43,30 +45,54 @@ Object.assign(env, {
   frontendUrl: 'https://english-learning-platform.test',
 })
 
-it('validates and stores a student phone number with the registration profile', async () => {
+it('validates and stores student phone numbers with 10–11 digits during registration', async () => {
   const { service, users } = setup()
-  const registration = await register(
-    service,
-    'phone-registration@example.test',
-    'A-long-password-123',
-    undefined,
-    { phoneNumber: '+84 912 345 678' }
-  )
-  const user = [...users.users.values()].find((item) => item.email === registration.email)
-  assert.ok(user)
-  assert.equal(user.phone_number, '+84 912 345 678')
-  assert.equal(users.createdRegistrationDetails?.phoneNumber, '+84 912 345 678')
 
-  await expectAuthError(
-    () => register(
+  const acceptedPhones = [
+    '0912345678', // 10 digits
+    '09123456789', // 11 digits
+    '+84 912 345 678', // formatted international (10 digits)
+    '+84 912-345-678', // formatted international with hyphens (10 digits)
+  ]
+
+  for (const [index, phoneNumber] of acceptedPhones.entries()) {
+    const registration = await register(
       service,
-      'invalid-phone@example.test',
+      `phone-valid-${index}@example.test`,
       'A-long-password-123',
       undefined,
-      { phoneNumber: 'phone number' }
-    ),
-    400
-  )
+      { phoneNumber }
+    )
+    const user = [...users.users.values()].find((item) => item.email === registration.email)
+    assert.ok(user)
+    assert.equal(user.phone_number, phoneNumber)
+    assert.equal(users.createdRegistrationDetails?.phoneNumber, phoneNumber)
+  }
+
+  const rejectedPhones = [
+    '091234', // 6 digits (below minimum)
+    '0912345', // 7 digits (below minimum)
+    '091234567', // 9 digits (below minimum)
+    '091234567890', // 12 digits (above maximum)
+    '091234567890123', // 15 digits (above maximum)
+    '0912345678901234', // 16 digits (above maximum)
+    '0912abc678', // letters
+    'phone number',
+  ]
+
+  for (const [index, phoneNumber] of rejectedPhones.entries()) {
+    const error = await expectAuthError(
+      () => register(
+        service,
+        `phone-invalid-${index}@example.test`,
+        'A-long-password-123',
+        undefined,
+        { phoneNumber }
+      ),
+      400
+    )
+    assert.equal(error.message, 'Please enter a valid phone number.')
+  }
 })
 
 const NOW = Date.now()
@@ -87,6 +113,7 @@ class FakeUsers {
   googleIdentityProfiles = new Map<string, string>()
   createdRole: string | undefined
   updatedPassword: string | undefined
+  onResetVerifiedPendingOtp: ((userId: string) => void) | undefined
   passwords = new Map([[sampleUser.id, 'Correct-Horse-Password!']])
   createdRegistrationDetails: {
     fullName: string
@@ -118,24 +145,9 @@ class FakeUsers {
       }
       const existingDetails = this.registrationDetails.get(existing.id)
       if (existing.is_verified) {
-        const updatedCourseIds = selectedCourseIds.length > 0
-          ? selectedCourseIds
-          : (existingDetails?.selectedCourseIds ?? [])
-        this.registrationDetails.set(existing.id, {
-          fullName: existing.full_name,
-          dateOfBirth: existingDetails?.dateOfBirth ?? dateOfBirth ?? '',
-          phoneNumber: existing.phone_number ?? '',
-          selectedCourseIds: updatedCourseIds,
-        })
-        return {
-          ...existing,
-          reusedExistingAccount: true,
-          registrationDetails: {
-            dateOfBirth: existingDetails?.dateOfBirth || null,
-            selectedCourseIds: updatedCourseIds,
-          },
-        }
+        this.onResetVerifiedPendingOtp?.(existing.id)
       }
+      existing.is_verified = false
       existing.full_name = fullName || existing.full_name
       existing.phone_number = phoneNumber || existing.phone_number
       const nextCourseIds = selectedCourseIds.length > 0
@@ -311,6 +323,13 @@ class FakeStore {
 
   constructor(private readonly users: FakeUsers) {}
 
+  clearConsumedRegistrationOtp(userId: string): void {
+    const existing = this.registrationOtps.get(userId)
+    if (existing?.consumed) {
+      this.registrationOtps.delete(userId)
+    }
+  }
+
   async issueRegistrationOtp(
     email: string,
     otp: string,
@@ -442,6 +461,7 @@ function setup(
 ) {
   const users = new FakeUsers()
   const store = new FakeStore(users)
+  users.onResetVerifiedPendingOtp = (userId) => store.clearConsumedRegistrationOtp(userId)
   const adminAuth = {
     async authenticatePassword() { return null },
     async findByEmail() { return null },
@@ -622,7 +642,7 @@ describe('authentication service', () => {
     }
   })
 
-  it('rejects expired OTPs and limits incorrect attempts', async () => {
+  it('rejects expired OTPs, invalidates the code after 5 failed attempts, and resets attempts only for a new OTP', async () => {
     let emailHtml = ''
     const { service, store, users } = setup(
       undefined,
@@ -640,30 +660,207 @@ describe('authentication service', () => {
       () => service.verifyRegistrationOtp(user.email, '123456'),
       400
     )
-    assert.match(expired.message, /không hợp lệ hoặc đã hết hạn/)
+    assert.equal(expired.message, 'Mã xác minh không hợp lệ hoặc đã hết hạn.')
     assert.equal(user.is_verified, false)
 
     otpRecord.lastSentAt = Date.now() - REGISTRATION_OTP_RESEND_COOLDOWN_MS - 1
     await service.requestRegistrationOtp(user.email)
-    const correctCode = emailHtml.match(/font-size:32px[^>]*>(\d{6})</)?.[1]
-    assert.ok(correctCode)
-    const incorrectCode = correctCode === '000000' ? '000001' : '000000'
-    for (let attempt = 1; attempt < REGISTRATION_OTP_MAX_ATTEMPTS; attempt += 1) {
-      await expectAuthError(
+    const originalCorrectCode = emailHtml.match(/font-size:32px[^>]*>(\d{6})</)?.[1]
+    assert.ok(originalCorrectCode)
+    const incorrectCode = originalCorrectCode === '000000' ? '000001' : '000000'
+
+    for (let attempt = 1; attempt <= REGISTRATION_OTP_MAX_ATTEMPTS; attempt += 1) {
+      const failed = await expectAuthError(
         () => service.verifyRegistrationOtp(user.email, incorrectCode),
         400
       )
+      assert.equal(failed.message, 'Mã xác minh không hợp lệ hoặc đã hết hạn.')
     }
-    await expectAuthError(
-      () => service.verifyRegistrationOtp(user.email, incorrectCode),
+
+    // Attempt 6 with the original correct OTP must still be rejected.
+    const sixthAttempt = await expectAuthError(
+      () => service.verifyRegistrationOtp(user.email, originalCorrectCode),
       400
     )
-    await expectAuthError(
-      () => service.verifyRegistrationOtp(user.email, incorrectCode),
-      400
-    )
+    assert.equal(sixthAttempt.message, 'Mã xác minh không hợp lệ hoặc đã hết hạn.')
     assert.equal(user.is_verified, false)
     assert.equal(store.sessions.size, 0)
+
+    // Genuine unexpected database error keeps 503 server-error behavior.
+    const originalVerify = store.verifyRegistrationOtp.bind(store)
+    store.verifyRegistrationOtp = async () => {
+      throw new Error('database connection lost')
+    }
+    try {
+      const serverError = await expectAuthError(
+        () => service.verifyRegistrationOtp(user.email, originalCorrectCode),
+        503
+      )
+      assert.equal(serverError.message, 'Unable to verify the code. Please try again later.')
+    } finally {
+      store.verifyRegistrationOtp = originalVerify
+    }
+
+    // Issuing a new OTP resets attempts for the new code only; old code stays invalid.
+    store.registrationOtps.get(userId)!.lastSentAt = Date.now() - REGISTRATION_OTP_RESEND_COOLDOWN_MS - 1
+    await service.requestRegistrationOtp(user.email)
+    const newCorrectCode = emailHtml.match(/font-size:32px[^>]*>(\d{6})</)?.[1]
+    assert.ok(newCorrectCode)
+    assert.notEqual(newCorrectCode, originalCorrectCode)
+    assert.equal(store.registrationOtps.get(userId)?.attemptCount, 0)
+
+    const oldOtpAttempt = await expectAuthError(
+      () => service.verifyRegistrationOtp(user.email, originalCorrectCode),
+      400
+    )
+    assert.equal(oldOtpAttempt.message, 'Mã xác minh không hợp lệ hoặc đã hết hạn.')
+    assert.equal(user.is_verified, false)
+
+    await service.verifyRegistrationOtp(user.email, newCorrectCode)
+    assert.equal(user.is_verified, true)
+    assert.equal(store.sessions.size, 0)
+  })
+
+  it('persists attempt_count and consumes OTP after 5 failed attempts in AuthRepository SQL', async () => {
+    const profile = {
+      ...sampleUser,
+      id: '22222222-2222-4222-8222-222222222222',
+      email: 'repo-otp@example.test',
+      status: 'pending' as const,
+      is_verified: false,
+    }
+    let otpRow: {
+      otp_hash: string
+      expires_at: string
+      attempt_count: number
+      last_sent_at: string
+      consumed_at: string | null
+    } | null = null
+
+    const mockPool = {
+      async connect() {
+        return {
+          async query(sql: string, params: unknown[] = []) {
+            if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') {
+              return { rows: [], rowCount: 0 }
+            }
+            if (/CASE\s+WHEN\s+\$\d+\s*>=\s*\$\d+/i.test(sql)) {
+              throw new Error('PostgreSQL 42P08: inconsistent types deduced for parameter')
+            }
+            if (sql.includes('FROM public.profiles AS p') && sql.includes('FOR UPDATE OF p')) {
+              const targetEmail = String(params[0] ?? '').toLowerCase()
+              const matches =
+                targetEmail === profile.email &&
+                profile.status === 'pending' &&
+                (!sql.includes('p.is_verified = false') || !profile.is_verified)
+              return { rows: matches ? [{ ...profile }] : [], rowCount: matches ? 1 : 0 }
+            }
+            if (sql.includes('SELECT last_sent_at') && sql.includes('FROM public.registration_email_otps')) {
+              return {
+                rows: otpRow ? [{ last_sent_at: otpRow.last_sent_at }] : [],
+                rowCount: otpRow ? 1 : 0,
+              }
+            }
+            if (sql.includes('INSERT INTO public.registration_email_otps')) {
+              otpRow = {
+                otp_hash: String(params[1]),
+                expires_at: String(params[2]),
+                attempt_count: 0,
+                last_sent_at: String(params[3]),
+                consumed_at: null,
+              }
+              return { rows: [], rowCount: 1 }
+            }
+            if (sql.includes('SELECT otp_hash, expires_at, attempt_count, consumed_at') && sql.includes('FOR UPDATE')) {
+              return { rows: otpRow ? [{ ...otpRow }] : [], rowCount: otpRow ? 1 : 0 }
+            }
+            if (sql.includes('UPDATE public.registration_email_otps') && sql.includes('attempt_count = $2::smallint')) {
+              assert.ok(otpRow)
+              otpRow.attempt_count = Number(params[1])
+              if (sql.includes('consumed_at = $3::timestamptz')) {
+                otpRow.consumed_at = String(params[2])
+              }
+              return { rows: [], rowCount: 1 }
+            }
+            if (sql.includes('UPDATE public.registration_email_otps SET consumed_at = $2::timestamptz')) {
+              assert.ok(otpRow)
+              otpRow.consumed_at = String(params[1])
+              return { rows: [], rowCount: 1 }
+            }
+            if (sql.includes('UPDATE public.profiles') && sql.includes('SET is_verified = true')) {
+              profile.is_verified = true
+              profile.updated_at = String(params[1])
+              return { rows: [{ ...profile }], rowCount: 1 }
+            }
+            throw new Error(`Unexpected SQL in mock pool: ${sql}`)
+          },
+          release() {},
+        }
+      },
+    }
+
+    const repository = new AuthRepository(() => mockPool as never)
+    const nowMs = Date.now()
+    const firstOtp = '123456'
+    const wrongOtp = '654321'
+    const issued = await repository.issueRegistrationOtp(
+      profile.email,
+      firstOtp,
+      new Date(nowMs + REGISTRATION_OTP_EXPIRY_MS).toISOString(),
+      new Date(nowMs).toISOString(),
+      REGISTRATION_OTP_RESEND_COOLDOWN_MS
+    )
+    assert.equal(issued.status, 'issued')
+
+    for (let attempt = 1; attempt <= 4; attempt += 1) {
+      const res = await repository.verifyRegistrationOtp(profile.email, wrongOtp, new Date(nowMs + attempt).toISOString())
+      assert.equal(res.status, 'invalid')
+      assert.equal(otpRow?.attempt_count, attempt)
+      assert.equal(otpRow?.consumed_at, null)
+    }
+
+    const fifth = await repository.verifyRegistrationOtp(profile.email, wrongOtp, new Date(nowMs + 5).toISOString())
+    assert.equal(fifth.status, 'attempts_exhausted')
+    assert.equal(otpRow?.attempt_count, 5)
+    assert.ok(otpRow?.consumed_at)
+
+    const sixthWithOriginalOtp = await repository.verifyRegistrationOtp(
+      profile.email,
+      firstOtp,
+      new Date(nowMs + 6).toISOString()
+    )
+    assert.equal(sixthWithOriginalOtp.status, 'attempts_exhausted')
+    assert.equal(profile.is_verified, false)
+
+    // Re-issue a new OTP after cooldown -> attempt_count resets for the new code only
+    otpRow.last_sent_at = new Date(Date.now() - REGISTRATION_OTP_RESEND_COOLDOWN_MS - 1).toISOString()
+    const secondOtp = '246810'
+    const reissued = await repository.issueRegistrationOtp(
+      profile.email,
+      secondOtp,
+      new Date(nowMs + REGISTRATION_OTP_EXPIRY_MS).toISOString(),
+      new Date(nowMs).toISOString(),
+      REGISTRATION_OTP_RESEND_COOLDOWN_MS
+    )
+    assert.equal(reissued.status, 'issued')
+    assert.equal(otpRow?.attempt_count, 0)
+    assert.equal(otpRow?.consumed_at, null)
+
+    const oldAfterReissue = await repository.verifyRegistrationOtp(
+      profile.email,
+      firstOtp,
+      new Date(nowMs + REGISTRATION_OTP_RESEND_COOLDOWN_MS + 11_000).toISOString()
+    )
+    assert.equal(oldAfterReissue.status, 'invalid')
+    assert.equal(otpRow?.attempt_count, 1)
+
+    const newVerify = await repository.verifyRegistrationOtp(
+      profile.email,
+      secondOtp,
+      new Date(nowMs + REGISTRATION_OTP_RESEND_COOLDOWN_MS + 12_000).toISOString()
+    )
+    assert.equal(newVerify.status, 'verified')
+    assert.equal(profile.is_verified, true)
   })
 
   it('verifies OTP without creating a session; login creates the session afterward', async () => {
@@ -1330,18 +1527,46 @@ describe('authentication service', () => {
     assert.match(email.text, /Đội ngũ Your English Voice/)
   })
 
-  it('does not send temporary passwords for unknown or invalid email addresses', async () => {
-    let emailCount = 0
-    const { service } = setup(async () => {
-      emailCount += 1
+  it('returns the same generic message and does not send temporary passwords for unregistered, invalid, or pending accounts', async () => {
+    const emailedRecipients: string[] = []
+    const { service, users } = setup(async (email) => {
+      emailedRecipients.push(email.to)
     })
-    const existing = await service.forgotPassword(sampleUser.email)
+
+    const pendingUnverified: UserProfile = {
+      ...sampleUser,
+      id: randomUUID(),
+      email: 'pending-unverified@example.test',
+      status: 'pending',
+      is_verified: false,
+    }
+    const pendingVerified: UserProfile = {
+      ...sampleUser,
+      id: randomUUID(),
+      email: 'pending-verified@example.test',
+      status: 'pending',
+      is_verified: true,
+    }
+    users.users.set(pendingUnverified.id, pendingUnverified)
+    users.users.set(pendingVerified.id, pendingVerified)
+
     const unknown = await service.forgotPassword('unknown@example.test')
     const invalid = await service.forgotPassword('not-a-valid-email')
+    const pendingUnverifiedRes = await service.forgotPassword(pendingUnverified.email)
+    const pendingVerifiedRes = await service.forgotPassword(pendingVerified.email)
+    assert.equal(emailedRecipients.length, 0)
+    assert.equal(users.updatedPassword, undefined)
 
-    assert.equal(existing.message, unknown.message)
-    assert.equal(existing.message, invalid.message)
-    assert.equal(emailCount, 1)
+    const active = await service.forgotPassword(sampleUser.email)
+
+    const expectedMessage = 'If the account is registered, password recovery instructions have been sent to the email.'
+    assert.equal(GENERIC_FORGOT_MESSAGE, expectedMessage)
+    assert.equal(unknown.message, expectedMessage)
+    assert.equal(invalid.message, expectedMessage)
+    assert.equal(pendingUnverifiedRes.message, expectedMessage)
+    assert.equal(pendingVerifiedRes.message, expectedMessage)
+    assert.equal(active.message, expectedMessage)
+    assert.deepEqual(emailedRecipients, [sampleUser.email])
   })
 
   it('surfaces Resend failures without changing the existing password', async () => {
@@ -1589,7 +1814,10 @@ describe('authentication service', () => {
   })
 
   it('prevents pending students from bypassing course payment via forgotPassword', async () => {
-    const { users, service } = setup(async () => undefined)
+    let emailSent = false
+    const { users, service } = setup(async () => {
+      emailSent = true
+    })
     const registration = await register(
       service,
       'pending.recovery@example.test',
@@ -1600,9 +1828,13 @@ describe('authentication service', () => {
     user.is_verified = true
     assert.equal(user.status, 'pending')
 
-    await service.forgotPassword(registration.email)
+    const initialPassword = users.passwords.get(user.id)
+    const result = await service.forgotPassword(registration.email)
 
+    assert.equal(result.message, GENERIC_FORGOT_MESSAGE)
+    assert.equal(emailSent, false)
     assert.equal(users.updatedPassword, undefined)
+    assert.equal(users.passwords.get(user.id), initialPassword)
   })
 
   it('enforces strict student status transitions across registration, OTP verification, and payment activation', async () => {
@@ -1706,8 +1938,16 @@ describe('authentication service', () => {
     assert.equal(originalUser.status, 'pending')
   })
 
-  it('skips OTP and preserves verified pending account details when re-registering before payment', async () => {
-    const { users, service } = setup()
+  it('requires OTP re-verification when a verified pending guest re-registers immediately or after one day', async () => {
+    let lastSentOtp = ''
+    const { users, store, service } = setup(
+      async () => undefined,
+      undefined,
+      async (mail) => {
+        const match = mail.html.match(/\b(\d{6})\b/)
+        if (match?.[1]) lastSentOtp = match[1]
+      }
+    )
     const courseA = 'c0a80101-0000-4000-8000-000000000001'
     const courseB = 'c0a80101-0000-4000-8000-000000000002'
     const email = 'verified.pending@example.test'
@@ -1720,24 +1960,66 @@ describe('authentication service', () => {
     })
     const user = [...users.users.values()].find((item) => item.email === email)
     assert.ok(user)
-    user.is_verified = true
     const originalId = user.id
 
-    const result = await register(service, email, 'AttemptedOverwrite123!', undefined, {
-      fullName: 'Changed Name Should Not Overwrite',
-      dateOfBirth: '1999-01-01',
-      phoneNumber: '0999999999',
+    // Initial OTP request + verification -> is_verified = true, status = pending
+    const initialIssue = await service.requestRegistrationOtp(email)
+    assert.equal(initialIssue.status, 'sent')
+    assert.ok(lastSentOtp)
+    await service.verifyRegistrationOtp(email, lastSentOtp)
+    assert.equal(user.is_verified, true)
+    assert.equal(user.status, 'pending')
+
+    // Immediate Back from checkout + selecting another course must reset is_verified and require OTP again
+    const result = await register(service, email, 'UpdatedPassword123!', undefined, {
+      fullName: 'Verified Student Updated',
+      dateOfBirth: '2000-08-12',
+      phoneNumber: '0922222222',
       selectedCourseIds: [courseB],
     })
-    assert.equal(result.verificationRequired, false)
+    assert.equal(result.verificationRequired, true)
     assert.equal(result.reusedExistingAccount, true)
     assert.deepEqual(result.selectedCourseIds, [courseB])
     assert.equal(user.id, originalId)
-    assert.equal(user.full_name, 'Verified Student')
-    assert.equal(user.is_verified, true)
+    assert.equal(user.full_name, 'Verified Student Updated')
+    assert.equal(user.is_verified, false)
     assert.equal(user.status, 'pending')
-    assert.equal(users.passwords.get(originalId), 'VerifiedPassword123!')
+    assert.equal(users.passwords.get(originalId), 'UpdatedPassword123!')
     assert.equal([...users.users.values()].filter((item) => item.email === email).length, 1)
+
+    // Consumed OTP must not block issuing a fresh OTP immediately after going back
+    lastSentOtp = ''
+    const reissued = await service.requestRegistrationOtp(email)
+    assert.equal(reissued.status, 'sent')
+    assert.ok(lastSentOtp)
+    await service.verifyRegistrationOtp(email, lastSentOtp)
+    assert.equal(user.is_verified, true)
+
+    // Simulate returning after ~1 day (25 hours later) and re-registering -> OTP required again
+    const previousOtp = store.registrationOtps.get(originalId)
+    if (previousOtp) {
+      previousOtp.lastSentAt = Date.now() - 25 * 60 * 60 * 1000
+    }
+    user.updated_at = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString()
+
+    const nextDayResult = await register(service, email, 'NextDayPassword123!', undefined, {
+      fullName: 'Verified Student Updated',
+      dateOfBirth: '2000-08-12',
+      phoneNumber: '0922222222',
+      selectedCourseIds: [courseA],
+    })
+    assert.equal(nextDayResult.verificationRequired, true)
+    assert.equal(nextDayResult.reusedExistingAccount, true)
+    assert.equal(user.is_verified, false)
+    assert.equal(user.status, 'pending')
+    assert.deepEqual(nextDayResult.selectedCourseIds, [courseA])
+
+    lastSentOtp = ''
+    const nextDayOtp = await service.requestRegistrationOtp(email)
+    assert.equal(nextDayOtp.status, 'sent')
+    assert.ok(lastSentOtp)
+    await service.verifyRegistrationOtp(email, lastSentOtp)
+    assert.equal(user.is_verified, true)
   })
 
   it('blocks registration with 409 for active verified accounts without downgrading status', async () => {

@@ -7,7 +7,7 @@ import { authApi, getErrorMessage } from './auth-api'
 import './login-page.css'
 import './forgot-password-page.css'
 
-const EMAIL_PLACEHOLDER = 'elena.vance@oxfordlinguistics.edu'
+const EMAIL_PLACEHOLDER = 'hocvien@yourenglishvoice.vn'
 
 export function ForgotPasswordPage() {
   const teacherMode = window.location.pathname.startsWith('/teacher/')
@@ -86,7 +86,7 @@ export function ForgotPasswordPage() {
             <a className="back-to-login" href={teacherMode ? '/teacher/login' : '/login'}>← Quay lại đăng nhập</a>
             <p className="recovery-support">
               Gặp sự cố khi nhận email?{' '}
-              <a href="#lien-he">Liên hệ bộ phận trợ giúp EngMaster</a>
+              <a href="#lien-he">Liên hệ bộ phận hỗ trợ Your English Voice</a>
             </p>
           </div>
         </section>
