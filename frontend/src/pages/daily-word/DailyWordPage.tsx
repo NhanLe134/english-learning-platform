@@ -140,14 +140,15 @@ export function DailyWordPage() {
   async function handleConfirmBulkSchedule(
     words: TuVungBocTach[],
     startDate: string,
-    time: string
+    time: string,
+    fileName: string
   ) {
     try {
       await dailyWordApi.xepLichHangLoat({
         danh_sach_tu: words,
         ngay_bat_dau: startDate,
         gio_phat_hanh: time,
-        ten_tep_nguon: 'Mau_Import_Tu_Vung_DailyWord.txt',
+        ten_tep_nguon: fileName || 'DailyWord_Import.xlsx',
       })
       await taiDuLieuThang(currentYear, currentMonth)
       setShowSmartParser(false)

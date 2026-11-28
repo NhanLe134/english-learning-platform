@@ -12,6 +12,7 @@ import {
   Sparkles,
   Download,
   FileUp,
+  AlertCircle,
 } from 'lucide-react'
 import type { TuVungBocTach } from '../types/dailyWord.types'
 import {
@@ -24,7 +25,8 @@ interface SmartDocParserCardProps {
   onConfirmSchedule: (
     words: TuVungBocTach[],
     startDate: string,
-    time: string
+    time: string,
+    fileName: string
   ) => void
   onDownloadTemplate?: () => void
 }
@@ -54,17 +56,25 @@ export const SmartDocParserCard: React.FC<SmartDocParserCardProps> = ({
   const [isDragging, setIsDragging] = useState(false)
   const [parsing, setParsing] = useState(false)
   const [fileName, setFileName] = useState<string>('')
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [parsedWords, setParsedWords] = useState<TuVungBocTach[]>([])
   const [startDate, setStartDate] = useState<string>(getTodayDateStr)
   const [publishTime, setPublishTime] = useState<string>('03:00')
 
-  // Xử lý khi chọn file (chỉ hỗ trợ DOCX, DOC, TXT)
+  // Xử lý khi chọn file (hỗ trợ XLSX, XLS, CSV)
   async function handleFileSelected(file: File) {
     setParsing(true)
+    setErrorMessage(null)
     try {
       const result = await parseDocumentFile(file)
       setFileName(result.fileName)
       setParsedWords(result.words)
+    } catch (err) {
+      setFileName(file.name)
+      setParsedWords([])
+      setErrorMessage(
+        err instanceof Error ? err.message : 'Không thể đọc tệp Excel/CSV. Vui lòng thử lại.'
+      )
     } finally {
       setParsing(false)
     }
@@ -92,7 +102,7 @@ export const SmartDocParserCard: React.FC<SmartDocParserCardProps> = ({
 
   function handleConfirm() {
     if (parsedWords.length === 0) return
-    onConfirmSchedule(parsedWords, startDate, `${publishTime}:00`)
+    onConfirmSchedule(parsedWords, startDate, `${publishTime}:00`, fileName)
   }
 
   const handleDownload = () => {
@@ -118,7 +128,7 @@ export const SmartDocParserCard: React.FC<SmartDocParserCardProps> = ({
               Nhận diện thông minh &amp; Tự động xếp lịch phát hành
             </h2>
             <p className="text-[11.5px] text-slate-400">
-              Hỗ trợ tải tệp Word (.docx, .doc) hoặc Text (.txt). Số ngày phát hành sẽ tự động nhận diện theo số từ trong file.
+              Hỗ trợ tải tệp Excel (.xlsx, .xls) hoặc CSV (.csv). Số ngày phát hành sẽ tự động nhận diện theo số từ trong file.
             </p>
           </div>
         </div>
@@ -135,7 +145,7 @@ export const SmartDocParserCard: React.FC<SmartDocParserCardProps> = ({
 
       {/* Main Container: Cột kéo thả bên trái & Cột kết quả/cấu hình bên phải */}
       <div className="mt-5 grid gap-5 lg:grid-cols-12">
-        {/* Cột trái: Dropzone kéo thả file DOC, DOCX, TXT */}
+        {/* Cột trái: Dropzone kéo thả file XLSX, XLS, CSV */}
         <div className="lg:col-span-5">
           <div
             onDragOver={(e) => {
@@ -155,21 +165,22 @@ export const SmartDocParserCard: React.FC<SmartDocParserCardProps> = ({
             </span>
 
             <p className="mt-2.5 text-xs font-bold text-slate-900">
-              Kéo thả file Word (.docx, .doc) hoặc Text (.txt) vào đây
+              Kéo thả file Excel (.xlsx, .xls) hoặc CSV (.csv) vào đây
             </p>
             <p className="mt-1 max-w-xs text-[11px] leading-relaxed text-slate-400">
-              Hệ thống tự động phân tách từ vựng, phiên âm IPA, giải nghĩa và câu ví dụ ngăn cách bởi dấu |.
+              Hệ thống tự động đọc các cột từ vựng, phiên âm IPA, từ loại, giải nghĩa và câu ví dụ từ bảng tính.
             </p>
 
             <input
               ref={fileInputRef}
               type="file"
-              accept=".docx,.doc,.txt"
+              accept=".xlsx,.xls,.csv"
               className="hidden"
               onChange={(e) => {
                 if (e.target.files && e.target.files[0]) {
                   void handleFileSelected(e.target.files[0])
                 }
+                e.target.value = ''
               }}
             />
 
@@ -179,8 +190,8 @@ export const SmartDocParserCard: React.FC<SmartDocParserCardProps> = ({
                 disabled={parsing}
                 onClick={() => fileInputRef.current?.click()}
                 className="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:bg-slate-50 hover:text-ink-700 active:scale-98 disabled:opacity-50 cursor-pointer"
-                title={parsing ? 'Đang nhận diện file...' : 'Chọn file tài liệu (.docx, .doc, .txt)'}
-                aria-label={parsing ? 'Đang nhận diện file' : 'Chọn file tài liệu'}
+                title={parsing ? 'Đang đọc file Excel...' : 'Chọn file Excel (.xlsx, .xls, .csv)'}
+                aria-label={parsing ? 'Đang đọc file Excel' : 'Chọn file Excel'}
               >
                 <FileUp className="size-4" />
               </button>
@@ -189,12 +200,19 @@ export const SmartDocParserCard: React.FC<SmartDocParserCardProps> = ({
                 type="button"
                 onClick={handleDownload}
                 className="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:bg-slate-50 hover:text-ink-700 active:scale-98 cursor-pointer"
-                title="Tải file mẫu import để điền theo đúng chuẩn"
-                aria-label="Tải file mẫu import"
+                title="Tải file mẫu Excel (.xlsx) để điền theo đúng chuẩn"
+                aria-label="Tải file mẫu Excel"
               >
                 <Download className="size-4" />
               </button>
             </div>
+
+            {errorMessage && (
+              <div className="mt-3 flex items-start gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-left text-[11px] font-medium text-red-700">
+                <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+                <span>{errorMessage}</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -425,7 +443,7 @@ export const SmartDocParserCard: React.FC<SmartDocParserCardProps> = ({
             <FileText className="size-8 text-slate-300" />
             <p className="mt-2 text-xs font-bold text-slate-700">Chưa có dữ liệu từ vựng</p>
             <p className="mt-1 text-[11px] text-slate-400 max-w-sm">
-              Kéo thả hoặc tải lên file Word (.docx, .doc) hoặc Text (.txt) ở khung bên trái để xem trước danh sách từ và tự động xếp lịch.
+              Kéo thả hoặc tải lên file Excel (.xlsx, .xls) hoặc CSV (.csv) ở khung bên trái để xem trước danh sách từ và tự động xếp lịch.
             </p>
           </div>
         )}

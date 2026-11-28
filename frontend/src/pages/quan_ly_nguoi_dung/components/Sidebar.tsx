@@ -36,7 +36,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'daily_word',
-      label: 'Daily Word & Lịch đăng',
+      label: 'Daily Word & Lịch',
       icon: CalendarDays,
       badgeDot: false,
       href: '/admin/daily-word',

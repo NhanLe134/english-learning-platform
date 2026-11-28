@@ -1,7 +1,8 @@
+import * as XLSX from 'xlsx'
 import type { TuVungBocTach } from '../types/dailyWord.types'
 
 /**
- * Mẫu dữ liệu từ vựng nhận diện thông minh tiêu chuẩn (Fallback và Mock ban đầu)
+ * Mẫu dữ liệu từ vựng chuẩn (dùng để xuất file Excel mẫu)
  */
 export const SAMPLE_PARSED_WORDS: TuVungBocTach[] = [
   {
@@ -126,77 +127,132 @@ export const SAMPLE_PARSED_WORDS: TuVungBocTach[] = [
   },
 ]
 
+const EXCEL_HEADERS = [
+  'Từ tiếng Anh',
+  'Phiên âm IPA',
+  'Từ loại',
+  'Định nghĩa tiếng Anh',
+  'Định nghĩa tiếng Việt',
+  'Ví dụ tiếng Anh',
+  'Dịch nghĩa ví dụ',
+] as const
+
+const SUPPORTED_EXCEL_EXTENSIONS = new Set(['xlsx', 'xls', 'csv'])
+
+type ColumnFieldKey = keyof Omit<TuVungBocTach, 'id'>
+
+const HEADER_ALIASES: Record<ColumnFieldKey, string[]> = {
+  tu_tieng_anh: ['từ tiếng anh', 'tu tieng anh', 'từ vựng', 'tu vung', 'word', 'vocabulary'],
+  phien_am_ipa: ['phiên âm ipa', 'phien am ipa', 'phiên âm', 'phien am', 'ipa'],
+  tu_loai: ['từ loại', 'tu loai', 'loại từ', 'loai tu', 'pos', 'part of speech', 'type'],
+  dinh_nghia_tieng_anh: ['định nghĩa tiếng anh', 'dinh nghia tieng anh', 'english definition', 'meaning en'],
+  dinh_nghia_tieng_viet: [
+    'định nghĩa tiếng việt',
+    'dinh nghia tieng viet',
+    'giải nghĩa tiếng việt',
+    'giai nghia tieng viet',
+    'giải nghĩa',
+    'nghĩa tiếng việt',
+    'nghia',
+  ],
+  vi_du_tieng_anh: ['ví dụ tiếng anh', 'vi du tieng anh', 'ví dụ thực tế', 'ví dụ', 'example', 'example en'],
+  vi_du_tieng_viet: ['dịch nghĩa ví dụ', 'dich nghia vi du', 'dịch ví dụ', 'dich vi du', 'ví dụ tiếng việt', 'example vi'],
+}
+
 /**
- * Tải file mẫu import chuẩn (.txt) ngăn cách bởi dấu |
+ * Tải file mẫu import chuẩn Excel (.xlsx)
  */
 export function downloadSampleImportFile() {
-  const templateContent = `# ==============================================================================
-# MẪU IMPORT TỪ VỰNG DAILY WORD (TỰ ĐỘNG NHẬN DIỆN LỊCH PHÁT HÀNH THEO SỐ TỪ)
-# ==============================================================================
-# HƯỚNG DẪN:
-# 1. Mỗi dòng là 1 từ vựng tương ứng với 1 ngày phát hành trên hệ thống.
-# 2. Bạn nhập bao nhiêu từ thì hệ thống sẽ TỰ ĐỘNG xếp lịch bấy nhiêu ngày liên tục!
-# 3. Định dạng chuẩn:
-#    Từ tiếng Anh | Phiên âm IPA | Từ loại | Định nghĩa tiếng Anh | Định nghĩa tiếng Việt | Ví dụ tiếng Anh | Dịch nghĩa ví dụ
-# 4. Ký tự phân cách giữa các cột: Dấu gạch đứng | (hoặc Tab)
-# ==============================================================================
+  const sampleRows = SAMPLE_PARSED_WORDS.slice(0, 7).map((item) => [
+    item.tu_tieng_anh,
+    item.phien_am_ipa,
+    item.tu_loai,
+    item.dinh_nghia_tieng_anh,
+    item.dinh_nghia_tieng_viet,
+    item.vi_du_tieng_anh,
+    item.vi_du_tieng_viet,
+  ])
 
-Eloquent | /'el.ə.kwənt/ | Adj | Fluent or persuasive in speaking or writing. | Lưu loát, có tài hùng biện, diễn đạt ý kiến một cách truyền cảm và thuyết phục. | An eloquent speech by the team leader persuaded all board members to greenlight the project. | Một bài phát biểu đầy sức thuyết phục của trưởng nhóm đã thuyết phục tất cả các thành viên hội đồng phê duyệt dự án.
-Pragmatic | /præɡˈmæt.ɪk/ | Adj | Dealing with things sensibly and realistically in a practical way. | Thực dụng, mang tính thực tế và hiệu quả cao. | We need a pragmatic approach to language learning. | Chúng ta cần một phương pháp tiếp cận thực tế đối với việc học ngôn ngữ.
-Meticulous | /məˈtɪk.jə.ləs/ | Adj | Showing great attention to detail; very careful and precise. | Tỉ mỉ, cẩn thận và trau chuốt từng chi tiết nhỏ. | She was meticulous in preparing her lesson plans. | Cô ấy rất tỉ mỉ trong việc chuẩn bị giáo án bài giảng.
-Nuance | /ˈnjuː.ɑːns/ | Noun | A subtle difference in meaning, expression, or sound. | Sắc thái tinh tế, sự khác biệt nhỏ về ý nghĩa hoặc âm điệu. | He listened carefully to catch every nuance of her tone. | Anh ấy lắng nghe cẩn thận để bắt trọn từng sắc thái trong giọng điệu của cô ấy.
-Catalyst | /ˈkæt.əl.ɪst/ | Noun | A person or thing that precipitates an event or change. | Chất xúc tác, nhân tố thúc đẩy sự thay đổi tích cực. | The new workshop acted as a catalyst for student motivation. | Buổi workshop mới đóng vai trò như chất xúc tác tạo động lực cho học viên.
-Feasible | /ˈfiː.zə.bəl/ | Adj | Possible to do easily or conveniently. | Khả thi, có thể thực hiện được một cách thuận lợi. | It is entirely feasible to reach IELTS 7.0 with consistent daily practice. | Hoàn toàn khả thi để đạt IELTS 7.0 nếu kiên trì luyện tập mỗi ngày.
-Reiterate | /riːˈɪt.ər.eɪt/ | Verb | Say something again or a number of times, typically for emphasis. | Lặp lại, nhắc lại nhiều lần để nhấn mạnh. | The teacher reiterated the importance of regular pronunciation drills. | Giáo viên nhấn mạnh lại tầm quan trọng của việc luyện phát âm đều đặn.
-`
+  const worksheet = XLSX.utils.aoa_to_sheet([[...EXCEL_HEADERS], ...sampleRows])
+  worksheet['!cols'] = [
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 10 },
+    { wch: 44 },
+    { wch: 48 },
+    { wch: 52 },
+    { wch: 52 },
+  ]
 
-  const blob = new Blob([templateContent], { type: 'text/plain;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = 'Mau_Import_Tu_Vung_DailyWord.txt'
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-  URL.revokeObjectURL(url)
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'DailyWord')
+  XLSX.writeFile(workbook, 'Mau_Import_Tu_Vung_DailyWord.xlsx')
+}
+
+function normalizeCell(value: unknown): string {
+  if (value === null || value === undefined) return ''
+  return String(value).trim()
+}
+
+function normalizeHeaderText(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+function matchHeaderField(headerText: string): ColumnFieldKey | null {
+  const normalized = normalizeHeaderText(headerText)
+  if (!normalized) return null
+
+  for (const [field, aliases] of Object.entries(HEADER_ALIASES) as Array<[ColumnFieldKey, string[]]>) {
+    if (aliases.some((alias) => normalized === alias || normalized.includes(alias))) {
+      return field
+    }
+  }
+  return null
+}
+
+function detectColumnMapping(firstRow: string[]): {
+  hasHeader: boolean
+  colIndex: Record<ColumnFieldKey, number>
+} {
+  const defaultMapping: Record<ColumnFieldKey, number> = {
+    tu_tieng_anh: 0,
+    phien_am_ipa: 1,
+    tu_loai: 2,
+    dinh_nghia_tieng_anh: 3,
+    dinh_nghia_tieng_viet: 4,
+    vi_du_tieng_anh: 5,
+    vi_du_tieng_viet: 6,
+  }
+
+  const detected: Partial<Record<ColumnFieldKey, number>> = {}
+  let matchedCount = 0
+
+  firstRow.forEach((cell, index) => {
+    const field = matchHeaderField(cell)
+    if (field && detected[field] === undefined) {
+      detected[field] = index
+      matchedCount += 1
+    }
+  })
+
+  // Xem là dòng tiêu đề nếu khớp ít nhất 2 cột chuẩn hoặc cột đầu khớp tiêu đề Từ tiếng Anh
+  const isHeaderRow = matchedCount >= 2 || detected.tu_tieng_anh !== undefined
+
+  if (!isHeaderRow) {
+    return { hasHeader: false, colIndex: defaultMapping }
+  }
+
+  return {
+    hasHeader: true,
+    colIndex: {
+      ...defaultMapping,
+      ...detected,
+    },
+  }
 }
 
 /**
- * Tách dòng dữ liệu hỗ trợ ngăn cách bằng dấu | (hoặc / và Tab làm fallback)
- */
-function splitDataLine(line: string): string[] {
-  // 1. Ưu tiên dấu gạch đứng |
-  if (line.includes('|')) {
-    const parts = line.split('|').map((p) => p.trim())
-    if (parts.length >= 3) return parts
-  }
-
-  // 2. Fallback dấu gạch chéo có khoảng trắng " / "
-  if (line.includes(' / ')) {
-    const parts = line.split(/\s+\/\s+/).map((p) => p.trim())
-    if (parts.length >= 3) return parts
-  }
-
-  // 3. Tab hoặc chấm phẩy
-  if (line.includes('\t')) {
-    return line.split('\t').map((p) => p.trim())
-  }
-  if (line.includes(';')) {
-    return line.split(';').map((p) => p.trim())
-  }
-
-  // 4. Dấu / dính liền (nếu có)
-  if (line.includes('/')) {
-    const parts = line.split('/').map((p) => p.trim())
-    if (parts.length >= 3) return parts
-  }
-
-  return [line]
-}
-
-/**
- * Trích xuất text từ văn bản thuần (TXT, DOCX, DOC)
- * Tự động nhận diện số lượng từ và phân tích các trường thông tin ngăn cách bởi |
+ * Đọc và bóc tách danh sách từ vựng từ file Excel (.xlsx, .xls) hoặc CSV (.csv).
  */
 export async function parseDocumentFile(file: File): Promise<{
   fileName: string
@@ -206,87 +262,82 @@ export async function parseDocumentFile(file: File): Promise<{
   const fileName = file.name
   const extension = fileName.split('.').pop()?.toLowerCase() || ''
 
-  try {
-    let rawText = ''
-
-    if (extension === 'txt') {
-      rawText = await file.text()
-    } else if (extension === 'docx' || extension === 'doc') {
-      // Đọc buffer file DOC/DOCX để trích xuất text XML hoặc chuỗi văn bản
-      const arrayBuffer = await file.arrayBuffer()
-      const textDecoder = new TextDecoder('utf-8', { fatal: false })
-      const decoded = textDecoder.decode(arrayBuffer)
-
-      // Nếu là docx (zip file chứa word/document.xml), tìm các đoạn văn bản trong thẻ w:t
-      const wtMatches = decoded.match(/<w:t[^>]*>(.*?)<\/w:t>/g)
-      if (wtMatches && wtMatches.length > 0) {
-        rawText = wtMatches
-          .map((m) => m.replace(/<[^>]+>/g, ''))
-          .join(' ')
-          .replace(/&amp;/g, '&')
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-      } else {
-        // Fallback: Lọc các ký tự in được (printable characters)
-        rawText = decoded.replace(/[^\x20-\x7E\u00A0-\u024F\u1EA0-\u1EF9\n\r|/]/g, ' ')
-      }
-    }
-
-    if (rawText && rawText.trim()) {
-      const lines = rawText
-        .split(/\r?\n/)
-        .map((l) => l.trim())
-        .filter((l) => l && !l.startsWith('#'))
-
-      const parsed: TuVungBocTach[] = []
-
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i]
-
-        // Bỏ qua dòng header nếu có
-        if (
-          i === 0 &&
-          (line.toLowerCase().includes('từ tiếng anh') ||
-            line.toLowerCase().includes('từ vựng') ||
-            line.toLowerCase().includes('word |') ||
-            line.toLowerCase().includes('word /'))
-        ) {
-          continue
-        }
-
-        const parts = splitDataLine(line)
-
-        if (parts.length >= 1 && parts[0]) {
-          parsed.push({
-            id: `upload-${Date.now()}-${i + 1}`,
-            tu_tieng_anh: parts[0] || '',
-            phien_am_ipa: parts[1] || '',
-            tu_loai: parts[2] || 'Word',
-            dinh_nghia_tieng_anh: parts[3] || '',
-            dinh_nghia_tieng_viet: parts[4] || parts[3] || '',
-            vi_du_tieng_anh: parts[5] || '',
-            vi_du_tieng_viet: parts[6] || '',
-          })
-        }
-      }
-
-      if (parsed.length > 0) {
-        return {
-          fileName,
-          wordCount: parsed.length,
-          words: parsed,
-        }
-      }
-    }
-  } catch (err) {
-    console.warn('Lỗi khi bóc tách file tài liệu:', err)
+  if (!SUPPORTED_EXCEL_EXTENSIONS.has(extension)) {
+    throw new Error(
+      `Định dạng tệp ".${extension || 'không xác định'}" không được hỗ trợ. Vui lòng chọn tệp Excel (.xlsx, .xls) hoặc .csv.`
+    )
   }
 
-  // Fallback mô phỏng nếu file docx nhị phân đặc thù
-  await new Promise((res) => setTimeout(res, 600))
+  let workbook: XLSX.WorkBook
+  try {
+    if (extension === 'csv') {
+      // Đọc text UTF-8 trước để tránh lỗi font tiếng Việt khi file CSV không có BOM
+      const csvText = await file.text()
+      workbook = XLSX.read(csvText, { type: 'string' })
+    } else {
+      const arrayBuffer = await file.arrayBuffer()
+      workbook = XLSX.read(arrayBuffer, { type: 'array' })
+    }
+  } catch {
+    throw new Error('Không thể đọc tệp Excel/CSV. Vui lòng kiểm tra tệp không bị hỏng hoặc đặt mật khẩu.')
+  }
+
+  const firstSheetName = workbook.SheetNames[0]
+  if (!firstSheetName) {
+    throw new Error('Tệp Excel không có sheet dữ liệu nào.')
+  }
+
+  const sheet = workbook.Sheets[firstSheetName]
+  if (!sheet) {
+    throw new Error('Không thể truy cập dữ liệu từ sheet đầu tiên trong tệp.')
+  }
+
+  const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+    header: 1,
+    defval: '',
+    blankrows: false,
+  })
+
+  const rows = rawRows
+    .map((row) => row.map(normalizeCell))
+    .filter((row) => row.some((cell) => cell !== ''))
+
+  if (rows.length === 0) {
+    throw new Error('Tệp không có dữ liệu. Vui lòng điền từ vựng theo file mẫu Excel.')
+  }
+
+  const { hasHeader, colIndex } = detectColumnMapping(rows[0] ?? [])
+  const dataRows = hasHeader ? rows.slice(1) : rows
+
+  const parsed: TuVungBocTach[] = []
+
+  for (let i = 0; i < dataRows.length; i++) {
+    const row = dataRows[i] ?? []
+    const word = row[colIndex.tu_tieng_anh] ?? ''
+    if (!word || word.startsWith('#')) continue
+
+    const englishDef = row[colIndex.dinh_nghia_tieng_anh] ?? ''
+    const vietnameseDef = row[colIndex.dinh_nghia_tieng_viet] ?? ''
+
+    parsed.push({
+      id: `upload-${Date.now()}-${i + 1}`,
+      tu_tieng_anh: word,
+      phien_am_ipa: row[colIndex.phien_am_ipa] ?? '',
+      tu_loai: row[colIndex.tu_loai] || 'Word',
+      dinh_nghia_tieng_anh: englishDef,
+      dinh_nghia_tieng_viet: vietnameseDef || englishDef,
+      vi_du_tieng_anh: row[colIndex.vi_du_tieng_anh] ?? '',
+      vi_du_tieng_viet: row[colIndex.vi_du_tieng_viet] ?? '',
+    })
+  }
+
+  if (parsed.length === 0) {
+    throw new Error('Không tìm thấy từ vựng hợp lệ nào ở cột "Từ tiếng Anh". Vui lòng kiểm tra lại theo file mẫu.')
+  }
+
   return {
     fileName,
-    wordCount: SAMPLE_PARSED_WORDS.length,
-    words: SAMPLE_PARSED_WORDS,
+    wordCount: parsed.length,
+    words: parsed,
   }
 }

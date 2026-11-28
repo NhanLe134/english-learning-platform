@@ -3,7 +3,6 @@ import {
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
-  Clock,
 } from 'lucide-react'
 import type { LichDangItem, ThongKeThang } from '../types/dailyWord.types'
 import { CalendarDayCell } from './CalendarDayCell'
@@ -113,13 +112,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             <CheckCircle2 className="size-3 shrink-0" />
             <span>{statistics.so_tu_da_dang} từ đã đăng</span>
           </div>
-
-          <div className="inline-flex items-center gap-1.5 rounded-full bg-blue-50/70 border border-blue-100 px-2.5 py-1 text-[11px] font-medium text-blue-700 whitespace-nowrap">
-            <Clock className="size-3 shrink-0" />
-            <span>{statistics.so_tu_sap_dang} từ sắp đăng</span>
-          </div>
-
-        
         </div>
       </div>
 
