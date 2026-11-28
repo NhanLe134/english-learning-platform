@@ -2,15 +2,10 @@ import { useEffect, useState } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
-  BadgeCheck,
   BookOpen,
   ChevronRight,
-  CreditCard,
   Headset,
-  Landmark,
-  LockKeyhole,
   QrCode,
-  ShieldCheck,
   UserRound,
 } from 'lucide-react'
 import { useAuth } from '../auth/auth-context'
@@ -291,7 +286,7 @@ export function CheckoutPage() {
           <div className="checkout-main-column">
             <section className="checkout-card checkout-student-card" aria-labelledby="student-info-title">
               <header className="checkout-section-heading">
-                <h1 id="student-info-title"><UserRound size={18} /> Thông tin học viên đăng ký</h1>
+                <h1 id="student-info-title">Thông tin học viên đăng ký</h1>
               </header>
               <div className="checkout-student-fields">
                 <div><span>Họ và tên</span><strong>{currentStudent.fullName || 'Chưa cập nhật'}</strong></div>
@@ -299,7 +294,6 @@ export function CheckoutPage() {
                 <div><span>Số điện thoại</span><strong>{currentStudent.phone || 'Chưa cập nhật'}</strong></div>
               </div>
               <p className="checkout-student-note">
-                <ShieldCheck size={14} />
                 Tài khoản học trực tuyến và quyền truy cập khóa học sẽ được kích hoạt ngay sau khi SePay xác nhận thanh toán.
               </p>
             </section>
@@ -307,7 +301,7 @@ export function CheckoutPage() {
             <section className="checkout-card checkout-methods-card" aria-labelledby="payment-methods-title">
               <header className="checkout-section-heading checkout-methods-heading">
                 <div>
-                  <h2 id="payment-methods-title"><CreditCard size={18} /> Phương thức thanh toán trực tuyến</h2>
+                  <h2 id="payment-methods-title">Phương thức thanh toán trực tuyến</h2>
                   <p>Thanh toán chuyển khoản ngân hàng qua cổng thanh toán SePay.</p>
                 </div>
               </header>
@@ -318,7 +312,6 @@ export function CheckoutPage() {
                   <small>Quét mã QR chuyển khoản. SePay sẽ tự động xác nhận giao dịch và kích hoạt khóa học.</small>
 
                   <div className="sepay-banks-tag">
-                    <Landmark size={14} />
                     <span>Hỗ trợ ngân hàng: Techcombank, MB Bank, VIB, Vietcombank...</span>
                   </div>
                 </span>
@@ -389,8 +382,8 @@ export function CheckoutPage() {
               </button>
 
               <ul className="checkout-guarantees">
-                <li><LockKeyhole size={18} /> Thông tin thanh toán được xử lý bảo mật qua SePay.</li>
-                <li><BadgeCheck size={18} /> Khóa học và tài khoản chỉ được kích hoạt sau khi giao dịch được xác thực.</li>
+                <li>Thông tin thanh toán được xử lý bảo mật qua SePay.</li>
+                <li>Khóa học và tài khoản chỉ được kích hoạt sau khi giao dịch được xác thực.</li>
               </ul>
             </section>
 

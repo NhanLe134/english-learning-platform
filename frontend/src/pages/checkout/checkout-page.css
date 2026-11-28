@@ -195,7 +195,6 @@
   grid-template-columns: 0.9fr 1.4fr 0.9fr;
   gap: 12px;
   margin-top: 15px;
-  margin-left: 25px;
   padding: 12px 14px;
   border-radius: 8px;
   background: #F9FAFB;
@@ -225,7 +224,7 @@
   display: flex;
   align-items: flex-start;
   gap: 7px;
-  margin: 12px 25px 0;
+  margin: 12px 0 0;
   color: var(--color-ink-500);
   font-size: 13px;
   line-height: 1.5;
@@ -249,7 +248,7 @@
 }
 
 .checkout-methods-heading p {
-  margin: 4px 0 0 25px;
+  margin: 4px 0 0;
   color: var(--color-ink-500);
   font-size: 14px;
 }
@@ -266,7 +265,6 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-left: 25px;
   border-radius: 12px;
   padding: 14px 16px;
   background: #F9FAFB;
