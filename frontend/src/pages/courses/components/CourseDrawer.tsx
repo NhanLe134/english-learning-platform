@@ -5,6 +5,7 @@ import {
   BookOpen,
   Check,
   ChevronDown,
+  Edit3,
   Globe,
   Image as ImageIcon,
   ImagePlus,
@@ -16,9 +17,13 @@ import {
 import type { UserProfile } from '../../quan_ly_nguoi_dung/types'
 import type { Course, CourseInput, CourseLevel } from '../types'
 
+export type CourseDrawerMode = 'view' | 'edit' | 'create'
+
 interface CourseDrawerProps {
-  /** null = tạo mới, Course = chỉnh sửa */
+  /** null = tạo mới, Course = xem chi tiết hoặc chỉnh sửa */
   course: Course | null
+  /** Chế độ khởi tạo: 'view' (xem chi tiết), 'edit' (chỉnh sửa), 'create' (tạo mới) */
+  initialMode?: CourseDrawerMode
   /** Danh sách giáo viên (vai trò TEACHER) cho trường phân công giảng dạy */
   teachers: UserProfile[]
   /** Danh sách phân loại đã tồn tại (cho dropdown chọn, tránh gõ tay sai chính tả) */
@@ -41,7 +46,7 @@ function slugify(value: string): string {
 
 // Input theo style Daily Word: nền xám nhạt, bo tròn lớn, focus viền đỏ + ring
 const inputClass =
-  'h-[38px] w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 text-xs font-medium text-ink-900 placeholder:font-normal placeholder:text-ink-400 outline-none focus:border-brand-600 focus:bg-white focus:ring-1 focus:ring-brand-600'
+  'h-[38px] w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 text-xs font-medium text-ink-900 placeholder:font-normal placeholder:text-ink-400 outline-none focus:border-brand-600 focus:bg-white focus:ring-1 focus:ring-brand-600 disabled:cursor-default disabled:bg-slate-50 disabled:text-ink-900 disabled:opacity-100'
 
 const labelClass = 'text-xs font-bold text-ink-900'
 
@@ -72,11 +77,23 @@ function FieldError({ message }: { message?: string }) {
   return <p className="mt-1 text-[11px] font-semibold text-rose-600">{message}</p>
 }
 
-export function CourseDrawer({ course, teachers, categories, saving, onClose, onSubmit }: CourseDrawerProps) {
-  const isEdit = course !== null
+export function CourseDrawer({
+  course,
+  initialMode,
+  teachers,
+  categories,
+  saving,
+  onClose,
+  onSubmit,
+}: CourseDrawerProps) {
+  const [drawerMode, setDrawerMode] = useState<CourseDrawerMode>(
+    initialMode ?? (course ? 'edit' : 'create')
+  )
+  const isView = drawerMode === 'view'
+  const isEdit = drawerMode === 'edit' && course !== null
   const [title, setTitle] = useState(course?.title ?? '')
   const [slug, setSlug] = useState(course?.slug ?? '')
-  const [slugTouched, setSlugTouched] = useState(isEdit)
+  const [slugTouched, setSlugTouched] = useState(course !== null)
   const [category, setCategory] = useState(course?.category ?? '')
   const [newCategoryMode, setNewCategoryMode] = useState(
     // Khóa đang sửa có phân loại không nằm trong danh sách → giữ nguyên giá trị đó
@@ -140,7 +157,7 @@ export function CourseDrawer({ course, teachers, categories, saving, onClose, on
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
-    if (saving || !validate()) return
+    if (isView || saving || !validate()) return
     const input: CourseInput = {
       title: title.trim(),
       slug: slug.trim().toLowerCase(),
@@ -164,7 +181,7 @@ export function CourseDrawer({ course, teachers, categories, saving, onClose, on
     }
   }
 
-  const textareaClass = `mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 py-2.5 text-xs font-medium leading-relaxed text-ink-900 outline-none placeholder:font-normal placeholder:text-ink-400 focus:border-brand-600 focus:bg-white focus:ring-1 focus:ring-brand-600`
+  const textareaClass = `mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50/60 px-3.5 py-2.5 text-xs font-medium leading-relaxed text-ink-900 outline-none placeholder:font-normal placeholder:text-ink-400 focus:border-brand-600 focus:bg-white focus:ring-1 focus:ring-brand-600 disabled:cursor-default disabled:bg-slate-50 disabled:text-ink-900 disabled:opacity-100`
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end" role="presentation">
@@ -179,7 +196,7 @@ export function CourseDrawer({ course, teachers, categories, saving, onClose, on
       <aside
         role="dialog"
         aria-modal="true"
-        aria-label={isEdit ? 'Chỉnh sửa khóa học' : 'Thêm khóa học mới'}
+        aria-label={isView ? 'Chi tiết khóa học' : isEdit ? 'Chỉnh sửa khóa học' : 'Thêm khóa học mới'}
         className="relative z-10 flex h-full w-full max-w-[640px] flex-col bg-white shadow-2xl"
       >
         {/* Header */}
@@ -190,24 +207,40 @@ export function CourseDrawer({ course, teachers, categories, saving, onClose, on
             </span>
             <div>
               <h2 className="text-base font-extrabold text-ink-900">
-                {isEdit ? 'Chỉnh sửa khóa học' : 'Thêm khóa học mới'}
+                {isView ? 'Chi tiết khóa học' : isEdit ? 'Chỉnh sửa khóa học' : 'Thêm khóa học mới'}
               </h2>
               <p className="mt-0.5 text-xs text-ink-500">
-                {isEdit
-                  ? 'Cập nhật thông tin và trạng thái xuất bản của khóa học.'
-                  : 'Điền thông tin để xuất bản khóa học lên nền tảng.'}
+                {isView
+                  ? 'Xem thông tin cấu hình và phân công giảng viên của khóa học.'
+                  : isEdit
+                    ? 'Cập nhật thông tin và trạng thái xuất bản của khóa học.'
+                    : 'Điền thông tin để xuất bản khóa học lên nền tảng.'}
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            aria-label="Đóng"
-            disabled={saving}
-            onClick={onClose}
-            className="flex size-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-ink-700 disabled:opacity-40 cursor-pointer"
-          >
-            <X className="size-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            {isView && course && (
+              <button
+                type="button"
+                aria-label="Chỉnh sửa khóa học"
+                title="Chỉnh sửa khóa học"
+                onClick={() => setDrawerMode('edit')}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-ink-700 shadow-2xs transition-colors hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 cursor-pointer"
+              >
+                <Edit3 className="size-3.5" />
+                <span>Chỉnh sửa</span>
+              </button>
+            )}
+            <button
+              type="button"
+              aria-label="Đóng"
+              disabled={saving}
+              onClick={onClose}
+              className="flex size-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-ink-700 disabled:opacity-40 cursor-pointer"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
         </header>
 
         {/* Nội dung */}
@@ -220,6 +253,7 @@ export function CourseDrawer({ course, teachers, categories, saving, onClose, on
                 <input
                   id="course-title"
                   type="text"
+                  disabled={isView}
                   className={`${inputClass} mt-1.5`}
                   placeholder="VD: IELTS Intensive Masterclass: Speaking & Writing Band 7.5+"
                   value={title}
@@ -240,7 +274,8 @@ export function CourseDrawer({ course, teachers, categories, saving, onClose, on
                   <input
                     id="course-slug"
                     type="text"
-                    className="h-full w-full border-none bg-transparent pl-1 font-mono text-xs font-semibold text-ink-900 outline-none placeholder:font-normal placeholder:text-ink-400"
+                    disabled={isView}
+                    className="h-full w-full border-none bg-transparent pl-1 font-mono text-xs font-semibold text-ink-900 outline-none placeholder:font-normal placeholder:text-ink-400 disabled:cursor-default"
                     placeholder="ielts-intensive-speaking-writing-7-5"
                     value={slug}
                     maxLength={180}
@@ -261,6 +296,7 @@ export function CourseDrawer({ course, teachers, categories, saving, onClose, on
                       <div className="relative flex-1">
                         <select
                           id="course-category"
+                          disabled={isView}
                           className={`${inputClass} cursor-pointer appearance-none pr-8`}
                           value={category}
                           onChange={(event) => setCategory(event.target.value)}
@@ -280,24 +316,27 @@ export function CourseDrawer({ course, teachers, categories, saving, onClose, on
                         </select>
                         <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-ink-400" aria-hidden />
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setNewCategoryMode(true)
-                          setCategory('')
-                        }}
-                        title="Tạo phân loại mới"
-                        className="inline-flex h-[38px] shrink-0 cursor-pointer items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-ink-900 transition-colors hover:bg-slate-50"
-                      >
-                        <Plus className="size-3.5" aria-hidden />
-                        Mới
-                      </button>
+                      {!isView && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewCategoryMode(true)
+                            setCategory('')
+                          }}
+                          title="Tạo phân loại mới"
+                          className="inline-flex h-[38px] shrink-0 cursor-pointer items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-ink-900 transition-colors hover:bg-slate-50"
+                        >
+                          <Plus className="size-3.5" aria-hidden />
+                          Mới
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <div className="mt-1.5 flex items-center gap-2">
                       <input
                         id="course-category"
                         type="text"
+                        disabled={isView}
                         className={`${inputClass} flex-1`}
                         placeholder="Tên phân loại mới (VD: IELTS, TOEIC, Phát âm)"
                         value={category}
@@ -305,16 +344,18 @@ export function CourseDrawer({ course, teachers, categories, saving, onClose, on
                         autoFocus
                         onChange={(event) => setCategory(event.target.value)}
                       />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setNewCategoryMode(false)
-                          setCategory(course?.category ?? '')
-                        }}
-                        className="h-[38px] shrink-0 cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-50 hover:text-ink-900"
-                      >
-                        Hủy
-                      </button>
+                      {!isView && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewCategoryMode(false)
+                            setCategory(course?.category ?? '')
+                          }}
+                          className="h-[38px] shrink-0 cursor-pointer rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-50 hover:text-ink-900"
+                        >
+                          Hủy
+                        </button>
+                      )}
                     </div>
                   )}
                   <FieldError message={fieldErrors.category} />
@@ -323,6 +364,7 @@ export function CourseDrawer({ course, teachers, categories, saving, onClose, on
                   <label htmlFor="course-level" className={labelClass}>Trình độ</label>
                   <select
                     id="course-level"
+                    disabled={isView}
                     className={`${inputClass} mt-1.5 cursor-pointer`}
                     value={level}
                     onChange={(event) => setLevel(event.target.value as CourseLevel)}
@@ -344,6 +386,7 @@ export function CourseDrawer({ course, teachers, categories, saving, onClose, on
                         <button
                           key={teacher.id}
                           type="button"
+                          disabled={isView}
                           aria-pressed={selected}
                           onClick={() =>
                             setTeacherIds((prev) =>
@@ -352,10 +395,12 @@ export function CourseDrawer({ course, teachers, categories, saving, onClose, on
                                 : [...prev, teacher.id]
                             )
                           }
-                          className={`inline-flex h-7 items-center gap-1 rounded-md border px-2.5 text-[11px] font-semibold transition-all duration-150 cursor-pointer ${
+                          className={`inline-flex h-7 items-center gap-1 rounded-md border px-2.5 text-[11px] font-semibold transition-all duration-150 ${
+                            isView ? 'cursor-default' : 'cursor-pointer'
+                          } ${
                             selected
                               ? 'border-brand-600 bg-brand-50 text-brand-700'
-                              : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                              : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 disabled:hover:border-slate-200 disabled:hover:bg-white'
                           }`}
                         >
                           {selected && <Check className="size-3" />}
@@ -382,6 +427,7 @@ export function CourseDrawer({ course, teachers, categories, saving, onClose, on
                 <textarea
                   id="course-audience"
                   rows={2}
+                  disabled={isView}
                   className={textareaClass}
                   placeholder="VD: Nắm vững tiêu chí Lexical Resource & Grammatical Range để bứt phá band 8.0"
                   value={targetAudience}
@@ -396,6 +442,7 @@ export function CourseDrawer({ course, teachers, categories, saving, onClose, on
                 <textarea
                   id="course-description"
                   rows={3}
+                  disabled={isView}
                   className={textareaClass}
                   placeholder="Mô tả ngắn về nội dung, lợi ích của khóa học (không bắt buộc)"
                   value={description}
@@ -413,6 +460,7 @@ export function CourseDrawer({ course, teachers, categories, saving, onClose, on
                     type="number"
                     min={0}
                     step="1000"
+                    disabled={isView}
                     className={`${inputClass} mt-1.5`}
                     placeholder="3490000"
                     value={price}
@@ -427,6 +475,7 @@ export function CourseDrawer({ course, teachers, categories, saving, onClose, on
                     type="number"
                     min={0}
                     step="1000"
+                    disabled={isView}
                     className={`${inputClass} mt-1.5`}
                     placeholder="Để trống nếu không giảm giá"
                     value={discountedPrice}
@@ -443,6 +492,7 @@ export function CourseDrawer({ course, teachers, categories, saving, onClose, on
                 <input
                   id="course-thumbnail"
                   type="text"
+                  disabled={isView}
                   className={`${inputClass} mt-1.5`}
                   placeholder="https://..."
                   value={thumbnailUrl}
@@ -469,12 +519,15 @@ export function CourseDrawer({ course, teachers, categories, saving, onClose, on
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
+                  disabled={isView}
                   aria-pressed={status === 'published'}
                   onClick={() => setStatus('published')}
                   className={`flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-all duration-150 ${
+                    isView ? 'cursor-default' : 'cursor-pointer'
+                  } ${
                     status === 'published'
                       ? 'border-emerald-300 bg-emerald-50 shadow-[0_1px_4px_rgba(16,185,129,0.15)]'
-                      : 'border-slate-200 bg-slate-50/60 hover:bg-slate-50'
+                      : 'border-slate-200 bg-slate-50/60 hover:bg-slate-50 disabled:hover:bg-slate-50/60'
                   }`}
                 >
                   <Globe size={17} className={status === 'published' ? 'text-emerald-600' : 'text-ink-400'} />
@@ -486,12 +539,15 @@ export function CourseDrawer({ course, teachers, categories, saving, onClose, on
                 </button>
                 <button
                   type="button"
+                  disabled={isView}
                   aria-pressed={status === 'archived'}
                   onClick={() => setStatus('archived')}
                   className={`flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-all duration-150 ${
+                    isView ? 'cursor-default' : 'cursor-pointer'
+                  } ${
                     status === 'archived'
                       ? 'border-slate-400 bg-slate-100 shadow-[0_1px_4px_rgba(71,85,105,0.15)]'
-                      : 'border-slate-200 bg-slate-50/60 hover:bg-slate-50'
+                      : 'border-slate-200 bg-slate-50/60 hover:bg-slate-50 disabled:hover:bg-slate-50/60'
                   }`}
                 >
                   <Archive size={17} className={status === 'archived' ? 'text-ink-700' : 'text-ink-400'} />
@@ -507,38 +563,59 @@ export function CourseDrawer({ course, teachers, categories, saving, onClose, on
 
           {/* Footer */}
           <footer className="flex items-center justify-between gap-3 border-t border-slate-100 px-7 py-4">
-            {/* Số bài giảng là trường đếm, chỉ hiển thị ở chế độ chỉnh sửa; chưa kết nối đếm tự động */}
-            {isEdit ? (
+            {/* Số bài giảng là trường đếm, chỉ hiển thị ở chế độ xem hoặc chỉnh sửa */}
+            {isView || isEdit ? (
               <p className="text-xs text-ink-500">
-                Số bài giảng: <strong className="font-extrabold text-ink-900">{course?.total_lessons ?? 0}</strong>
-                <span className="ml-1 text-ink-400">(tự động đếm — chưa khả dụng)</span>
+                Số bài giảng: <strong className="font-extrabold text-ink-900">{course?.lesson_count ?? course?.total_lessons ?? 0}</strong>
               </p>
             ) : (
               <span />
             )}
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={onClose}
-                disabled={saving}
-                className="inline-flex h-7 items-center rounded-md border border-slate-200/90 bg-white px-2.5 text-[11px] font-semibold text-slate-700 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-98 disabled:opacity-50 cursor-pointer"
-              >
-                Hủy
-              </button>
-              <button
-                type="submit"
-                disabled={saving}
-                className="inline-flex h-7 items-center gap-1 rounded-md bg-gradient-to-r from-brand-600 to-brand-700 px-3 text-[11px] font-bold text-white shadow-[0_2px_8px_rgba(200,16,46,0.25)] ring-1 ring-brand-700/20 transition-all duration-150 ease-out hover:-translate-y-0.5 hover:from-brand-500 hover:to-brand-600 hover:shadow-[0_4px_12px_rgba(200,16,46,0.35)] active:translate-y-0 active:scale-98 disabled:opacity-60 disabled:hover:translate-y-0 cursor-pointer"
-              >
-                {saving ? (
-                  <LoaderCircle className="size-3 animate-spin" />
-                ) : isEdit ? (
-                  <Save className="size-3" />
-                ) : (
-                  <Plus className="size-3" />
-                )}
-                <span>{isEdit ? 'Lưu thay đổi' : 'Tạo khóa học'}</span>
-              </button>
+              {isView ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="inline-flex h-7 items-center rounded-md border border-slate-200/90 bg-white px-2.5 text-[11px] font-semibold text-slate-700 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-98 cursor-pointer"
+                  >
+                    Đóng
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDrawerMode('edit')}
+                    className="inline-flex h-7 items-center gap-1 rounded-md bg-gradient-to-r from-brand-600 to-brand-700 px-3 text-[11px] font-bold text-white shadow-[0_2px_8px_rgba(200,16,46,0.25)] ring-1 ring-brand-700/20 transition-all duration-150 ease-out hover:-translate-y-0.5 hover:from-brand-500 hover:to-brand-600 hover:shadow-[0_4px_12px_rgba(200,16,46,0.35)] active:translate-y-0 active:scale-98 cursor-pointer"
+                  >
+                    <Edit3 className="size-3" />
+                    <span>Chỉnh sửa</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    disabled={saving}
+                    className="inline-flex h-7 items-center rounded-md border border-slate-200/90 bg-white px-2.5 text-[11px] font-semibold text-slate-700 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-98 disabled:opacity-50 cursor-pointer"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="inline-flex h-7 items-center gap-1 rounded-md bg-gradient-to-r from-brand-600 to-brand-700 px-3 text-[11px] font-bold text-white shadow-[0_2px_8px_rgba(200,16,46,0.25)] ring-1 ring-brand-700/20 transition-all duration-150 ease-out hover:-translate-y-0.5 hover:from-brand-500 hover:to-brand-600 hover:shadow-[0_4px_12px_rgba(200,16,46,0.35)] active:translate-y-0 active:scale-98 disabled:opacity-60 disabled:hover:translate-y-0 cursor-pointer"
+                  >
+                    {saving ? (
+                      <LoaderCircle className="size-3 animate-spin" />
+                    ) : isEdit ? (
+                      <Save className="size-3" />
+                    ) : (
+                      <Plus className="size-3" />
+                    )}
+                    <span>{isEdit ? 'Lưu thay đổi' : 'Tạo khóa học'}</span>
+                  </button>
+                </>
+              )}
             </div>
           </footer>
         </form>

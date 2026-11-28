@@ -45,6 +45,7 @@ const tags = [
   { name: 'Payments', description: 'Course payment orders, public status lookup, SSE updates, and SePay webhooks.' },
   { name: 'Payment Management', description: 'ADMIN-only payment order management, reconciliation, and audit.' },
   { name: 'Lessons', description: 'Curriculum topics, lessons, and learning material endpoints.' },
+  { name: 'Exercises', description: 'Course-level exercises (multiple choice & fill-in-the-blank) and auto-grading.' },
 ]
 
 const adminSecurity = [{ bearerAuth: [] }]
@@ -449,6 +450,108 @@ export const openApiDocument = {
           '400': jsonResponse('Validation error', { $ref: '#/components/schemas/ErrorResponse' }),
           '401': jsonResponse('Unauthorized', { $ref: '#/components/schemas/ErrorResponse' }),
           '403': jsonResponse('Forbidden', { $ref: '#/components/schemas/ErrorResponse' }),
+        },
+      },
+    },
+    '/api/exercises/courses/{courseId}': {
+      get: {
+        tags: ['Exercises'],
+        summary: 'List course-level exercises (lesson_id IS NULL)',
+        operationId: 'listCourseExercises',
+        security: adminSecurity,
+        parameters: [
+          { in: 'path', name: 'courseId', required: true, schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': jsonResponse('Course-level exercise summaries'),
+          '401': jsonResponse('Unauthorized', { $ref: '#/components/schemas/ErrorResponse' }),
+          '403': jsonResponse('Forbidden', { $ref: '#/components/schemas/ErrorResponse' }),
+          '404': jsonResponse('Course not found', { $ref: '#/components/schemas/ErrorResponse' }),
+        },
+      },
+      post: {
+        tags: ['Exercises'],
+        summary: 'Create a course-level exercise',
+        operationId: 'createCourseExercise',
+        security: adminSecurity,
+        parameters: [
+          { in: 'path', name: 'courseId', required: true, schema: { type: 'string' } },
+        ],
+        requestBody: jsonBody('SaveCourseExerciseRequest'),
+        responses: {
+          '201': jsonResponse('Created course exercise'),
+          '400': jsonResponse('Validation error', { $ref: '#/components/schemas/ErrorResponse' }),
+          '401': jsonResponse('Unauthorized', { $ref: '#/components/schemas/ErrorResponse' }),
+          '403': jsonResponse('Forbidden', { $ref: '#/components/schemas/ErrorResponse' }),
+          '404': jsonResponse('Course not found', { $ref: '#/components/schemas/ErrorResponse' }),
+        },
+      },
+    },
+    '/api/exercises/{exerciseId}': {
+      get: {
+        tags: ['Exercises'],
+        summary: 'Get course-level exercise detail',
+        operationId: 'getCourseExerciseDetail',
+        security: adminSecurity,
+        parameters: [
+          { in: 'path', name: 'exerciseId', required: true, schema: { type: 'string', format: 'uuid' } },
+        ],
+        responses: {
+          '200': jsonResponse('Exercise detail with questions'),
+          '401': jsonResponse('Unauthorized', { $ref: '#/components/schemas/ErrorResponse' }),
+          '403': jsonResponse('Forbidden', { $ref: '#/components/schemas/ErrorResponse' }),
+          '404': jsonResponse('Exercise not found', { $ref: '#/components/schemas/ErrorResponse' }),
+        },
+      },
+      patch: {
+        tags: ['Exercises'],
+        summary: 'Update a course-level exercise and its questions',
+        operationId: 'updateCourseExercise',
+        security: adminSecurity,
+        parameters: [
+          { in: 'path', name: 'exerciseId', required: true, schema: { type: 'string', format: 'uuid' } },
+        ],
+        requestBody: jsonBody('SaveCourseExerciseRequest'),
+        responses: {
+          '200': jsonResponse('Updated exercise detail'),
+          '400': jsonResponse('Validation error', { $ref: '#/components/schemas/ErrorResponse' }),
+          '401': jsonResponse('Unauthorized', { $ref: '#/components/schemas/ErrorResponse' }),
+          '403': jsonResponse('Forbidden', { $ref: '#/components/schemas/ErrorResponse' }),
+          '404': jsonResponse('Exercise not found', { $ref: '#/components/schemas/ErrorResponse' }),
+        },
+      },
+      delete: {
+        tags: ['Exercises'],
+        summary: 'Delete a course-level exercise',
+        operationId: 'deleteCourseExercise',
+        security: adminSecurity,
+        parameters: [
+          { in: 'path', name: 'exerciseId', required: true, schema: { type: 'string', format: 'uuid' } },
+        ],
+        responses: {
+          '200': jsonResponse('Deleted course exercise'),
+          '401': jsonResponse('Unauthorized', { $ref: '#/components/schemas/ErrorResponse' }),
+          '403': jsonResponse('Forbidden', { $ref: '#/components/schemas/ErrorResponse' }),
+          '404': jsonResponse('Exercise not found', { $ref: '#/components/schemas/ErrorResponse' }),
+        },
+      },
+    },
+    '/api/exercises/{exerciseId}/submit': {
+      post: {
+        tags: ['Exercises'],
+        summary: 'Submit answers for automatic grading',
+        operationId: 'submitCourseExercise',
+        security: adminSecurity,
+        parameters: [
+          { in: 'path', name: 'exerciseId', required: true, schema: { type: 'string', format: 'uuid' } },
+        ],
+        requestBody: jsonBody('SubmitCourseExerciseRequest'),
+        responses: {
+          '200': jsonResponse('Auto-graded exercise result'),
+          '400': jsonResponse('Validation error', { $ref: '#/components/schemas/ErrorResponse' }),
+          '401': jsonResponse('Unauthorized', { $ref: '#/components/schemas/ErrorResponse' }),
+          '403': jsonResponse('Forbidden', { $ref: '#/components/schemas/ErrorResponse' }),
+          '404': jsonResponse('Exercise not found', { $ref: '#/components/schemas/ErrorResponse' }),
         },
       },
     },
@@ -1440,6 +1543,61 @@ export const openApiDocument = {
               enrollmentCreated: { type: 'boolean' },
               enrollmentId: { type: 'string', format: 'uuid', nullable: true },
               enrollmentStatus: { type: 'string', nullable: true },
+            },
+          },
+        },
+      },
+      SaveCourseExerciseRequest: {
+        type: 'object',
+        required: ['title', 'questions'],
+        properties: {
+          title: { type: 'string', minLength: 1, maxLength: 200 },
+          description: { type: 'string', nullable: true, maxLength: 2000 },
+          time_limit_minutes: { type: 'integer', minimum: 1, maximum: 600, nullable: true },
+          max_score: { type: 'number', minimum: 0.1, maximum: 1000, default: 10 },
+          status: { type: 'string', enum: ['draft', 'published', 'archived'], default: 'published' },
+          questions: {
+            type: 'array',
+            minItems: 1,
+            items: {
+              type: 'object',
+              required: ['question_type', 'content'],
+              properties: {
+                question_type: { type: 'string', enum: ['multiple_choice', 'fill_blank'] },
+                content: { type: 'string' },
+                points: { type: 'number', minimum: 0.01, maximum: 100, default: 1 },
+                allow_multiple: { type: 'boolean', default: false },
+                options: { type: 'array', items: { type: 'string' } },
+                correct_indices: { type: 'array', items: { type: 'integer', minimum: 0 } },
+                case_sensitive: { type: 'boolean', default: false },
+                blanks: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      accepted_answers: { type: 'array', items: { type: 'string' } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      SubmitCourseExerciseRequest: {
+        type: 'object',
+        required: ['answers'],
+        properties: {
+          answers: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['question_id'],
+              properties: {
+                question_id: { type: 'string', format: 'uuid' },
+                selected_indices: { type: 'array', items: { type: 'integer', minimum: 0 } },
+                blank_answers: { type: 'array', items: { type: 'string' } },
+              },
             },
           },
         },

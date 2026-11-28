@@ -57,6 +57,8 @@ export interface ManagedCourse {
   teacher_ids?: string[]
   /** Số bài giảng THẬT tế của khóa (đếm qua topics, không dùng cột total_lessons tĩnh) */
   lesson_count?: number
+  /** Số bài tập cấp khóa học (lesson_id IS NULL) */
+  exercise_count?: number
   created_at: string
   updated_at: string
 }

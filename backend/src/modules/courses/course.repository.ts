@@ -365,8 +365,10 @@ export class CourseRepository {
     }
     // Gắn số bài giảng THẬT của từng khóa (đếm qua topics — cột total_lessons là tĩnh)
     const lessonCountMap = await this.demBaiGiangTheoKhoa(items.map((item) => item.id))
+    const exerciseCountMap = await this.demBaiTapTheoKhoa(items.map((item) => item.id))
     for (const item of items) {
       item.lesson_count = lessonCountMap.get(item.id) ?? 0
+      item.exercise_count = exerciseCountMap.get(item.id) ?? 0
     }
 
     return {
@@ -400,6 +402,29 @@ export class CourseRepository {
     for (const row of data ?? []) {
       const lessonRow = row as { course_id?: string | null; topics?: { course_id?: string } | null }
       const cid = lessonRow.course_id ?? lessonRow.topics?.course_id
+      if (cid) map.set(String(cid), (map.get(String(cid)) ?? 0) + 1)
+    }
+    return map
+  }
+
+  // Đếm số bài tập cấp khóa học (lesson_id IS NULL) theo từng khóa
+  private async demBaiTapTheoKhoa(courseIds: string[]): Promise<Map<string, number>> {
+    const map = new Map<string, number>()
+    if (courseIds.length === 0) return map
+    const { data, error } = await this.clientFactory()
+      .from('exercises')
+      .select('id, course_id')
+      .in('course_id', courseIds)
+      .is('lesson_id', null)
+    if (error) {
+      console.error('[CourseRepository] demBaiTapTheoKhoa query failed', {
+        code: error.code,
+        message: error.message,
+      })
+      return map
+    }
+    for (const row of data ?? []) {
+      const cid = (row as { course_id?: string | null }).course_id
       if (cid) map.set(String(cid), (map.get(String(cid)) ?? 0) + 1)
     }
     return map

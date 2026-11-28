@@ -15,6 +15,7 @@ import { workshopsRouter } from './modules/workshops/workshop.routes.js'
 import { dailyWordRouter } from './modules/daily-word/daily-word.routes.js'
 import { teacherRouter } from './modules/teachers/teacher.routes.js'
 import { lessonsRouter } from './modules/lessons/lessons.routes.js'
+import { exercisesRouter } from './modules/exercises/exercises.routes.js'
 import { openApiDocument } from './openapi.js'
 
 export const app = express()
@@ -49,6 +50,7 @@ app.use(cors({
   },
   credentials: true,
 }))
+app.use('/api/exercises', express.json({ limit: '256kb' }))
 app.use(express.json({
   limit: '16kb',
   verify: (request, _response, body) => {
@@ -67,6 +69,7 @@ app.use('/api/users', usersRouter)
 app.use('/api/auth', authRouter)
 app.use('/api/courses', coursesRouter)
 app.use('/api/lessons', lessonsRouter)
+app.use('/api/exercises', exercisesRouter)
 
 app.use('/api/payment', paymentsRouter)
 

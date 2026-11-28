@@ -7,11 +7,11 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
   Download,
   Edit3,
   GraduationCap,
   Image as ImageIcon,
-  Link2,
   LoaderCircle,
   Play,
   Plus,
@@ -26,7 +26,7 @@ import { Sidebar } from '../quan_ly_nguoi_dung/components/Sidebar'
 import { TopHeader } from '../quan_ly_nguoi_dung/components/TopHeader'
 import { userApi } from '../quan_ly_nguoi_dung/services/userApi'
 import type { UserProfile } from '../quan_ly_nguoi_dung/types'
-import { CourseDrawer } from './components/CourseDrawer'
+import { CourseDrawer, type CourseDrawerMode } from './components/CourseDrawer'
 import { courseApi } from './services/courseApi'
 import type { Course, CourseFilters, CourseInput, CoursePagination } from './types'
 
@@ -90,7 +90,10 @@ export function CourseManagementPage() {
   const [loading, setLoading] = useState(true)
   const [pageError, setPageError] = useState<string | null>(null)
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
-  const [editingCourse, setEditingCourse] = useState<Course | null | undefined>(undefined)
+  const [drawerState, setDrawerState] = useState<{
+    mode: CourseDrawerMode
+    course: Course | null
+  } | null>(null)
   const [saving, setSaving] = useState(false)
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null)
   const [actionLoading, setActionLoading] = useState(false)
@@ -185,9 +188,9 @@ export function CourseManagementPage() {
   const handleSave = async (input: CourseInput) => {
     setSaving(true)
     try {
-      if (editingCourse) {
+      if (drawerState?.course) {
         await courseApi.update(
-          editingCourse.id,
+          drawerState.course.id,
           input,
           accessToken,
           async () => (await refreshSession()).accessToken
@@ -201,7 +204,7 @@ export function CourseManagementPage() {
         )
         showToast('success', 'Đã thêm khóa học.')
       }
-      setEditingCourse(undefined)
+      setDrawerState(null)
       await loadCourses()
       await loadCategories()
     } catch (error) {
@@ -253,7 +256,6 @@ export function CourseManagementPage() {
   const endRecord = Math.min(pagination.page * pagination.limit, pagination.total)
   const actionCourse = confirmAction?.course
   const availableCategories = [...new Set(courses.map((course) => course.category))].sort()
-  const teacherMap = new Map(teachers.map((teacher) => [teacher.id, teacher]))
 
   const pageNumbers: number[] = []
   const windowStart = Math.max(1, Math.min(pagination.page - 2, pagination.totalPages - 4))
@@ -303,7 +305,7 @@ export function CourseManagementPage() {
 
               <button
                 type="button"
-                onClick={() => setEditingCourse(null)}
+                onClick={() => setDrawerState({ mode: 'create', course: null })}
                 className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-gradient-to-r from-brand-600 to-brand-700 px-3.5 text-[12px] font-bold text-white shadow-[0_2px_8px_rgba(200,16,46,0.25)] ring-1 ring-brand-700/20 transition-all duration-150 ease-out hover:-translate-y-0.5 hover:from-brand-500 hover:to-brand-600 hover:shadow-[0_4px_12px_rgba(200,16,46,0.35)] active:translate-y-0 active:scale-98 cursor-pointer"
               >
                 <Plus size={14} />
@@ -427,13 +429,13 @@ export function CourseManagementPage() {
               <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
                 {courses.map((course) => {
                   const pill = statusPill(course.status)
-                  // Giáo viên chính = phần tử đầu tiên trong danh sách phân công (fallback teacher_id)
-                  const primaryTeacherId = course.teacher_ids?.[0] ?? course.teacher_id
-                  const teacher = primaryTeacherId ? teacherMap.get(primaryTeacherId) : undefined
-                  const extraTeacherCount = Math.max(0, (course.teacher_ids?.length ?? 0) - 1)
                   const discount = discountPercent(course)
                   return (
-                    <article key={course.id} className="flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
+                    <article
+                      key={course.id}
+                      onClick={() => setDrawerState({ mode: 'view', course })}
+                      className="flex cursor-pointer flex-col overflow-hidden rounded-lg border border-slate-200 bg-white transition-shadow hover:shadow-md"
+                    >
                       <div className="relative h-44 bg-slate-100">
                         {course.thumbnail_url ? (
                           <img src={course.thumbnail_url} alt="" loading="lazy" className="h-full w-full object-cover" />
@@ -458,16 +460,22 @@ export function CourseManagementPage() {
                           <button
                             type="button"
                             aria-label={`Sửa ${course.title}`}
-                            onClick={() => setEditingCourse(course)}
-                            className="flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white/95 text-ink-700 hover:bg-slate-50"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setDrawerState({ mode: 'edit', course })
+                            }}
+                            className="flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white/95 text-ink-700 hover:bg-slate-50 cursor-pointer"
                           >
                             <Edit3 size={14} />
                           </button>
                           <button
                             type="button"
                             aria-label={`Xóa ${course.title}`}
-                            onClick={() => setConfirmAction({ type: 'delete', course })}
-                            className="flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white/95 text-ink-700 hover:bg-slate-50"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setConfirmAction({ type: 'delete', course })
+                            }}
+                            className="flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white/95 text-ink-700 hover:bg-slate-50 cursor-pointer"
                           >
                             <Trash2 size={14} />
                           </button>
@@ -475,10 +483,6 @@ export function CourseManagementPage() {
                       </div>
 
                       <div className="flex flex-1 flex-col gap-3 p-5">
-                        <p className="flex items-center gap-1.5 font-mono text-[11px] text-ink-400">
-                          <Link2 size={12} className="shrink-0" />
-                          <span className="truncate">/{course.slug}</span>
-                        </p>
                         <h3 className="line-clamp-2 text-base font-semibold text-ink-900">{course.title}</h3>
                         {course.target_audience && (
                           <p className="flex items-start gap-2 rounded-lg bg-slate-50 p-3 text-xs leading-relaxed text-ink-700">
@@ -486,26 +490,6 @@ export function CourseManagementPage() {
                             <span className="line-clamp-2">{course.target_audience}</span>
                           </p>
                         )}
-                        <div className="flex items-center gap-3">
-                          {teacher?.avatar_url ? (
-                            <img src={teacher.avatar_url} alt="" className="size-9 rounded-full object-cover" />
-                          ) : (
-                            <span className="flex size-9 items-center justify-center rounded-full bg-brand-50 text-xs font-bold text-brand-600">
-                              {(teacher?.full_name ?? '?').charAt(0).toUpperCase()}
-                            </span>
-                          )}
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-ink-900">
-                              {teacher?.full_name ?? 'Chưa phân công'}
-                              {extraTeacherCount > 0 && (
-                                <span className="ml-1.5 rounded border border-brand-100 bg-brand-50 px-1.5 py-0.5 text-[10px] font-bold text-brand-600 align-middle">
-                                  +{extraTeacherCount} GV
-                                </span>
-                              )}
-                            </p>
-                            <p className="text-[11px] text-ink-500">Giảng viên phụ trách</p>
-                          </div>
-                        </div>
 
                         <div className="mt-auto flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
                           <div className="flex flex-wrap items-baseline gap-2">
@@ -535,7 +519,10 @@ export function CourseManagementPage() {
                           {course.status === 'archived' ? (
                             <button
                               type="button"
-                              onClick={() => setConfirmAction({ type: 'toggle', course })}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                setConfirmAction({ type: 'toggle', course })
+                              }}
                               className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200/90 bg-white text-[11.5px] font-semibold text-slate-700 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:-translate-y-0.5 hover:bg-slate-50 hover:text-slate-900 active:translate-y-0 active:scale-98 cursor-pointer"
                             >
                               <Play size={13} />
@@ -544,9 +531,10 @@ export function CourseManagementPage() {
                           ) : (
                             <button
                               type="button"
-                              onClick={() =>
+                              onClick={(event) => {
+                                event.stopPropagation()
                                 window.location.assign(`/admin/lessons?courseId=${course.id}`)
-                              }
+                              }}
                               className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200/90 bg-white text-[11.5px] font-semibold text-slate-700 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:-translate-y-0.5 hover:bg-slate-50 hover:text-slate-900 active:translate-y-0 active:scale-98 cursor-pointer"
                             >
                               <BookOpen size={13} />
@@ -555,8 +543,24 @@ export function CourseManagementPage() {
                           )}
                           <button
                             type="button"
+                            title={`Quản lý ${course.exercise_count ?? 0} bài tập`}
+                            aria-label={`Quản lý ${course.exercise_count ?? 0} bài tập`}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              window.location.assign(`/admin/exercises?courseId=${course.id}`)
+                            }}
+                            className="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:bg-slate-50 hover:text-ink-700 active:scale-98 cursor-pointer"
+                          >
+                            <ClipboardList size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            title={course.status === 'published' ? 'Lưu trữ khóa học' : 'Công khai khóa học'}
                             aria-label={course.status === 'published' ? `Lưu trữ ${course.title}` : `Công khai ${course.title}`}
-                            onClick={() => setConfirmAction({ type: 'toggle', course })}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              setConfirmAction({ type: 'toggle', course })
+                            }}
                             className="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-all duration-150 ease-out hover:bg-slate-50 hover:text-ink-700 active:scale-98 cursor-pointer"
                           >
                             {course.status === 'published' ? <Archive size={13} /> : <Play size={13} />}
@@ -570,8 +574,8 @@ export function CourseManagementPage() {
                 {/* Thẻ tạo khóa học mới — mở drawer thêm khóa học */}
                 <button
                   type="button"
-                  onClick={() => setEditingCourse(null)}
-                  className="flex min-h-[320px] flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-brand-200 bg-brand-50/40 text-center hover:bg-brand-50"
+                  onClick={() => setDrawerState({ mode: 'create', course: null })}
+                  className="flex min-h-[320px] flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-brand-200 bg-brand-50/40 text-center hover:bg-brand-50 cursor-pointer"
                 >
                   <span className="flex size-12 items-center justify-center rounded-lg border border-brand-200 bg-white text-brand-600">
                     <Plus size={20} />
@@ -633,15 +637,16 @@ export function CourseManagementPage() {
         </main>
       </div>
 
-      {editingCourse !== undefined && (
+      {drawerState !== null && (
         <CourseDrawer
-          key={editingCourse?.id ?? 'new-course'}
-          course={editingCourse}
+          key={drawerState.course?.id ?? 'new-course'}
+          course={drawerState.course}
+          initialMode={drawerState.mode}
           teachers={teachers}
           categories={allCategories}
           saving={saving}
           onClose={() => {
-            if (!saving) setEditingCourse(undefined)
+            if (!saving) setDrawerState(null)
           }}
           onSubmit={handleSave}
         />

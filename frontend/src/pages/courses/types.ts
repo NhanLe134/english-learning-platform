@@ -19,6 +19,8 @@ export interface Course {
   teacher_ids?: string[]
   /** Số bài giảng thật của khóa (đếm qua topics — có thể lệch total_lessons tĩnh) */
   lesson_count?: number
+  /** Số bài tập cấp khóa học (lesson_id IS NULL) */
+  exercise_count?: number
   created_at: string
   updated_at: string
 }
